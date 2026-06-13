@@ -9,12 +9,18 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as DomainsRouteImport } from './routes/domains'
 import { Route as CloudRouteImport } from './routes/cloud'
 import { Route as BusinessRouteImport } from './routes/business'
 import { Route as AiAgentsRouteImport } from './routes/ai-agents'
 import { Route as AiRouteImport } from './routes/ai'
 import { Route as IndexRouteImport } from './routes/index'
 
+const DomainsRoute = DomainsRouteImport.update({
+  id: '/domains',
+  path: '/domains',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CloudRoute = CloudRouteImport.update({
   id: '/cloud',
   path: '/cloud',
@@ -47,6 +53,7 @@ export interface FileRoutesByFullPath {
   '/ai-agents': typeof AiAgentsRoute
   '/business': typeof BusinessRoute
   '/cloud': typeof CloudRoute
+  '/domains': typeof DomainsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -54,6 +61,7 @@ export interface FileRoutesByTo {
   '/ai-agents': typeof AiAgentsRoute
   '/business': typeof BusinessRoute
   '/cloud': typeof CloudRoute
+  '/domains': typeof DomainsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -62,13 +70,21 @@ export interface FileRoutesById {
   '/ai-agents': typeof AiAgentsRoute
   '/business': typeof BusinessRoute
   '/cloud': typeof CloudRoute
+  '/domains': typeof DomainsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/ai' | '/ai-agents' | '/business' | '/cloud'
+  fullPaths: '/' | '/ai' | '/ai-agents' | '/business' | '/cloud' | '/domains'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/ai' | '/ai-agents' | '/business' | '/cloud'
-  id: '__root__' | '/' | '/ai' | '/ai-agents' | '/business' | '/cloud'
+  to: '/' | '/ai' | '/ai-agents' | '/business' | '/cloud' | '/domains'
+  id:
+    | '__root__'
+    | '/'
+    | '/ai'
+    | '/ai-agents'
+    | '/business'
+    | '/cloud'
+    | '/domains'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -77,10 +93,18 @@ export interface RootRouteChildren {
   AiAgentsRoute: typeof AiAgentsRoute
   BusinessRoute: typeof BusinessRoute
   CloudRoute: typeof CloudRoute
+  DomainsRoute: typeof DomainsRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/domains': {
+      id: '/domains'
+      path: '/domains'
+      fullPath: '/domains'
+      preLoaderRoute: typeof DomainsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/cloud': {
       id: '/cloud'
       path: '/cloud'
@@ -125,6 +149,7 @@ const rootRouteChildren: RootRouteChildren = {
   AiAgentsRoute: AiAgentsRoute,
   BusinessRoute: BusinessRoute,
   CloudRoute: CloudRoute,
+  DomainsRoute: DomainsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
