@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as CloudRouteImport } from './routes/cloud'
 import { Route as BusinessRouteImport } from './routes/business'
+import { Route as AiAgentsRouteImport } from './routes/ai-agents'
 import { Route as AiRouteImport } from './routes/ai'
 import { Route as IndexRouteImport } from './routes/index'
 
@@ -22,6 +23,11 @@ const CloudRoute = CloudRouteImport.update({
 const BusinessRoute = BusinessRouteImport.update({
   id: '/business',
   path: '/business',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AiAgentsRoute = AiAgentsRouteImport.update({
+  id: '/ai-agents',
+  path: '/ai-agents',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AiRoute = AiRouteImport.update({
@@ -38,12 +44,14 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/ai': typeof AiRoute
+  '/ai-agents': typeof AiAgentsRoute
   '/business': typeof BusinessRoute
   '/cloud': typeof CloudRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/ai': typeof AiRoute
+  '/ai-agents': typeof AiAgentsRoute
   '/business': typeof BusinessRoute
   '/cloud': typeof CloudRoute
 }
@@ -51,20 +59,22 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/ai': typeof AiRoute
+  '/ai-agents': typeof AiAgentsRoute
   '/business': typeof BusinessRoute
   '/cloud': typeof CloudRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/ai' | '/business' | '/cloud'
+  fullPaths: '/' | '/ai' | '/ai-agents' | '/business' | '/cloud'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/ai' | '/business' | '/cloud'
-  id: '__root__' | '/' | '/ai' | '/business' | '/cloud'
+  to: '/' | '/ai' | '/ai-agents' | '/business' | '/cloud'
+  id: '__root__' | '/' | '/ai' | '/ai-agents' | '/business' | '/cloud'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AiRoute: typeof AiRoute
+  AiAgentsRoute: typeof AiAgentsRoute
   BusinessRoute: typeof BusinessRoute
   CloudRoute: typeof CloudRoute
 }
@@ -83,6 +93,13 @@ declare module '@tanstack/react-router' {
       path: '/business'
       fullPath: '/business'
       preLoaderRoute: typeof BusinessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ai-agents': {
+      id: '/ai-agents'
+      path: '/ai-agents'
+      fullPath: '/ai-agents'
+      preLoaderRoute: typeof AiAgentsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/ai': {
@@ -105,6 +122,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AiRoute: AiRoute,
+  AiAgentsRoute: AiAgentsRoute,
   BusinessRoute: BusinessRoute,
   CloudRoute: CloudRoute,
 }
