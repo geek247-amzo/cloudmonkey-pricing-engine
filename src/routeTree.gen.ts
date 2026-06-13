@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as CloudRouteImport } from './routes/cloud'
 import { Route as BusinessRouteImport } from './routes/business'
+import { Route as AiRouteImport } from './routes/ai'
 import { Route as IndexRouteImport } from './routes/index'
 
 const CloudRoute = CloudRouteImport.update({
@@ -23,6 +24,11 @@ const BusinessRoute = BusinessRouteImport.update({
   path: '/business',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AiRoute = AiRouteImport.update({
+  id: '/ai',
+  path: '/ai',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -31,30 +37,34 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/ai': typeof AiRoute
   '/business': typeof BusinessRoute
   '/cloud': typeof CloudRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/ai': typeof AiRoute
   '/business': typeof BusinessRoute
   '/cloud': typeof CloudRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/ai': typeof AiRoute
   '/business': typeof BusinessRoute
   '/cloud': typeof CloudRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/business' | '/cloud'
+  fullPaths: '/' | '/ai' | '/business' | '/cloud'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/business' | '/cloud'
-  id: '__root__' | '/' | '/business' | '/cloud'
+  to: '/' | '/ai' | '/business' | '/cloud'
+  id: '__root__' | '/' | '/ai' | '/business' | '/cloud'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AiRoute: typeof AiRoute
   BusinessRoute: typeof BusinessRoute
   CloudRoute: typeof CloudRoute
 }
@@ -75,6 +85,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BusinessRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/ai': {
+      id: '/ai'
+      path: '/ai'
+      fullPath: '/ai'
+      preLoaderRoute: typeof AiRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -87,6 +104,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AiRoute: AiRoute,
   BusinessRoute: BusinessRoute,
   CloudRoute: CloudRoute,
 }
