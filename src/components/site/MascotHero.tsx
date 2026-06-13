@@ -1,5 +1,5 @@
-import mascot from "@/assets/cm-mascot.png.asset.json";
 import type { ReactNode } from "react";
+import mascot from "@/assets/cm-mascot.png";
 
 export function MascotHero({
   eyebrow,
@@ -43,7 +43,7 @@ export function MascotHero({
         </div>
         <div className="relative flex items-center justify-center">
           <div className="absolute h-72 w-72 rounded-full blur-3xl sm:h-96 sm:w-96" style={{ background: `color-mix(in oklab, ${accent} 25%, transparent)` }} />
-          <img src={mascot.url} alt="CloudMonkey mascot" className="relative z-10 h-80 w-auto drop-shadow-2xl sm:h-[28rem] lg:h-[32rem]" />
+          <img src={mascot} alt="CloudMonkey mascot" className="relative z-10 h-80 w-auto drop-shadow-2xl sm:h-[28rem] lg:h-[32rem]" />
           {floating && <div className="pointer-events-none absolute inset-0 z-20">{floating}</div>}
         </div>
       </div>

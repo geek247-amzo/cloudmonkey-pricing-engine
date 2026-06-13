@@ -4,6 +4,7 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
+  useRouterState,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
@@ -14,6 +15,7 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { CurrencyProvider } from "../lib/currency";
 import { Header } from "../components/site/Header";
 import { Footer } from "../components/site/Footer";
+import { DashboardShell } from "../components/dashboard/DashboardShell";
 
 function NotFoundComponent() {
   return (
@@ -121,17 +123,28 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  });
+  const isDashboardRoute = pathname.startsWith("/dashboard");
+  const isAppRoute = pathname.startsWith("/auth") || isDashboardRoute;
 
   return (
     <QueryClientProvider client={queryClient}>
       <CurrencyProvider>
-        <div className="flex min-h-screen flex-col bg-background">
-          <Header />
-          <main className="flex-1">
+        {isDashboardRoute ? (
+          <DashboardShell>
             <Outlet />
-          </main>
-          <Footer />
-        </div>
+          </DashboardShell>
+        ) : (
+          <div className="flex min-h-screen flex-col bg-background">
+            {!isAppRoute && <Header />}
+            <main className="flex-1">
+              <Outlet />
+            </main>
+            {!isAppRoute && <Footer />}
+          </div>
+        )}
       </CurrencyProvider>
     </QueryClientProvider>
   );

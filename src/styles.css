@@ -166,3 +166,25 @@
     color: var(--color-foreground);
   }
 }
+
+@media (min-width: 1024px) {
+  .dashboard-zoom-surface {
+    width: calc(100vw / 0.75);
+    max-width: calc(1920px / 0.75);
+    min-height: calc(100vh / 0.75);
+    zoom: 0.75;
+  }
+}
+
+@supports not (zoom: 1) {
+  @media (min-width: 1024px) {
+    .dashboard-zoom-shell {
+      min-height: calc(100vh / 0.75);
+    }
+
+    .dashboard-zoom-surface {
+      transform: scale(0.75);
+      transform-origin: top left;
+    }
+  }
+}

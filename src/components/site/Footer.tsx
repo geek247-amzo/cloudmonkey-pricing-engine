@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import logo from "@/assets/cm-logo.png.asset.json";
+import logo from "@/assets/cm-logo.png";
 
 export function Footer() {
   return (
@@ -8,7 +8,7 @@ export function Footer() {
         <div className="grid gap-12 md:grid-cols-2 lg:grid-cols-5">
           <div className="lg:col-span-2">
             <div className="flex items-center gap-2.5">
-              <img src={logo.url} alt="CloudMonkey" className="h-9 w-9" />
+              <img src={logo} alt="CloudMonkey logo" className="h-9 w-9 shrink-0" />
               <span className="text-lg font-bold" style={{ fontFamily: "var(--font-display)" }}>CloudMonkey</span>
             </div>
             <p className="mt-4 max-w-sm text-sm leading-relaxed text-background/70">

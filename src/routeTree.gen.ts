@@ -16,6 +16,29 @@ import { Route as BusinessRouteImport } from './routes/business'
 import { Route as AiAgentsRouteImport } from './routes/ai-agents'
 import { Route as AiRouteImport } from './routes/ai'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as DashboardIndexRouteImport } from './routes/dashboard/index'
+import { Route as AuthIndexRouteImport } from './routes/auth/index'
+import { Route as DashboardUsersRouteImport } from './routes/dashboard/users'
+import { Route as DashboardSupportRouteImport } from './routes/dashboard/support'
+import { Route as DashboardSettingsRouteImport } from './routes/dashboard/settings'
+import { Route as DashboardSessionsRouteImport } from './routes/dashboard/sessions'
+import { Route as DashboardRolesRouteImport } from './routes/dashboard/roles'
+import { Route as DashboardReportsRouteImport } from './routes/dashboard/reports'
+import { Route as DashboardIntegrationsRouteImport } from './routes/dashboard/integrations'
+import { Route as DashboardBillingRouteImport } from './routes/dashboard/billing'
+import { Route as DashboardAiWizardRouteImport } from './routes/dashboard/ai-wizard'
+import { Route as DashboardActivityLogsRouteImport } from './routes/dashboard/activity-logs'
+import { Route as DashboardLayoutRouteImport } from './routes/dashboard/_layout'
+import { Route as AuthVerifyEmailRouteImport } from './routes/auth/verify-email'
+import { Route as AuthSsoErrorRouteImport } from './routes/auth/sso-error'
+import { Route as AuthSsoCallbackRouteImport } from './routes/auth/sso-callback'
+import { Route as AuthSignUpRouteImport } from './routes/auth/sign-up'
+import { Route as AuthSignInRouteImport } from './routes/auth/sign-in'
+import { Route as AuthResetPasswordRouteImport } from './routes/auth/reset-password'
+import { Route as AuthLinkAccountRouteImport } from './routes/auth/link-account'
+import { Route as AuthForgotPasswordRouteImport } from './routes/auth/forgot-password'
+import { Route as DashboardUsersUserIdRouteImport } from './routes/dashboard/users/$userId'
+import { Route as DashboardSupportTicketIdRouteImport } from './routes/dashboard/support/$ticketId'
 
 const PricingRoute = PricingRouteImport.update({
   id: '/pricing',
@@ -52,6 +75,122 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashboardIndexRoute = DashboardIndexRouteImport.update({
+  id: '/dashboard/',
+  path: '/dashboard/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthIndexRoute = AuthIndexRouteImport.update({
+  id: '/auth/',
+  path: '/auth/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardUsersRoute = DashboardUsersRouteImport.update({
+  id: '/dashboard/users',
+  path: '/dashboard/users',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardSupportRoute = DashboardSupportRouteImport.update({
+  id: '/dashboard/support',
+  path: '/dashboard/support',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardSettingsRoute = DashboardSettingsRouteImport.update({
+  id: '/dashboard/settings',
+  path: '/dashboard/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardSessionsRoute = DashboardSessionsRouteImport.update({
+  id: '/dashboard/sessions',
+  path: '/dashboard/sessions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardRolesRoute = DashboardRolesRouteImport.update({
+  id: '/dashboard/roles',
+  path: '/dashboard/roles',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardReportsRoute = DashboardReportsRouteImport.update({
+  id: '/dashboard/reports',
+  path: '/dashboard/reports',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardIntegrationsRoute = DashboardIntegrationsRouteImport.update({
+  id: '/dashboard/integrations',
+  path: '/dashboard/integrations',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardBillingRoute = DashboardBillingRouteImport.update({
+  id: '/dashboard/billing',
+  path: '/dashboard/billing',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardAiWizardRoute = DashboardAiWizardRouteImport.update({
+  id: '/dashboard/ai-wizard',
+  path: '/dashboard/ai-wizard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardActivityLogsRoute = DashboardActivityLogsRouteImport.update({
+  id: '/dashboard/activity-logs',
+  path: '/dashboard/activity-logs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardLayoutRoute = DashboardLayoutRouteImport.update({
+  id: '/dashboard/_layout',
+  path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthVerifyEmailRoute = AuthVerifyEmailRouteImport.update({
+  id: '/auth/verify-email',
+  path: '/auth/verify-email',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthSsoErrorRoute = AuthSsoErrorRouteImport.update({
+  id: '/auth/sso-error',
+  path: '/auth/sso-error',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthSsoCallbackRoute = AuthSsoCallbackRouteImport.update({
+  id: '/auth/sso-callback',
+  path: '/auth/sso-callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthSignUpRoute = AuthSignUpRouteImport.update({
+  id: '/auth/sign-up',
+  path: '/auth/sign-up',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthSignInRoute = AuthSignInRouteImport.update({
+  id: '/auth/sign-in',
+  path: '/auth/sign-in',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthResetPasswordRoute = AuthResetPasswordRouteImport.update({
+  id: '/auth/reset-password',
+  path: '/auth/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthLinkAccountRoute = AuthLinkAccountRouteImport.update({
+  id: '/auth/link-account',
+  path: '/auth/link-account',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthForgotPasswordRoute = AuthForgotPasswordRouteImport.update({
+  id: '/auth/forgot-password',
+  path: '/auth/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardUsersUserIdRoute = DashboardUsersUserIdRouteImport.update({
+  id: '/$userId',
+  path: '/$userId',
+  getParentRoute: () => DashboardUsersRoute,
+} as any)
+const DashboardSupportTicketIdRoute =
+  DashboardSupportTicketIdRouteImport.update({
+    id: '/$ticketId',
+    path: '/$ticketId',
+    getParentRoute: () => DashboardSupportRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -61,6 +200,29 @@ export interface FileRoutesByFullPath {
   '/cloud': typeof CloudRoute
   '/domains': typeof DomainsRoute
   '/pricing': typeof PricingRoute
+  '/auth/forgot-password': typeof AuthForgotPasswordRoute
+  '/auth/link-account': typeof AuthLinkAccountRoute
+  '/auth/reset-password': typeof AuthResetPasswordRoute
+  '/auth/sign-in': typeof AuthSignInRoute
+  '/auth/sign-up': typeof AuthSignUpRoute
+  '/auth/sso-callback': typeof AuthSsoCallbackRoute
+  '/auth/sso-error': typeof AuthSsoErrorRoute
+  '/auth/verify-email': typeof AuthVerifyEmailRoute
+  '/dashboard': typeof DashboardLayoutRoute
+  '/dashboard/activity-logs': typeof DashboardActivityLogsRoute
+  '/dashboard/ai-wizard': typeof DashboardAiWizardRoute
+  '/dashboard/billing': typeof DashboardBillingRoute
+  '/dashboard/integrations': typeof DashboardIntegrationsRoute
+  '/dashboard/reports': typeof DashboardReportsRoute
+  '/dashboard/roles': typeof DashboardRolesRoute
+  '/dashboard/sessions': typeof DashboardSessionsRoute
+  '/dashboard/settings': typeof DashboardSettingsRoute
+  '/dashboard/support': typeof DashboardSupportRouteWithChildren
+  '/dashboard/users': typeof DashboardUsersRouteWithChildren
+  '/auth/': typeof AuthIndexRoute
+  '/dashboard/': typeof DashboardIndexRoute
+  '/dashboard/support/$ticketId': typeof DashboardSupportTicketIdRoute
+  '/dashboard/users/$userId': typeof DashboardUsersUserIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -70,6 +232,28 @@ export interface FileRoutesByTo {
   '/cloud': typeof CloudRoute
   '/domains': typeof DomainsRoute
   '/pricing': typeof PricingRoute
+  '/auth/forgot-password': typeof AuthForgotPasswordRoute
+  '/auth/link-account': typeof AuthLinkAccountRoute
+  '/auth/reset-password': typeof AuthResetPasswordRoute
+  '/auth/sign-in': typeof AuthSignInRoute
+  '/auth/sign-up': typeof AuthSignUpRoute
+  '/auth/sso-callback': typeof AuthSsoCallbackRoute
+  '/auth/sso-error': typeof AuthSsoErrorRoute
+  '/auth/verify-email': typeof AuthVerifyEmailRoute
+  '/dashboard': typeof DashboardIndexRoute
+  '/dashboard/activity-logs': typeof DashboardActivityLogsRoute
+  '/dashboard/ai-wizard': typeof DashboardAiWizardRoute
+  '/dashboard/billing': typeof DashboardBillingRoute
+  '/dashboard/integrations': typeof DashboardIntegrationsRoute
+  '/dashboard/reports': typeof DashboardReportsRoute
+  '/dashboard/roles': typeof DashboardRolesRoute
+  '/dashboard/sessions': typeof DashboardSessionsRoute
+  '/dashboard/settings': typeof DashboardSettingsRoute
+  '/dashboard/support': typeof DashboardSupportRouteWithChildren
+  '/dashboard/users': typeof DashboardUsersRouteWithChildren
+  '/auth': typeof AuthIndexRoute
+  '/dashboard/support/$ticketId': typeof DashboardSupportTicketIdRoute
+  '/dashboard/users/$userId': typeof DashboardUsersUserIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -80,6 +264,29 @@ export interface FileRoutesById {
   '/cloud': typeof CloudRoute
   '/domains': typeof DomainsRoute
   '/pricing': typeof PricingRoute
+  '/auth/forgot-password': typeof AuthForgotPasswordRoute
+  '/auth/link-account': typeof AuthLinkAccountRoute
+  '/auth/reset-password': typeof AuthResetPasswordRoute
+  '/auth/sign-in': typeof AuthSignInRoute
+  '/auth/sign-up': typeof AuthSignUpRoute
+  '/auth/sso-callback': typeof AuthSsoCallbackRoute
+  '/auth/sso-error': typeof AuthSsoErrorRoute
+  '/auth/verify-email': typeof AuthVerifyEmailRoute
+  '/dashboard/_layout': typeof DashboardLayoutRoute
+  '/dashboard/activity-logs': typeof DashboardActivityLogsRoute
+  '/dashboard/ai-wizard': typeof DashboardAiWizardRoute
+  '/dashboard/billing': typeof DashboardBillingRoute
+  '/dashboard/integrations': typeof DashboardIntegrationsRoute
+  '/dashboard/reports': typeof DashboardReportsRoute
+  '/dashboard/roles': typeof DashboardRolesRoute
+  '/dashboard/sessions': typeof DashboardSessionsRoute
+  '/dashboard/settings': typeof DashboardSettingsRoute
+  '/dashboard/support': typeof DashboardSupportRouteWithChildren
+  '/dashboard/users': typeof DashboardUsersRouteWithChildren
+  '/auth/': typeof AuthIndexRoute
+  '/dashboard/': typeof DashboardIndexRoute
+  '/dashboard/support/$ticketId': typeof DashboardSupportTicketIdRoute
+  '/dashboard/users/$userId': typeof DashboardUsersUserIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -91,6 +298,29 @@ export interface FileRouteTypes {
     | '/cloud'
     | '/domains'
     | '/pricing'
+    | '/auth/forgot-password'
+    | '/auth/link-account'
+    | '/auth/reset-password'
+    | '/auth/sign-in'
+    | '/auth/sign-up'
+    | '/auth/sso-callback'
+    | '/auth/sso-error'
+    | '/auth/verify-email'
+    | '/dashboard'
+    | '/dashboard/activity-logs'
+    | '/dashboard/ai-wizard'
+    | '/dashboard/billing'
+    | '/dashboard/integrations'
+    | '/dashboard/reports'
+    | '/dashboard/roles'
+    | '/dashboard/sessions'
+    | '/dashboard/settings'
+    | '/dashboard/support'
+    | '/dashboard/users'
+    | '/auth/'
+    | '/dashboard/'
+    | '/dashboard/support/$ticketId'
+    | '/dashboard/users/$userId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -100,6 +330,28 @@ export interface FileRouteTypes {
     | '/cloud'
     | '/domains'
     | '/pricing'
+    | '/auth/forgot-password'
+    | '/auth/link-account'
+    | '/auth/reset-password'
+    | '/auth/sign-in'
+    | '/auth/sign-up'
+    | '/auth/sso-callback'
+    | '/auth/sso-error'
+    | '/auth/verify-email'
+    | '/dashboard'
+    | '/dashboard/activity-logs'
+    | '/dashboard/ai-wizard'
+    | '/dashboard/billing'
+    | '/dashboard/integrations'
+    | '/dashboard/reports'
+    | '/dashboard/roles'
+    | '/dashboard/sessions'
+    | '/dashboard/settings'
+    | '/dashboard/support'
+    | '/dashboard/users'
+    | '/auth'
+    | '/dashboard/support/$ticketId'
+    | '/dashboard/users/$userId'
   id:
     | '__root__'
     | '/'
@@ -109,6 +361,29 @@ export interface FileRouteTypes {
     | '/cloud'
     | '/domains'
     | '/pricing'
+    | '/auth/forgot-password'
+    | '/auth/link-account'
+    | '/auth/reset-password'
+    | '/auth/sign-in'
+    | '/auth/sign-up'
+    | '/auth/sso-callback'
+    | '/auth/sso-error'
+    | '/auth/verify-email'
+    | '/dashboard/_layout'
+    | '/dashboard/activity-logs'
+    | '/dashboard/ai-wizard'
+    | '/dashboard/billing'
+    | '/dashboard/integrations'
+    | '/dashboard/reports'
+    | '/dashboard/roles'
+    | '/dashboard/sessions'
+    | '/dashboard/settings'
+    | '/dashboard/support'
+    | '/dashboard/users'
+    | '/auth/'
+    | '/dashboard/'
+    | '/dashboard/support/$ticketId'
+    | '/dashboard/users/$userId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -119,6 +394,27 @@ export interface RootRouteChildren {
   CloudRoute: typeof CloudRoute
   DomainsRoute: typeof DomainsRoute
   PricingRoute: typeof PricingRoute
+  AuthForgotPasswordRoute: typeof AuthForgotPasswordRoute
+  AuthLinkAccountRoute: typeof AuthLinkAccountRoute
+  AuthResetPasswordRoute: typeof AuthResetPasswordRoute
+  AuthSignInRoute: typeof AuthSignInRoute
+  AuthSignUpRoute: typeof AuthSignUpRoute
+  AuthSsoCallbackRoute: typeof AuthSsoCallbackRoute
+  AuthSsoErrorRoute: typeof AuthSsoErrorRoute
+  AuthVerifyEmailRoute: typeof AuthVerifyEmailRoute
+  DashboardLayoutRoute: typeof DashboardLayoutRoute
+  DashboardActivityLogsRoute: typeof DashboardActivityLogsRoute
+  DashboardAiWizardRoute: typeof DashboardAiWizardRoute
+  DashboardBillingRoute: typeof DashboardBillingRoute
+  DashboardIntegrationsRoute: typeof DashboardIntegrationsRoute
+  DashboardReportsRoute: typeof DashboardReportsRoute
+  DashboardRolesRoute: typeof DashboardRolesRoute
+  DashboardSessionsRoute: typeof DashboardSessionsRoute
+  DashboardSettingsRoute: typeof DashboardSettingsRoute
+  DashboardSupportRoute: typeof DashboardSupportRouteWithChildren
+  DashboardUsersRoute: typeof DashboardUsersRouteWithChildren
+  AuthIndexRoute: typeof AuthIndexRoute
+  DashboardIndexRoute: typeof DashboardIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -172,8 +468,192 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/dashboard/': {
+      id: '/dashboard/'
+      path: '/dashboard'
+      fullPath: '/dashboard/'
+      preLoaderRoute: typeof DashboardIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/': {
+      id: '/auth/'
+      path: '/auth'
+      fullPath: '/auth/'
+      preLoaderRoute: typeof AuthIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/users': {
+      id: '/dashboard/users'
+      path: '/dashboard/users'
+      fullPath: '/dashboard/users'
+      preLoaderRoute: typeof DashboardUsersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/support': {
+      id: '/dashboard/support'
+      path: '/dashboard/support'
+      fullPath: '/dashboard/support'
+      preLoaderRoute: typeof DashboardSupportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/settings': {
+      id: '/dashboard/settings'
+      path: '/dashboard/settings'
+      fullPath: '/dashboard/settings'
+      preLoaderRoute: typeof DashboardSettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/sessions': {
+      id: '/dashboard/sessions'
+      path: '/dashboard/sessions'
+      fullPath: '/dashboard/sessions'
+      preLoaderRoute: typeof DashboardSessionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/roles': {
+      id: '/dashboard/roles'
+      path: '/dashboard/roles'
+      fullPath: '/dashboard/roles'
+      preLoaderRoute: typeof DashboardRolesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/reports': {
+      id: '/dashboard/reports'
+      path: '/dashboard/reports'
+      fullPath: '/dashboard/reports'
+      preLoaderRoute: typeof DashboardReportsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/integrations': {
+      id: '/dashboard/integrations'
+      path: '/dashboard/integrations'
+      fullPath: '/dashboard/integrations'
+      preLoaderRoute: typeof DashboardIntegrationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/billing': {
+      id: '/dashboard/billing'
+      path: '/dashboard/billing'
+      fullPath: '/dashboard/billing'
+      preLoaderRoute: typeof DashboardBillingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/ai-wizard': {
+      id: '/dashboard/ai-wizard'
+      path: '/dashboard/ai-wizard'
+      fullPath: '/dashboard/ai-wizard'
+      preLoaderRoute: typeof DashboardAiWizardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/activity-logs': {
+      id: '/dashboard/activity-logs'
+      path: '/dashboard/activity-logs'
+      fullPath: '/dashboard/activity-logs'
+      preLoaderRoute: typeof DashboardActivityLogsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/_layout': {
+      id: '/dashboard/_layout'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof DashboardLayoutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/verify-email': {
+      id: '/auth/verify-email'
+      path: '/auth/verify-email'
+      fullPath: '/auth/verify-email'
+      preLoaderRoute: typeof AuthVerifyEmailRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/sso-error': {
+      id: '/auth/sso-error'
+      path: '/auth/sso-error'
+      fullPath: '/auth/sso-error'
+      preLoaderRoute: typeof AuthSsoErrorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/sso-callback': {
+      id: '/auth/sso-callback'
+      path: '/auth/sso-callback'
+      fullPath: '/auth/sso-callback'
+      preLoaderRoute: typeof AuthSsoCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/sign-up': {
+      id: '/auth/sign-up'
+      path: '/auth/sign-up'
+      fullPath: '/auth/sign-up'
+      preLoaderRoute: typeof AuthSignUpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/sign-in': {
+      id: '/auth/sign-in'
+      path: '/auth/sign-in'
+      fullPath: '/auth/sign-in'
+      preLoaderRoute: typeof AuthSignInRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/reset-password': {
+      id: '/auth/reset-password'
+      path: '/auth/reset-password'
+      fullPath: '/auth/reset-password'
+      preLoaderRoute: typeof AuthResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/link-account': {
+      id: '/auth/link-account'
+      path: '/auth/link-account'
+      fullPath: '/auth/link-account'
+      preLoaderRoute: typeof AuthLinkAccountRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/forgot-password': {
+      id: '/auth/forgot-password'
+      path: '/auth/forgot-password'
+      fullPath: '/auth/forgot-password'
+      preLoaderRoute: typeof AuthForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/users/$userId': {
+      id: '/dashboard/users/$userId'
+      path: '/$userId'
+      fullPath: '/dashboard/users/$userId'
+      preLoaderRoute: typeof DashboardUsersUserIdRouteImport
+      parentRoute: typeof DashboardUsersRoute
+    }
+    '/dashboard/support/$ticketId': {
+      id: '/dashboard/support/$ticketId'
+      path: '/$ticketId'
+      fullPath: '/dashboard/support/$ticketId'
+      preLoaderRoute: typeof DashboardSupportTicketIdRouteImport
+      parentRoute: typeof DashboardSupportRoute
+    }
   }
 }
+
+interface DashboardSupportRouteChildren {
+  DashboardSupportTicketIdRoute: typeof DashboardSupportTicketIdRoute
+}
+
+const DashboardSupportRouteChildren: DashboardSupportRouteChildren = {
+  DashboardSupportTicketIdRoute: DashboardSupportTicketIdRoute,
+}
+
+const DashboardSupportRouteWithChildren =
+  DashboardSupportRoute._addFileChildren(DashboardSupportRouteChildren)
+
+interface DashboardUsersRouteChildren {
+  DashboardUsersUserIdRoute: typeof DashboardUsersUserIdRoute
+}
+
+const DashboardUsersRouteChildren: DashboardUsersRouteChildren = {
+  DashboardUsersUserIdRoute: DashboardUsersUserIdRoute,
+}
+
+const DashboardUsersRouteWithChildren = DashboardUsersRoute._addFileChildren(
+  DashboardUsersRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -183,7 +663,38 @@ const rootRouteChildren: RootRouteChildren = {
   CloudRoute: CloudRoute,
   DomainsRoute: DomainsRoute,
   PricingRoute: PricingRoute,
+  AuthForgotPasswordRoute: AuthForgotPasswordRoute,
+  AuthLinkAccountRoute: AuthLinkAccountRoute,
+  AuthResetPasswordRoute: AuthResetPasswordRoute,
+  AuthSignInRoute: AuthSignInRoute,
+  AuthSignUpRoute: AuthSignUpRoute,
+  AuthSsoCallbackRoute: AuthSsoCallbackRoute,
+  AuthSsoErrorRoute: AuthSsoErrorRoute,
+  AuthVerifyEmailRoute: AuthVerifyEmailRoute,
+  DashboardLayoutRoute: DashboardLayoutRoute,
+  DashboardActivityLogsRoute: DashboardActivityLogsRoute,
+  DashboardAiWizardRoute: DashboardAiWizardRoute,
+  DashboardBillingRoute: DashboardBillingRoute,
+  DashboardIntegrationsRoute: DashboardIntegrationsRoute,
+  DashboardReportsRoute: DashboardReportsRoute,
+  DashboardRolesRoute: DashboardRolesRoute,
+  DashboardSessionsRoute: DashboardSessionsRoute,
+  DashboardSettingsRoute: DashboardSettingsRoute,
+  DashboardSupportRoute: DashboardSupportRouteWithChildren,
+  DashboardUsersRoute: DashboardUsersRouteWithChildren,
+  AuthIndexRoute: AuthIndexRoute,
+  DashboardIndexRoute: DashboardIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

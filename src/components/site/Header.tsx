@@ -1,8 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { Menu, X } from "lucide-react";
 import { useState } from "react";
-import logo from "@/assets/cm-logo.png.asset.json";
 import { CurrencySwitcher } from "./CurrencySwitcher";
+import logo from "@/assets/cm-logo.png";
 
 const NAV = [
   { to: "/cloud", label: "Cloud" },
@@ -19,7 +19,7 @@ export function Header() {
     <header className="sticky top-0 z-50 border-b border-border/60 bg-background/80 backdrop-blur-xl">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
         <Link to="/" className="flex items-center gap-2.5">
-          <img src={logo.url} alt="CloudMonkey" className="h-9 w-9" />
+          <img src={logo} alt="CloudMonkey logo" className="h-9 w-9 shrink-0" />
           <span className="text-lg font-bold tracking-tight text-foreground" style={{ fontFamily: "var(--font-display)" }}>
             CloudMonkey
           </span>
@@ -38,11 +38,11 @@ export function Header() {
         </nav>
         <div className="hidden items-center gap-3 lg:flex">
           <CurrencySwitcher />
-          <Link to="/pricing" className="text-sm font-medium text-muted-foreground hover:text-foreground">
+          <Link to="/auth/sign-in" className="text-sm font-medium text-muted-foreground hover:text-foreground">
             Sign in
           </Link>
           <Link
-            to="/pricing"
+            to="/auth/sign-up"
             className="rounded-full px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-[var(--shadow-elevated)] transition-transform hover:scale-[1.02]"
             style={{ background: "var(--gradient-primary)" }}
           >
@@ -69,7 +69,7 @@ export function Header() {
             <div className="mt-2 flex items-center justify-between border-t border-border pt-3">
               <CurrencySwitcher />
               <Link
-                to="/pricing"
+                to="/auth/sign-up"
                 className="rounded-full px-4 py-2 text-sm font-semibold text-primary-foreground"
                 style={{ background: "var(--gradient-primary)" }}
                 onClick={() => setOpen(false)}
