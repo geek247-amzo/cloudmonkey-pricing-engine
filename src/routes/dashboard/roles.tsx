@@ -1,10 +1,13 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { ShieldCheck, UsersRound, LockKeyhole, BadgeCheck } from "lucide-react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { ArrowRight, ShieldCheck } from "lucide-react";
+import { useEffect } from "react";
 
 import { PageHeader } from "@/components/dashboard/PageHeader";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { useAdminAccess } from "@/hooks/use-admin-access";
 
 export const Route = createFileRoute("/dashboard/roles")({
   head: () => ({
@@ -13,55 +16,73 @@ export const Route = createFileRoute("/dashboard/roles")({
   component: RolesPage,
 });
 
+const roleDescriptions: Record<string, string> = {
+  owner: "Full platform ownership and account control.",
+  admin: "Platform administration, billing, users, and operations.",
+  support: "Ticket handling and customer troubleshooting.",
+  finance: "Invoices, subscriptions, and payment operations.",
+  customer: "Customer workspace access.",
+};
+
 function RolesPage() {
+  const navigate = useNavigate();
+  const { authReady, isAdmin } = useAdminAccess();
+
+  useEffect(() => {
+    if (authReady && !isAdmin) navigate({ to: "/dashboard" });
+  }, [authReady, isAdmin, navigate]);
+
+  const { data: users, isLoading } = useQuery({
+    queryKey: ["admin", "users"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/users");
+      if (!res.ok) throw new Error("Failed to fetch users");
+      return res.json();
+    },
+    enabled: isAdmin,
+  });
+
+  if (!authReady || !isAdmin) return <div className="p-8 text-center">Checking permissions...</div>;
+
+  const roles = Object.keys(roleDescriptions).map((role) => ({
+    role,
+    count: users?.filter((user: any) => user.role === role).length ?? 0,
+  }));
+
   return (
     <div className="space-y-6">
       <PageHeader
         eyebrow="Roles"
-        title={<>Roles and permissions.</>}
-        subtitle="Define access boundaries for admins, support staff, finance, and read-only reviewers."
+        title={<>Roles and access.</>}
+        subtitle="Current role distribution from live user accounts."
+        actions={
+          <Button asChild className="rounded-lg bg-[var(--ai)]">
+            <Link to="/dashboard/users">
+              Manage users
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </Button>
+        }
       />
 
       <div className="grid gap-4 xl:grid-cols-2">
-        {[
-          { title: "Owner", icon: ShieldCheck, desc: "Full backend access and account control.", badge: "All access" },
-          { title: "Admin", icon: UsersRound, desc: "Manage users, settings, and billing without owner rights.", badge: "High access" },
-          { title: "Finance", icon: BadgeCheck, desc: "Invoices, billing records, and payment operations.", badge: "Scoped" },
-          { title: "Support", icon: LockKeyhole, desc: "Sessions, tickets, and user troubleshooting.", badge: "Scoped" },
-        ].map((role) => (
-          <Card key={role.title} className="border-border/70 bg-card/95 shadow-sm">
+        {roles.map((item) => (
+          <Card key={item.role} className="rounded-lg border-[#dfe4ef] bg-white shadow-sm">
             <CardHeader>
               <CardTitle className="flex items-center justify-between gap-3">
-                <span className="flex items-center gap-3">
-                  <role.icon className="h-5 w-5 text-[var(--ai)]" />
-                  {role.title}
+                <span className="flex items-center gap-3 capitalize">
+                  <ShieldCheck className="h-5 w-5 text-[var(--ai)]" />
+                  {item.role}
                 </span>
-                <Badge variant="secondary">{role.badge}</Badge>
+                <Badge variant="secondary">{isLoading ? "..." : item.count} users</Badge>
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm leading-relaxed text-muted-foreground">{role.desc}</p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {["Users", "Billing", "Sessions", "Logs"].map((label) => (
-                  <Badge key={label} variant="outline" className="rounded-full">
-                    {label}
-                  </Badge>
-                ))}
-              </div>
+              <p className="text-sm text-muted-foreground">{roleDescriptions[item.role]}</p>
             </CardContent>
           </Card>
         ))}
       </div>
-
-      <Card className="border-border/70 bg-[linear-gradient(135deg,var(--ai-soft),rgba(255,255,255,0.92))] shadow-sm">
-        <CardContent className="flex flex-wrap items-center justify-between gap-4 p-5">
-          <div>
-            <div className="text-sm font-semibold text-foreground">Permissions matrix</div>
-            <p className="mt-1 text-sm text-muted-foreground">Add a matrix or policy editor here when the backend arrives.</p>
-          </div>
-          <Button className="rounded-2xl bg-[var(--ai)] shadow-[var(--shadow-elevated)]">Edit policies</Button>
-        </CardContent>
-      </Card>
     </div>
   );
 }

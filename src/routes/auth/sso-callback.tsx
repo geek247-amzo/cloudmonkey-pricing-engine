@@ -1,9 +1,11 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { ArrowRight, CircleDashed, ShieldCheck } from "lucide-react";
+import { useEffect, useRef } from "react";
 
 import { AuthShell } from "@/components/auth/AuthShell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { authClient } from "@/lib/auth-client";
 
 export const Route = createFileRoute("/auth/sso-callback")({
   head: () => ({
@@ -13,6 +15,48 @@ export const Route = createFileRoute("/auth/sso-callback")({
 });
 
 function SsoCallbackPage() {
+  const router = useRouter();
+  const { data: session, isPending } = authClient.useSession();
+  const hasProcessedRef = useRef(false);
+
+  useEffect(() => {
+    if (isPending) return;
+
+    if (!session) {
+      router.navigate({ to: "/auth/sign-in" });
+      return;
+    }
+
+    if (hasProcessedRef.current) return;
+    hasProcessedRef.current = true;
+
+    const finish = async () => {
+      const referralCode = localStorage.getItem("cloudmonkey:affiliate-ref");
+      const referralCreatedAt = Number(localStorage.getItem("cloudmonkey:affiliate-ref-created-at") ?? 0);
+      const referralIsFresh = referralCode && Date.now() - referralCreatedAt <= 60 * 24 * 60 * 60 * 1000;
+
+      if (referralIsFresh) {
+        const response = await fetch("/api/user/affiliate/attribute-signup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            referralCode,
+            visitorId: localStorage.getItem("cloudmonkey:visitor-id"),
+          }),
+        }).catch(() => null);
+
+        if (response?.ok) {
+          localStorage.removeItem("cloudmonkey:affiliate-ref");
+          localStorage.removeItem("cloudmonkey:affiliate-ref-created-at");
+        }
+      }
+
+      router.navigate({ to: "/dashboard" });
+    };
+
+    finish().catch(() => router.navigate({ to: "/dashboard" }));
+  }, [isPending, router, session]);
+
   return (
     <AuthShell
       eyebrow="SSO callback"

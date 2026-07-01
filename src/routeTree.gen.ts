@@ -15,18 +15,33 @@ import { Route as CloudRouteImport } from './routes/cloud'
 import { Route as BusinessRouteImport } from './routes/business'
 import { Route as AiAgentsRouteImport } from './routes/ai-agents'
 import { Route as AiRouteImport } from './routes/ai'
+import { Route as AffiliatesRouteImport } from './routes/affiliates'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard/index'
 import { Route as AuthIndexRouteImport } from './routes/auth/index'
+import { Route as WebsiteApprovalTokenRouteImport } from './routes/website-approval/$token'
+import { Route as DashboardWebsitesRouteImport } from './routes/dashboard/websites'
+import { Route as DashboardWebsiteWizardRouteImport } from './routes/dashboard/website-wizard'
+import { Route as DashboardWebsiteProjectsRouteImport } from './routes/dashboard/website-projects'
 import { Route as DashboardUsersRouteImport } from './routes/dashboard/users'
 import { Route as DashboardSupportRouteImport } from './routes/dashboard/support'
 import { Route as DashboardSettingsRouteImport } from './routes/dashboard/settings'
-import { Route as DashboardSessionsRouteImport } from './routes/dashboard/sessions'
 import { Route as DashboardRolesRouteImport } from './routes/dashboard/roles'
 import { Route as DashboardReportsRouteImport } from './routes/dashboard/reports'
+import { Route as DashboardProductsRouteImport } from './routes/dashboard/products'
+import { Route as DashboardIntelligenceWizardRouteImport } from './routes/dashboard/intelligence-wizard'
+import { Route as DashboardIntelligenceRouteImport } from './routes/dashboard/intelligence'
 import { Route as DashboardIntegrationsRouteImport } from './routes/dashboard/integrations'
+import { Route as DashboardHostingRouteImport } from './routes/dashboard/hosting'
+import { Route as DashboardDomainsRouteImport } from './routes/dashboard/domains'
+import { Route as DashboardCustomersRouteImport } from './routes/dashboard/customers'
+import { Route as DashboardCrmRouteImport } from './routes/dashboard/crm'
 import { Route as DashboardBillingRouteImport } from './routes/dashboard/billing'
 import { Route as DashboardAiWizardRouteImport } from './routes/dashboard/ai-wizard'
+import { Route as DashboardAgentsRouteImport } from './routes/dashboard/agents'
+import { Route as DashboardAffiliatesRouteImport } from './routes/dashboard/affiliates'
+import { Route as DashboardAffiliateAdminRouteImport } from './routes/dashboard/affiliate-admin'
+import { Route as DashboardAdministrationRouteImport } from './routes/dashboard/administration'
 import { Route as DashboardActivityLogsRouteImport } from './routes/dashboard/activity-logs'
 import { Route as DashboardLayoutRouteImport } from './routes/dashboard/_layout'
 import { Route as AuthVerifyEmailRouteImport } from './routes/auth/verify-email'
@@ -37,8 +52,11 @@ import { Route as AuthSignInRouteImport } from './routes/auth/sign-in'
 import { Route as AuthResetPasswordRouteImport } from './routes/auth/reset-password'
 import { Route as AuthLinkAccountRouteImport } from './routes/auth/link-account'
 import { Route as AuthForgotPasswordRouteImport } from './routes/auth/forgot-password'
+import { Route as DashboardWebsitesWebsiteIdRouteImport } from './routes/dashboard/websites/$websiteId'
 import { Route as DashboardUsersUserIdRouteImport } from './routes/dashboard/users/$userId'
 import { Route as DashboardSupportTicketIdRouteImport } from './routes/dashboard/support/$ticketId'
+import { Route as DashboardDomainsNewRouteImport } from './routes/dashboard/domains/new'
+import { Route as DashboardBillingInvoicesInvoiceIdRouteImport } from './routes/dashboard/billing/invoices/$invoiceId'
 
 const PricingRoute = PricingRouteImport.update({
   id: '/pricing',
@@ -70,6 +88,11 @@ const AiRoute = AiRouteImport.update({
   path: '/ai',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AffiliatesRoute = AffiliatesRouteImport.update({
+  id: '/affiliates',
+  path: '/affiliates',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -85,6 +108,27 @@ const AuthIndexRoute = AuthIndexRouteImport.update({
   path: '/auth/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WebsiteApprovalTokenRoute = WebsiteApprovalTokenRouteImport.update({
+  id: '/website-approval/$token',
+  path: '/website-approval/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardWebsitesRoute = DashboardWebsitesRouteImport.update({
+  id: '/dashboard/websites',
+  path: '/dashboard/websites',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardWebsiteWizardRoute = DashboardWebsiteWizardRouteImport.update({
+  id: '/dashboard/website-wizard',
+  path: '/dashboard/website-wizard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardWebsiteProjectsRoute =
+  DashboardWebsiteProjectsRouteImport.update({
+    id: '/dashboard/website-projects',
+    path: '/dashboard/website-projects',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const DashboardUsersRoute = DashboardUsersRouteImport.update({
   id: '/dashboard/users',
   path: '/dashboard/users',
@@ -100,11 +144,6 @@ const DashboardSettingsRoute = DashboardSettingsRouteImport.update({
   path: '/dashboard/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DashboardSessionsRoute = DashboardSessionsRouteImport.update({
-  id: '/dashboard/sessions',
-  path: '/dashboard/sessions',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const DashboardRolesRoute = DashboardRolesRouteImport.update({
   id: '/dashboard/roles',
   path: '/dashboard/roles',
@@ -115,9 +154,45 @@ const DashboardReportsRoute = DashboardReportsRouteImport.update({
   path: '/dashboard/reports',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashboardProductsRoute = DashboardProductsRouteImport.update({
+  id: '/dashboard/products',
+  path: '/dashboard/products',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardIntelligenceWizardRoute =
+  DashboardIntelligenceWizardRouteImport.update({
+    id: '/dashboard/intelligence-wizard',
+    path: '/dashboard/intelligence-wizard',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const DashboardIntelligenceRoute = DashboardIntelligenceRouteImport.update({
+  id: '/dashboard/intelligence',
+  path: '/dashboard/intelligence',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardIntegrationsRoute = DashboardIntegrationsRouteImport.update({
   id: '/dashboard/integrations',
   path: '/dashboard/integrations',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardHostingRoute = DashboardHostingRouteImport.update({
+  id: '/dashboard/hosting',
+  path: '/dashboard/hosting',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardDomainsRoute = DashboardDomainsRouteImport.update({
+  id: '/dashboard/domains',
+  path: '/dashboard/domains',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardCustomersRoute = DashboardCustomersRouteImport.update({
+  id: '/dashboard/customers',
+  path: '/dashboard/customers',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardCrmRoute = DashboardCrmRouteImport.update({
+  id: '/dashboard/crm',
+  path: '/dashboard/crm',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardBillingRoute = DashboardBillingRouteImport.update({
@@ -128,6 +203,26 @@ const DashboardBillingRoute = DashboardBillingRouteImport.update({
 const DashboardAiWizardRoute = DashboardAiWizardRouteImport.update({
   id: '/dashboard/ai-wizard',
   path: '/dashboard/ai-wizard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardAgentsRoute = DashboardAgentsRouteImport.update({
+  id: '/dashboard/agents',
+  path: '/dashboard/agents',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardAffiliatesRoute = DashboardAffiliatesRouteImport.update({
+  id: '/dashboard/affiliates',
+  path: '/dashboard/affiliates',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardAffiliateAdminRoute = DashboardAffiliateAdminRouteImport.update({
+  id: '/dashboard/affiliate-admin',
+  path: '/dashboard/affiliate-admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardAdministrationRoute = DashboardAdministrationRouteImport.update({
+  id: '/dashboard/administration',
+  path: '/dashboard/administration',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardActivityLogsRoute = DashboardActivityLogsRouteImport.update({
@@ -180,6 +275,12 @@ const AuthForgotPasswordRoute = AuthForgotPasswordRouteImport.update({
   path: '/auth/forgot-password',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashboardWebsitesWebsiteIdRoute =
+  DashboardWebsitesWebsiteIdRouteImport.update({
+    id: '/$websiteId',
+    path: '/$websiteId',
+    getParentRoute: () => DashboardWebsitesRoute,
+  } as any)
 const DashboardUsersUserIdRoute = DashboardUsersUserIdRouteImport.update({
   id: '/$userId',
   path: '/$userId',
@@ -191,9 +292,21 @@ const DashboardSupportTicketIdRoute =
     path: '/$ticketId',
     getParentRoute: () => DashboardSupportRoute,
   } as any)
+const DashboardDomainsNewRoute = DashboardDomainsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => DashboardDomainsRoute,
+} as any)
+const DashboardBillingInvoicesInvoiceIdRoute =
+  DashboardBillingInvoicesInvoiceIdRouteImport.update({
+    id: '/invoices/$invoiceId',
+    path: '/invoices/$invoiceId',
+    getParentRoute: () => DashboardBillingRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/affiliates': typeof AffiliatesRoute
   '/ai': typeof AiRoute
   '/ai-agents': typeof AiAgentsRoute
   '/business': typeof BusinessRoute
@@ -210,22 +323,40 @@ export interface FileRoutesByFullPath {
   '/auth/verify-email': typeof AuthVerifyEmailRoute
   '/dashboard': typeof DashboardLayoutRoute
   '/dashboard/activity-logs': typeof DashboardActivityLogsRoute
+  '/dashboard/administration': typeof DashboardAdministrationRoute
+  '/dashboard/affiliate-admin': typeof DashboardAffiliateAdminRoute
+  '/dashboard/affiliates': typeof DashboardAffiliatesRoute
+  '/dashboard/agents': typeof DashboardAgentsRoute
   '/dashboard/ai-wizard': typeof DashboardAiWizardRoute
-  '/dashboard/billing': typeof DashboardBillingRoute
+  '/dashboard/billing': typeof DashboardBillingRouteWithChildren
+  '/dashboard/crm': typeof DashboardCrmRoute
+  '/dashboard/customers': typeof DashboardCustomersRoute
+  '/dashboard/domains': typeof DashboardDomainsRouteWithChildren
+  '/dashboard/hosting': typeof DashboardHostingRoute
   '/dashboard/integrations': typeof DashboardIntegrationsRoute
+  '/dashboard/intelligence': typeof DashboardIntelligenceRoute
+  '/dashboard/intelligence-wizard': typeof DashboardIntelligenceWizardRoute
+  '/dashboard/products': typeof DashboardProductsRoute
   '/dashboard/reports': typeof DashboardReportsRoute
   '/dashboard/roles': typeof DashboardRolesRoute
-  '/dashboard/sessions': typeof DashboardSessionsRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/support': typeof DashboardSupportRouteWithChildren
   '/dashboard/users': typeof DashboardUsersRouteWithChildren
+  '/dashboard/website-projects': typeof DashboardWebsiteProjectsRoute
+  '/dashboard/website-wizard': typeof DashboardWebsiteWizardRoute
+  '/dashboard/websites': typeof DashboardWebsitesRouteWithChildren
+  '/website-approval/$token': typeof WebsiteApprovalTokenRoute
   '/auth/': typeof AuthIndexRoute
   '/dashboard/': typeof DashboardIndexRoute
+  '/dashboard/domains/new': typeof DashboardDomainsNewRoute
   '/dashboard/support/$ticketId': typeof DashboardSupportTicketIdRoute
   '/dashboard/users/$userId': typeof DashboardUsersUserIdRoute
+  '/dashboard/websites/$websiteId': typeof DashboardWebsitesWebsiteIdRoute
+  '/dashboard/billing/invoices/$invoiceId': typeof DashboardBillingInvoicesInvoiceIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/affiliates': typeof AffiliatesRoute
   '/ai': typeof AiRoute
   '/ai-agents': typeof AiAgentsRoute
   '/business': typeof BusinessRoute
@@ -242,22 +373,40 @@ export interface FileRoutesByTo {
   '/auth/verify-email': typeof AuthVerifyEmailRoute
   '/dashboard': typeof DashboardIndexRoute
   '/dashboard/activity-logs': typeof DashboardActivityLogsRoute
+  '/dashboard/administration': typeof DashboardAdministrationRoute
+  '/dashboard/affiliate-admin': typeof DashboardAffiliateAdminRoute
+  '/dashboard/affiliates': typeof DashboardAffiliatesRoute
+  '/dashboard/agents': typeof DashboardAgentsRoute
   '/dashboard/ai-wizard': typeof DashboardAiWizardRoute
-  '/dashboard/billing': typeof DashboardBillingRoute
+  '/dashboard/billing': typeof DashboardBillingRouteWithChildren
+  '/dashboard/crm': typeof DashboardCrmRoute
+  '/dashboard/customers': typeof DashboardCustomersRoute
+  '/dashboard/domains': typeof DashboardDomainsRouteWithChildren
+  '/dashboard/hosting': typeof DashboardHostingRoute
   '/dashboard/integrations': typeof DashboardIntegrationsRoute
+  '/dashboard/intelligence': typeof DashboardIntelligenceRoute
+  '/dashboard/intelligence-wizard': typeof DashboardIntelligenceWizardRoute
+  '/dashboard/products': typeof DashboardProductsRoute
   '/dashboard/reports': typeof DashboardReportsRoute
   '/dashboard/roles': typeof DashboardRolesRoute
-  '/dashboard/sessions': typeof DashboardSessionsRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/support': typeof DashboardSupportRouteWithChildren
   '/dashboard/users': typeof DashboardUsersRouteWithChildren
+  '/dashboard/website-projects': typeof DashboardWebsiteProjectsRoute
+  '/dashboard/website-wizard': typeof DashboardWebsiteWizardRoute
+  '/dashboard/websites': typeof DashboardWebsitesRouteWithChildren
+  '/website-approval/$token': typeof WebsiteApprovalTokenRoute
   '/auth': typeof AuthIndexRoute
+  '/dashboard/domains/new': typeof DashboardDomainsNewRoute
   '/dashboard/support/$ticketId': typeof DashboardSupportTicketIdRoute
   '/dashboard/users/$userId': typeof DashboardUsersUserIdRoute
+  '/dashboard/websites/$websiteId': typeof DashboardWebsitesWebsiteIdRoute
+  '/dashboard/billing/invoices/$invoiceId': typeof DashboardBillingInvoicesInvoiceIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/affiliates': typeof AffiliatesRoute
   '/ai': typeof AiRoute
   '/ai-agents': typeof AiAgentsRoute
   '/business': typeof BusinessRoute
@@ -274,24 +423,42 @@ export interface FileRoutesById {
   '/auth/verify-email': typeof AuthVerifyEmailRoute
   '/dashboard/_layout': typeof DashboardLayoutRoute
   '/dashboard/activity-logs': typeof DashboardActivityLogsRoute
+  '/dashboard/administration': typeof DashboardAdministrationRoute
+  '/dashboard/affiliate-admin': typeof DashboardAffiliateAdminRoute
+  '/dashboard/affiliates': typeof DashboardAffiliatesRoute
+  '/dashboard/agents': typeof DashboardAgentsRoute
   '/dashboard/ai-wizard': typeof DashboardAiWizardRoute
-  '/dashboard/billing': typeof DashboardBillingRoute
+  '/dashboard/billing': typeof DashboardBillingRouteWithChildren
+  '/dashboard/crm': typeof DashboardCrmRoute
+  '/dashboard/customers': typeof DashboardCustomersRoute
+  '/dashboard/domains': typeof DashboardDomainsRouteWithChildren
+  '/dashboard/hosting': typeof DashboardHostingRoute
   '/dashboard/integrations': typeof DashboardIntegrationsRoute
+  '/dashboard/intelligence': typeof DashboardIntelligenceRoute
+  '/dashboard/intelligence-wizard': typeof DashboardIntelligenceWizardRoute
+  '/dashboard/products': typeof DashboardProductsRoute
   '/dashboard/reports': typeof DashboardReportsRoute
   '/dashboard/roles': typeof DashboardRolesRoute
-  '/dashboard/sessions': typeof DashboardSessionsRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/support': typeof DashboardSupportRouteWithChildren
   '/dashboard/users': typeof DashboardUsersRouteWithChildren
+  '/dashboard/website-projects': typeof DashboardWebsiteProjectsRoute
+  '/dashboard/website-wizard': typeof DashboardWebsiteWizardRoute
+  '/dashboard/websites': typeof DashboardWebsitesRouteWithChildren
+  '/website-approval/$token': typeof WebsiteApprovalTokenRoute
   '/auth/': typeof AuthIndexRoute
   '/dashboard/': typeof DashboardIndexRoute
+  '/dashboard/domains/new': typeof DashboardDomainsNewRoute
   '/dashboard/support/$ticketId': typeof DashboardSupportTicketIdRoute
   '/dashboard/users/$userId': typeof DashboardUsersUserIdRoute
+  '/dashboard/websites/$websiteId': typeof DashboardWebsitesWebsiteIdRoute
+  '/dashboard/billing/invoices/$invoiceId': typeof DashboardBillingInvoicesInvoiceIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/affiliates'
     | '/ai'
     | '/ai-agents'
     | '/business'
@@ -308,22 +475,40 @@ export interface FileRouteTypes {
     | '/auth/verify-email'
     | '/dashboard'
     | '/dashboard/activity-logs'
+    | '/dashboard/administration'
+    | '/dashboard/affiliate-admin'
+    | '/dashboard/affiliates'
+    | '/dashboard/agents'
     | '/dashboard/ai-wizard'
     | '/dashboard/billing'
+    | '/dashboard/crm'
+    | '/dashboard/customers'
+    | '/dashboard/domains'
+    | '/dashboard/hosting'
     | '/dashboard/integrations'
+    | '/dashboard/intelligence'
+    | '/dashboard/intelligence-wizard'
+    | '/dashboard/products'
     | '/dashboard/reports'
     | '/dashboard/roles'
-    | '/dashboard/sessions'
     | '/dashboard/settings'
     | '/dashboard/support'
     | '/dashboard/users'
+    | '/dashboard/website-projects'
+    | '/dashboard/website-wizard'
+    | '/dashboard/websites'
+    | '/website-approval/$token'
     | '/auth/'
     | '/dashboard/'
+    | '/dashboard/domains/new'
     | '/dashboard/support/$ticketId'
     | '/dashboard/users/$userId'
+    | '/dashboard/websites/$websiteId'
+    | '/dashboard/billing/invoices/$invoiceId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/affiliates'
     | '/ai'
     | '/ai-agents'
     | '/business'
@@ -340,21 +525,39 @@ export interface FileRouteTypes {
     | '/auth/verify-email'
     | '/dashboard'
     | '/dashboard/activity-logs'
+    | '/dashboard/administration'
+    | '/dashboard/affiliate-admin'
+    | '/dashboard/affiliates'
+    | '/dashboard/agents'
     | '/dashboard/ai-wizard'
     | '/dashboard/billing'
+    | '/dashboard/crm'
+    | '/dashboard/customers'
+    | '/dashboard/domains'
+    | '/dashboard/hosting'
     | '/dashboard/integrations'
+    | '/dashboard/intelligence'
+    | '/dashboard/intelligence-wizard'
+    | '/dashboard/products'
     | '/dashboard/reports'
     | '/dashboard/roles'
-    | '/dashboard/sessions'
     | '/dashboard/settings'
     | '/dashboard/support'
     | '/dashboard/users'
+    | '/dashboard/website-projects'
+    | '/dashboard/website-wizard'
+    | '/dashboard/websites'
+    | '/website-approval/$token'
     | '/auth'
+    | '/dashboard/domains/new'
     | '/dashboard/support/$ticketId'
     | '/dashboard/users/$userId'
+    | '/dashboard/websites/$websiteId'
+    | '/dashboard/billing/invoices/$invoiceId'
   id:
     | '__root__'
     | '/'
+    | '/affiliates'
     | '/ai'
     | '/ai-agents'
     | '/business'
@@ -371,23 +574,41 @@ export interface FileRouteTypes {
     | '/auth/verify-email'
     | '/dashboard/_layout'
     | '/dashboard/activity-logs'
+    | '/dashboard/administration'
+    | '/dashboard/affiliate-admin'
+    | '/dashboard/affiliates'
+    | '/dashboard/agents'
     | '/dashboard/ai-wizard'
     | '/dashboard/billing'
+    | '/dashboard/crm'
+    | '/dashboard/customers'
+    | '/dashboard/domains'
+    | '/dashboard/hosting'
     | '/dashboard/integrations'
+    | '/dashboard/intelligence'
+    | '/dashboard/intelligence-wizard'
+    | '/dashboard/products'
     | '/dashboard/reports'
     | '/dashboard/roles'
-    | '/dashboard/sessions'
     | '/dashboard/settings'
     | '/dashboard/support'
     | '/dashboard/users'
+    | '/dashboard/website-projects'
+    | '/dashboard/website-wizard'
+    | '/dashboard/websites'
+    | '/website-approval/$token'
     | '/auth/'
     | '/dashboard/'
+    | '/dashboard/domains/new'
     | '/dashboard/support/$ticketId'
     | '/dashboard/users/$userId'
+    | '/dashboard/websites/$websiteId'
+    | '/dashboard/billing/invoices/$invoiceId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AffiliatesRoute: typeof AffiliatesRoute
   AiRoute: typeof AiRoute
   AiAgentsRoute: typeof AiAgentsRoute
   BusinessRoute: typeof BusinessRoute
@@ -404,15 +625,29 @@ export interface RootRouteChildren {
   AuthVerifyEmailRoute: typeof AuthVerifyEmailRoute
   DashboardLayoutRoute: typeof DashboardLayoutRoute
   DashboardActivityLogsRoute: typeof DashboardActivityLogsRoute
+  DashboardAdministrationRoute: typeof DashboardAdministrationRoute
+  DashboardAffiliateAdminRoute: typeof DashboardAffiliateAdminRoute
+  DashboardAffiliatesRoute: typeof DashboardAffiliatesRoute
+  DashboardAgentsRoute: typeof DashboardAgentsRoute
   DashboardAiWizardRoute: typeof DashboardAiWizardRoute
-  DashboardBillingRoute: typeof DashboardBillingRoute
+  DashboardBillingRoute: typeof DashboardBillingRouteWithChildren
+  DashboardCrmRoute: typeof DashboardCrmRoute
+  DashboardCustomersRoute: typeof DashboardCustomersRoute
+  DashboardDomainsRoute: typeof DashboardDomainsRouteWithChildren
+  DashboardHostingRoute: typeof DashboardHostingRoute
   DashboardIntegrationsRoute: typeof DashboardIntegrationsRoute
+  DashboardIntelligenceRoute: typeof DashboardIntelligenceRoute
+  DashboardIntelligenceWizardRoute: typeof DashboardIntelligenceWizardRoute
+  DashboardProductsRoute: typeof DashboardProductsRoute
   DashboardReportsRoute: typeof DashboardReportsRoute
   DashboardRolesRoute: typeof DashboardRolesRoute
-  DashboardSessionsRoute: typeof DashboardSessionsRoute
   DashboardSettingsRoute: typeof DashboardSettingsRoute
   DashboardSupportRoute: typeof DashboardSupportRouteWithChildren
   DashboardUsersRoute: typeof DashboardUsersRouteWithChildren
+  DashboardWebsiteProjectsRoute: typeof DashboardWebsiteProjectsRoute
+  DashboardWebsiteWizardRoute: typeof DashboardWebsiteWizardRoute
+  DashboardWebsitesRoute: typeof DashboardWebsitesRouteWithChildren
+  WebsiteApprovalTokenRoute: typeof WebsiteApprovalTokenRoute
   AuthIndexRoute: typeof AuthIndexRoute
   DashboardIndexRoute: typeof DashboardIndexRoute
 }
@@ -461,6 +696,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AiRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/affiliates': {
+      id: '/affiliates'
+      path: '/affiliates'
+      fullPath: '/affiliates'
+      preLoaderRoute: typeof AffiliatesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -480,6 +722,34 @@ declare module '@tanstack/react-router' {
       path: '/auth'
       fullPath: '/auth/'
       preLoaderRoute: typeof AuthIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/website-approval/$token': {
+      id: '/website-approval/$token'
+      path: '/website-approval/$token'
+      fullPath: '/website-approval/$token'
+      preLoaderRoute: typeof WebsiteApprovalTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/websites': {
+      id: '/dashboard/websites'
+      path: '/dashboard/websites'
+      fullPath: '/dashboard/websites'
+      preLoaderRoute: typeof DashboardWebsitesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/website-wizard': {
+      id: '/dashboard/website-wizard'
+      path: '/dashboard/website-wizard'
+      fullPath: '/dashboard/website-wizard'
+      preLoaderRoute: typeof DashboardWebsiteWizardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/website-projects': {
+      id: '/dashboard/website-projects'
+      path: '/dashboard/website-projects'
+      fullPath: '/dashboard/website-projects'
+      preLoaderRoute: typeof DashboardWebsiteProjectsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard/users': {
@@ -503,13 +773,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardSettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/dashboard/sessions': {
-      id: '/dashboard/sessions'
-      path: '/dashboard/sessions'
-      fullPath: '/dashboard/sessions'
-      preLoaderRoute: typeof DashboardSessionsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/dashboard/roles': {
       id: '/dashboard/roles'
       path: '/dashboard/roles'
@@ -524,11 +787,60 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardReportsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/dashboard/products': {
+      id: '/dashboard/products'
+      path: '/dashboard/products'
+      fullPath: '/dashboard/products'
+      preLoaderRoute: typeof DashboardProductsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/intelligence-wizard': {
+      id: '/dashboard/intelligence-wizard'
+      path: '/dashboard/intelligence-wizard'
+      fullPath: '/dashboard/intelligence-wizard'
+      preLoaderRoute: typeof DashboardIntelligenceWizardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/intelligence': {
+      id: '/dashboard/intelligence'
+      path: '/dashboard/intelligence'
+      fullPath: '/dashboard/intelligence'
+      preLoaderRoute: typeof DashboardIntelligenceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dashboard/integrations': {
       id: '/dashboard/integrations'
       path: '/dashboard/integrations'
       fullPath: '/dashboard/integrations'
       preLoaderRoute: typeof DashboardIntegrationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/hosting': {
+      id: '/dashboard/hosting'
+      path: '/dashboard/hosting'
+      fullPath: '/dashboard/hosting'
+      preLoaderRoute: typeof DashboardHostingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/domains': {
+      id: '/dashboard/domains'
+      path: '/dashboard/domains'
+      fullPath: '/dashboard/domains'
+      preLoaderRoute: typeof DashboardDomainsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/customers': {
+      id: '/dashboard/customers'
+      path: '/dashboard/customers'
+      fullPath: '/dashboard/customers'
+      preLoaderRoute: typeof DashboardCustomersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/crm': {
+      id: '/dashboard/crm'
+      path: '/dashboard/crm'
+      fullPath: '/dashboard/crm'
+      preLoaderRoute: typeof DashboardCrmRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard/billing': {
@@ -543,6 +855,34 @@ declare module '@tanstack/react-router' {
       path: '/dashboard/ai-wizard'
       fullPath: '/dashboard/ai-wizard'
       preLoaderRoute: typeof DashboardAiWizardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/agents': {
+      id: '/dashboard/agents'
+      path: '/dashboard/agents'
+      fullPath: '/dashboard/agents'
+      preLoaderRoute: typeof DashboardAgentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/affiliates': {
+      id: '/dashboard/affiliates'
+      path: '/dashboard/affiliates'
+      fullPath: '/dashboard/affiliates'
+      preLoaderRoute: typeof DashboardAffiliatesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/affiliate-admin': {
+      id: '/dashboard/affiliate-admin'
+      path: '/dashboard/affiliate-admin'
+      fullPath: '/dashboard/affiliate-admin'
+      preLoaderRoute: typeof DashboardAffiliateAdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/administration': {
+      id: '/dashboard/administration'
+      path: '/dashboard/administration'
+      fullPath: '/dashboard/administration'
+      preLoaderRoute: typeof DashboardAdministrationRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard/activity-logs': {
@@ -615,6 +955,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthForgotPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/dashboard/websites/$websiteId': {
+      id: '/dashboard/websites/$websiteId'
+      path: '/$websiteId'
+      fullPath: '/dashboard/websites/$websiteId'
+      preLoaderRoute: typeof DashboardWebsitesWebsiteIdRouteImport
+      parentRoute: typeof DashboardWebsitesRoute
+    }
     '/dashboard/users/$userId': {
       id: '/dashboard/users/$userId'
       path: '/$userId'
@@ -629,8 +976,45 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardSupportTicketIdRouteImport
       parentRoute: typeof DashboardSupportRoute
     }
+    '/dashboard/domains/new': {
+      id: '/dashboard/domains/new'
+      path: '/new'
+      fullPath: '/dashboard/domains/new'
+      preLoaderRoute: typeof DashboardDomainsNewRouteImport
+      parentRoute: typeof DashboardDomainsRoute
+    }
+    '/dashboard/billing/invoices/$invoiceId': {
+      id: '/dashboard/billing/invoices/$invoiceId'
+      path: '/invoices/$invoiceId'
+      fullPath: '/dashboard/billing/invoices/$invoiceId'
+      preLoaderRoute: typeof DashboardBillingInvoicesInvoiceIdRouteImport
+      parentRoute: typeof DashboardBillingRoute
+    }
   }
 }
+
+interface DashboardBillingRouteChildren {
+  DashboardBillingInvoicesInvoiceIdRoute: typeof DashboardBillingInvoicesInvoiceIdRoute
+}
+
+const DashboardBillingRouteChildren: DashboardBillingRouteChildren = {
+  DashboardBillingInvoicesInvoiceIdRoute:
+    DashboardBillingInvoicesInvoiceIdRoute,
+}
+
+const DashboardBillingRouteWithChildren =
+  DashboardBillingRoute._addFileChildren(DashboardBillingRouteChildren)
+
+interface DashboardDomainsRouteChildren {
+  DashboardDomainsNewRoute: typeof DashboardDomainsNewRoute
+}
+
+const DashboardDomainsRouteChildren: DashboardDomainsRouteChildren = {
+  DashboardDomainsNewRoute: DashboardDomainsNewRoute,
+}
+
+const DashboardDomainsRouteWithChildren =
+  DashboardDomainsRoute._addFileChildren(DashboardDomainsRouteChildren)
 
 interface DashboardSupportRouteChildren {
   DashboardSupportTicketIdRoute: typeof DashboardSupportTicketIdRoute
@@ -655,8 +1039,20 @@ const DashboardUsersRouteWithChildren = DashboardUsersRoute._addFileChildren(
   DashboardUsersRouteChildren,
 )
 
+interface DashboardWebsitesRouteChildren {
+  DashboardWebsitesWebsiteIdRoute: typeof DashboardWebsitesWebsiteIdRoute
+}
+
+const DashboardWebsitesRouteChildren: DashboardWebsitesRouteChildren = {
+  DashboardWebsitesWebsiteIdRoute: DashboardWebsitesWebsiteIdRoute,
+}
+
+const DashboardWebsitesRouteWithChildren =
+  DashboardWebsitesRoute._addFileChildren(DashboardWebsitesRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AffiliatesRoute: AffiliatesRoute,
   AiRoute: AiRoute,
   AiAgentsRoute: AiAgentsRoute,
   BusinessRoute: BusinessRoute,
@@ -673,15 +1069,29 @@ const rootRouteChildren: RootRouteChildren = {
   AuthVerifyEmailRoute: AuthVerifyEmailRoute,
   DashboardLayoutRoute: DashboardLayoutRoute,
   DashboardActivityLogsRoute: DashboardActivityLogsRoute,
+  DashboardAdministrationRoute: DashboardAdministrationRoute,
+  DashboardAffiliateAdminRoute: DashboardAffiliateAdminRoute,
+  DashboardAffiliatesRoute: DashboardAffiliatesRoute,
+  DashboardAgentsRoute: DashboardAgentsRoute,
   DashboardAiWizardRoute: DashboardAiWizardRoute,
-  DashboardBillingRoute: DashboardBillingRoute,
+  DashboardBillingRoute: DashboardBillingRouteWithChildren,
+  DashboardCrmRoute: DashboardCrmRoute,
+  DashboardCustomersRoute: DashboardCustomersRoute,
+  DashboardDomainsRoute: DashboardDomainsRouteWithChildren,
+  DashboardHostingRoute: DashboardHostingRoute,
   DashboardIntegrationsRoute: DashboardIntegrationsRoute,
+  DashboardIntelligenceRoute: DashboardIntelligenceRoute,
+  DashboardIntelligenceWizardRoute: DashboardIntelligenceWizardRoute,
+  DashboardProductsRoute: DashboardProductsRoute,
   DashboardReportsRoute: DashboardReportsRoute,
   DashboardRolesRoute: DashboardRolesRoute,
-  DashboardSessionsRoute: DashboardSessionsRoute,
   DashboardSettingsRoute: DashboardSettingsRoute,
   DashboardSupportRoute: DashboardSupportRouteWithChildren,
   DashboardUsersRoute: DashboardUsersRouteWithChildren,
+  DashboardWebsiteProjectsRoute: DashboardWebsiteProjectsRoute,
+  DashboardWebsiteWizardRoute: DashboardWebsiteWizardRoute,
+  DashboardWebsitesRoute: DashboardWebsitesRouteWithChildren,
+  WebsiteApprovalTokenRoute: WebsiteApprovalTokenRoute,
   AuthIndexRoute: AuthIndexRoute,
   DashboardIndexRoute: DashboardIndexRoute,
 }

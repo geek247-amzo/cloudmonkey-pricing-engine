@@ -47,7 +47,7 @@ function ResetPasswordPage() {
         <div className="rounded-2xl border border-border/70 bg-muted/40 p-4">
           <KeyRound className="h-5 w-5 text-[var(--ai)]" />
           <div className="mt-3 text-sm font-semibold text-foreground">Recovery token</div>
-          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">This page represents the tokenized reset flow after the email link is opened.</p>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Use the reset link from your inbox before it expires.</p>
         </div>
         <div className="rounded-2xl border border-border/70 bg-muted/40 p-4">
           <ShieldCheck className="h-5 w-5 text-[var(--ai)]" />

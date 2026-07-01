@@ -1,7 +1,17 @@
-import type { Service } from "@/lib/pricing";
+import type { Service, ServicePlan } from "@/lib/pricing";
 import { PricingCard } from "./PricingCard";
 
-export function ServiceSection({ service, accent }: { service: Service; accent: "cloud" | "business" | "ai" }) {
+export function ServiceSection({
+  service,
+  accent,
+  currency,
+  ctaHref,
+}: {
+  service: Service;
+  accent: "cloud" | "business" | "ai";
+  currency?: "ZAR" | "USD" | "GBP" | "EUR";
+  ctaHref?: string | ((plan: ServicePlan) => string);
+}) {
   const accentColor = accent === "cloud" ? "var(--cloud)" : accent === "business" ? "var(--business)" : "var(--ai)";
   const cols =
     service.plans.length === 1
@@ -21,7 +31,7 @@ export function ServiceSection({ service, accent }: { service: Service; accent: 
       </div>
       <div className={cols}>
         {service.plans.map((p) => (
-          <PricingCard key={p.id} plan={p} accent={accent} />
+          <PricingCard key={p.id} plan={p} accent={accent} currency={currency} href={ctaHref} />
         ))}
       </div>
       {service.note && <p className="mt-4 text-xs italic text-muted-foreground">{service.note}</p>}

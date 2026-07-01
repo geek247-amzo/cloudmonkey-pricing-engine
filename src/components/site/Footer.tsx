@@ -26,12 +26,13 @@ export function Footer() {
             { to: "/business", label: "Microsoft 365" },
             { to: "/business", label: "Hosted PBX" },
             { to: "/business", label: "Security" },
+            { to: "/affiliates", label: "Affiliate Program" },
           ]} />
           <FooterCol title="AI" links={[
             { to: "/ai", label: "AI Assistant" },
             { to: "/ai-agents", label: "AI Agents" },
             { to: "/ai", label: "Voice Intelligence" },
-            { to: "/ai", label: "OpenClaw Servers" },
+            { to: "/ai", label: "AI Services" },
           ]} />
         </div>
         <div className="mt-12 flex flex-col items-start justify-between gap-4 border-t border-background/10 pt-6 text-xs text-background/60 md:flex-row md:items-center">

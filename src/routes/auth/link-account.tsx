@@ -35,7 +35,7 @@ function LinkAccountPage() {
             </div>
             <div>
               <div className="text-sm font-semibold text-foreground">Primary account</div>
-              <p className="text-sm text-muted-foreground">alex@cloudmonkey.co.za</p>
+              <p className="text-sm text-muted-foreground">Use the email address on your CloudMonkey account.</p>
             </div>
           </div>
 
@@ -56,7 +56,7 @@ function LinkAccountPage() {
 
       <div className="space-y-2">
         <Label htmlFor="linkEmail">Confirm account email</Label>
-        <Input id="linkEmail" defaultValue="alex@cloudmonkey.co.za" />
+        <Input id="linkEmail" type="email" placeholder="name@company.com" />
       </div>
 
       <div className="flex flex-wrap gap-3">

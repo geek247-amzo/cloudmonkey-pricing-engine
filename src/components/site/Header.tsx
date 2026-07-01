@@ -3,6 +3,7 @@ import { Menu, X } from "lucide-react";
 import { useState } from "react";
 import { CurrencySwitcher } from "./CurrencySwitcher";
 import logo from "@/assets/cm-logo.png";
+import { useHydratedSession } from "@/hooks/use-admin-access";
 
 const NAV = [
   { to: "/cloud", label: "Cloud" },
@@ -10,11 +11,16 @@ const NAV = [
   { to: "/ai", label: "AI" },
   { to: "/ai-agents", label: "AI Agents" },
   { to: "/domains", label: "Domains" },
-  { to: "/pricing", label: "Pricing" },
 ] as const;
 
 export function Header() {
   const [open, setOpen] = useState(false);
+  const { data: session, authReady } = useHydratedSession();
+  const isSignedIn = authReady && !!session;
+  const signInHref = isSignedIn ? "/dashboard" : "/auth/sign-in";
+  const signInLabel = isSignedIn ? "Dashboard" : "Sign in";
+  const getStartedHref = isSignedIn ? "/dashboard" : "/auth/sign-up";
+  const getStartedLabel = isSignedIn ? "Dashboard" : "Get Started";
   return (
     <header className="sticky top-0 z-50 border-b border-border/60 bg-background/80 backdrop-blur-xl">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
@@ -38,15 +44,15 @@ export function Header() {
         </nav>
         <div className="hidden items-center gap-3 lg:flex">
           <CurrencySwitcher />
-          <Link to="/auth/sign-in" className="text-sm font-medium text-muted-foreground hover:text-foreground">
-            Sign in
+          <Link to={signInHref} className="text-sm font-medium text-muted-foreground hover:text-foreground">
+            {signInLabel}
           </Link>
           <Link
-            to="/auth/sign-up"
+            to={getStartedHref}
             className="rounded-full px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-[var(--shadow-elevated)] transition-transform hover:scale-[1.02]"
             style={{ background: "var(--gradient-primary)" }}
           >
-            Get Started
+            {getStartedLabel}
           </Link>
         </div>
         <button className="lg:hidden" onClick={() => setOpen(!open)} aria-label="Menu">
@@ -69,12 +75,12 @@ export function Header() {
             <div className="mt-2 flex items-center justify-between border-t border-border pt-3">
               <CurrencySwitcher />
               <Link
-                to="/auth/sign-up"
+                to={getStartedHref}
                 className="rounded-full px-4 py-2 text-sm font-semibold text-primary-foreground"
                 style={{ background: "var(--gradient-primary)" }}
                 onClick={() => setOpen(false)}
               >
-                Get Started
+                {getStartedLabel}
               </Link>
             </div>
           </div>

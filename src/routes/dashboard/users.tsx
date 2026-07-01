@@ -1,10 +1,14 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowRight, MailPlus, ShieldCheck, UserRound } from "lucide-react";
+import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowRight, RefreshCcw, ShieldCheck, UserRound } from "lucide-react";
+import { useEffect } from "react";
+import { toast } from "sonner";
 
 import { PageHeader } from "@/components/dashboard/PageHeader";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { useAdminAccess } from "@/hooks/use-admin-access";
 
 export const Route = createFileRoute("/dashboard/users")({
   head: () => ({
@@ -13,114 +17,138 @@ export const Route = createFileRoute("/dashboard/users")({
   component: UsersPage,
 });
 
-const USERS = [
-  { name: "Alex Johnson", email: "alex@cloudmonkey.co.za", role: "Owner", provider: "Google", status: "Active" },
-  { name: "Mpho Dlamini", email: "mpho@cloudmonkey.co.za", role: "Admin", provider: "Office 365", status: "Active" },
-  { name: "Sophie Naidoo", email: "sophie@cloudmonkey.co.za", role: "Analyst", provider: "Email", status: "Invited" },
-  { name: "David Smith", email: "david@cloudmonkey.co.za", role: "Support", provider: "Google", status: "Suspended" },
-] as const;
+const roles = ["owner", "admin", "support", "finance", "customer"] as const;
 
 function UsersPage() {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { authReady, isAdmin } = useAdminAccess();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const isChildRoute = pathname !== "/dashboard/users";
+
+  useEffect(() => {
+    if (!isChildRoute && authReady && !isAdmin) navigate({ to: "/dashboard" });
+  }, [authReady, isAdmin, isChildRoute, navigate]);
+
+  const { data: users, isLoading } = useQuery({
+    queryKey: ["admin", "users"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/users");
+      if (!res.ok) throw new Error("Failed to fetch users");
+      return res.json();
+    },
+    enabled: !isChildRoute && isAdmin,
+  });
+
+  const roleMutation = useMutation({
+    mutationFn: async ({ userId, role }: { userId: string; role: string }) => {
+      const res = await fetch("/api/admin/users/role", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, role }),
+      });
+      if (!res.ok) throw new Error("Failed to update role");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast.success("User role updated");
+      queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
+    },
+    onError: () => toast.error("Could not update role"),
+  });
+
+  if (isChildRoute) return <Outlet />;
+  if (!authReady || !isAdmin) return <div className="p-8 text-center">Checking permissions...</div>;
+
+  const roleCounts = roles.map((role) => ({
+    role,
+    count: users?.filter((item: any) => item.role === role).length ?? 0,
+  }));
+
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Users"
-        title={<>User management.</>}
-        subtitle="View team members, provider status, and access levels. Link, invite, or review users from one place."
-        actions={
-          <>
-            <Button variant="outline" className="rounded-2xl border-border/70 bg-card shadow-sm">
-              <MailPlus className="h-4 w-4" />
-              Invite via email
-            </Button>
-            <Button asChild className="rounded-2xl bg-[var(--ai)] shadow-[var(--shadow-elevated)]">
-              <Link to="/dashboard/users/alex-johnson">
-                Open profile
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-            </Button>
-          </>
-        }
+        eyebrow="Administration"
+        title={<>Users and access.</>}
+        subtitle="Manage account roles and inspect customer ownership across the platform."
       />
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        {[
-          { label: "Active", value: "102", accent: "var(--cloud)" },
-          { label: "Invited", value: "14", accent: "var(--business)" },
-          { label: "Need review", value: "6", accent: "var(--primary)" },
-        ].map((item) => (
-          <Card key={item.label} className="border-border/70 bg-card/95 shadow-sm">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        {roleCounts.map((item) => (
+          <Card key={item.role} className="rounded-lg border-[#dfe4ef] bg-white shadow-sm">
             <CardContent className="p-5">
-              <div className="text-sm text-muted-foreground">{item.label}</div>
-              <div className="mt-2 text-3xl font-bold tracking-tight text-foreground" style={{ fontFamily: "var(--font-display)" }}>{item.value}</div>
-              <div className="mt-3 h-1.5 rounded-full bg-muted">
-                <div className="h-1.5 w-[68%] rounded-full" style={{ background: item.accent }} />
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm capitalize text-muted-foreground">{item.role}</div>
+                  <div className="mt-2 text-3xl font-bold text-[#07102c]">{item.count}</div>
+                </div>
+                <ShieldCheck className="h-5 w-5 text-[var(--ai)]" />
               </div>
             </CardContent>
           </Card>
         ))}
       </div>
 
-      <Card className="border-border/70 bg-card/95 shadow-sm">
+      <Card className="rounded-lg border-[#dfe4ef] bg-white shadow-sm">
         <CardHeader>
-          <CardTitle>Directory</CardTitle>
+          <CardTitle>Accounts</CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-left text-sm">
-            <thead className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-              <tr className="border-b border-border/70">
-                <th className="pb-3 font-semibold">User</th>
-                <th className="pb-3 font-semibold">Role</th>
-                <th className="pb-3 font-semibold">Provider</th>
-                <th className="pb-3 font-semibold">Status</th>
-                <th className="pb-3 font-semibold">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {USERS.map((user) => (
-                <tr key={user.email} className="border-b border-border/60 last:border-0">
-                  <td className="py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[var(--ai-soft)] text-[var(--ai)]">
-                        <UserRound className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <div className="font-semibold text-foreground">{user.name}</div>
-                        <div className="text-xs text-muted-foreground">{user.email}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="py-4 text-muted-foreground">{user.role}</td>
-                  <td className="py-4 text-muted-foreground">{user.provider}</td>
-                  <td className="py-4">
-                    <Badge variant={user.status === "Active" ? "default" : "secondary"} className="rounded-full">
-                      {user.status}
-                    </Badge>
-                  </td>
-                  <td className="py-4">
-                    <Button asChild variant="outline" size="sm" className="rounded-xl border-border/70 bg-card shadow-sm">
-                      <Link to="/dashboard/users/alex-johnson">View</Link>
-                    </Button>
-                  </td>
+          {isLoading ? (
+            <div className="py-10 text-center text-sm text-muted-foreground">
+              <RefreshCcw className="mx-auto mb-3 h-6 w-6 animate-spin" />
+              Loading users...
+            </div>
+          ) : (
+            <table className="w-full min-w-[760px] text-left text-sm">
+              <thead className="border-b border-border/70 text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                <tr>
+                  <th className="pb-3">User</th>
+                  <th className="pb-3">Role</th>
+                  <th className="pb-3">Verified</th>
+                  <th className="pb-3">Created</th>
+                  <th className="pb-3 text-right">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </CardContent>
-      </Card>
-
-      <Card className="border-border/70 bg-[linear-gradient(135deg,var(--cloud-soft),rgba(255,255,255,0.92))] shadow-sm">
-        <CardContent className="flex flex-wrap items-center justify-between gap-4 p-5">
-          <div>
-            <div className="text-sm font-semibold text-foreground">Account protection</div>
-            <p className="mt-1 text-sm text-muted-foreground">Review active sessions and enforce provider linking for elevated access.</p>
-          </div>
-          <Button asChild variant="outline" className="rounded-2xl border-border/70 bg-card shadow-sm">
-            <Link to="/dashboard/sessions">
-              <ShieldCheck className="h-4 w-4" />
-              Open sessions
-            </Link>
-          </Button>
+              </thead>
+              <tbody>
+                {users?.map((item: any) => (
+                  <tr key={item.id} className="border-b border-border/50 last:border-0">
+                    <td className="py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--ai-soft)] text-[var(--ai)]">
+                          <UserRound className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <div className="font-semibold text-foreground">{item.name}</div>
+                          <div className="text-xs text-muted-foreground">{item.email}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-4">
+                      <select
+                        value={item.role}
+                        className="rounded-md border border-border bg-white px-2 py-1 text-xs"
+                        onChange={(event) => roleMutation.mutate({ userId: item.id, role: event.target.value })}
+                      >
+                        {roles.map((role) => <option key={role} value={role}>{role}</option>)}
+                      </select>
+                    </td>
+                    <td className="py-4">
+                      <Badge variant={item.emailVerified ? "default" : "outline"}>{item.emailVerified ? "Verified" : "Unverified"}</Badge>
+                    </td>
+                    <td className="py-4 text-muted-foreground">{new Date(item.createdAt).toLocaleDateString()}</td>
+                    <td className="py-4 text-right">
+                      <Button asChild variant="outline" size="sm" className="rounded-lg">
+                        <Link to="/dashboard/users/$userId" params={{ userId: item.id }}>
+                          View <ArrowRight className="h-3.5 w-3.5" />
+                        </Link>
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </CardContent>
       </Card>
     </div>

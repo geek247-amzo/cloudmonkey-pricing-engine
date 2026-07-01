@@ -31,7 +31,7 @@ function VerifyEmailPage() {
           </div>
           <div>
             <div className="text-sm font-semibold text-foreground">Verification email sent</div>
-            <p className="text-sm text-muted-foreground">alex@cloudmonkey.co.za</p>
+            <p className="text-sm text-muted-foreground">Check the address used during signup.</p>
           </div>
         </div>
 

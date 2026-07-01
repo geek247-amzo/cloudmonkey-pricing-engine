@@ -1,0 +1,27 @@
+ALTER TABLE "invoice" ADD COLUMN IF NOT EXISTS "invoiceNumber" text;
+ALTER TABLE "invoice" ADD COLUMN IF NOT EXISTS "issuedAt" timestamp;
+ALTER TABLE "invoice" ADD COLUMN IF NOT EXISTS "paidAt" timestamp;
+ALTER TABLE "invoice" ADD COLUMN IF NOT EXISTS "billingPeriodStart" timestamp;
+ALTER TABLE "invoice" ADD COLUMN IF NOT EXISTS "billingPeriodEnd" timestamp;
+ALTER TABLE "invoice" ADD COLUMN IF NOT EXISTS "currency" text DEFAULT 'ZAR' NOT NULL;
+ALTER TABLE "invoice" ADD COLUMN IF NOT EXISTS "vatRateBps" integer DEFAULT 1500 NOT NULL;
+ALTER TABLE "invoice" ADD COLUMN IF NOT EXISTS "customerName" text;
+ALTER TABLE "invoice" ADD COLUMN IF NOT EXISTS "customerEmail" text;
+ALTER TABLE "invoice" ADD COLUMN IF NOT EXISTS "customerCompany" text;
+ALTER TABLE "invoice" ADD COLUMN IF NOT EXISTS "customerAddress" text;
+ALTER TABLE "invoice" ADD COLUMN IF NOT EXISTS "customerVatNumber" text;
+ALTER TABLE "invoice" ADD COLUMN IF NOT EXISTS "workspaceBillingSnapshot" text;
+ALTER TABLE "invoice" ADD COLUMN IF NOT EXISTS "notes" text;
+
+ALTER TABLE "workspace_settings" ADD COLUMN IF NOT EXISTS "billingLegalName" text;
+ALTER TABLE "workspace_settings" ADD COLUMN IF NOT EXISTS "billingEmail" text;
+ALTER TABLE "workspace_settings" ADD COLUMN IF NOT EXISTS "billingPhone" text;
+ALTER TABLE "workspace_settings" ADD COLUMN IF NOT EXISTS "billingWebsite" text;
+ALTER TABLE "workspace_settings" ADD COLUMN IF NOT EXISTS "billingAddress" text;
+ALTER TABLE "workspace_settings" ADD COLUMN IF NOT EXISTS "billingRegistrationNumber" text;
+ALTER TABLE "workspace_settings" ADD COLUMN IF NOT EXISTS "billingVatNumber" text;
+ALTER TABLE "workspace_settings" ADD COLUMN IF NOT EXISTS "billingBankName" text;
+ALTER TABLE "workspace_settings" ADD COLUMN IF NOT EXISTS "billingBankAccountName" text;
+ALTER TABLE "workspace_settings" ADD COLUMN IF NOT EXISTS "billingBankAccountNumber" text;
+ALTER TABLE "workspace_settings" ADD COLUMN IF NOT EXISTS "billingBankBranchCode" text;
+ALTER TABLE "workspace_settings" ADD COLUMN IF NOT EXISTS "billingInvoiceNotes" text;

@@ -10,48 +10,71 @@ import {
   FolderKanban,
   Globe,
   HardDrive,
+  HandCoins,
   Headphones,
   Home,
   LifeBuoy,
+  Menu,
   PlugZap,
   ReceiptText,
+  Search,
   Server,
   Settings,
   ShieldCheck,
   UserRound,
   WandSparkles,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 
 import logo from "@/assets/cm-logo.png";
 import mascot from "@/assets/cm-mascot.png";
+import { FloatingSupportChat } from "@/components/dashboard/FloatingSupportChat";
+import { authClient } from "@/lib/auth-client";
+import { Button } from "@/components/ui/button";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+  SheetClose,
+} from "@/components/ui/sheet";
 
 const mainNav = [
   { to: "/dashboard", label: "Overview", icon: Home },
-  { to: "/dashboard/ai-wizard", label: "AI Wizard", icon: WandSparkles },
-  { to: "/dashboard/users", label: "AI Agents", icon: Bot },
+  { to: "/dashboard/ai-wizard", label: "Product Onboarding", icon: WandSparkles },
+  { to: "/dashboard/agents", label: "AI Agents", icon: Bot },
   { to: "/dashboard/integrations", label: "Automation", icon: PlugZap, chevron: true },
   { to: "/dashboard/reports", label: "Cloud", icon: Cloud, chevron: true },
-  { to: "/dashboard/billing", label: "Domains", icon: Globe },
-  { to: "/dashboard/sessions", label: "Hosting", icon: Server },
-  { to: "/dashboard/sessions", label: "Websites", icon: HardDrive },
+  { to: "/dashboard/domains", label: "Domains", icon: Globe },
+  { to: "/dashboard/hosting", label: "Hosting", icon: Server },
+  { to: "/dashboard/websites", label: "Websites", icon: HardDrive },
   { to: "/dashboard/reports", label: "Databases", icon: Database },
   { to: "/dashboard/reports", label: "Storage", icon: BriefcaseBusiness },
-  { to: "/dashboard/roles", label: "Security", icon: ShieldCheck },
-  { to: "/dashboard/activity-logs", label: "Backups", icon: Cloud },
 ] as const;
 
 const businessNav = [
-  { to: "/dashboard/support", label: "CRM", icon: Headphones },
-  { to: "/dashboard/activity-logs", label: "Projects", icon: FolderKanban },
+  { to: "/dashboard/intelligence", label: "Intelligence", icon: FolderKanban },
+  { to: "/dashboard/intelligence-wizard", label: "SEO Wizard", icon: Search },
   { to: "/dashboard/billing", label: "Billing", icon: ReceiptText },
+  { to: "/dashboard/affiliates", label: "Affiliate Program", icon: HandCoins },
   { to: "/dashboard/reports", label: "Analytics", icon: BarChart3 },
   { to: "/dashboard/billing", label: "Invoices", icon: FileText },
 ] as const;
 
-const bottomNav = [
-  { to: "/dashboard/support", label: "Support", icon: LifeBuoy },
+const bottomNav = [{ to: "/dashboard/support", label: "Support", icon: LifeBuoy }] as const;
+
+const adminNav = [
+  { to: "/dashboard/customers", label: "Customer Services", icon: UserRound },
+  { to: "/dashboard/website-projects", label: "Website Projects", icon: HardDrive },
+  { to: "/dashboard/administration", label: "Platform Matrix", icon: ShieldCheck },
+  { to: "/dashboard/affiliate-admin", label: "Affiliates", icon: HandCoins },
+  { to: "/dashboard/crm", label: "CRM", icon: Headphones },
+  { to: "/dashboard/users", label: "Users", icon: UserRound },
+  { to: "/dashboard/roles", label: "Roles", icon: ShieldCheck },
+  { to: "/dashboard/activity-logs", label: "Activity Logs", icon: Cloud },
+  { to: "/dashboard/products", label: "Products & Pricing", icon: ReceiptText },
   { to: "/dashboard/settings", label: "Settings", icon: Settings },
 ] as const;
 
@@ -60,18 +83,38 @@ const mobileNav = [
   mainNav[1],
   mainNav[2],
   mainNav[5],
-  mainNav[6],
-  bottomNav[1],
+  { to: "/dashboard/hosting", label: "Hosting", icon: Server },
+  bottomNav[0],
 ] as const;
 
 export function DashboardShell({ children }: { children: ReactNode }) {
+  const { data: session } = authClient.useSession();
+  const [isMounted, setIsMounted] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const hydratedSession = isMounted ? session : null;
+  const userName = hydratedSession?.user?.name || "User";
+  const userEmail = hydratedSession?.user?.email || "";
+  const userImage = hydratedSession?.user?.image || mascot;
+  const firstName = userName.split(" ")[0];
+  const userInitials = firstName.substring(0, 2).toUpperCase();
+  const workspaceName = `${firstName}'s Workspace`;
+  const isAdmin =
+    hydratedSession?.user?.role === "admin" || hydratedSession?.user?.role === "owner";
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   return (
-    <section className="dashboard-zoom-shell min-h-screen overflow-x-hidden bg-[#f6f8fc] text-[#07102c]">
+    <section className="dashboard-zoom-shell min-h-screen overflow-x-clip bg-[#f6f8fc] text-[#07102c]">
       <div className="dashboard-zoom-surface mx-auto grid min-h-screen max-w-[1920px] lg:grid-cols-[335px_1fr]">
         <aside className="hidden min-h-screen bg-[#070d23] text-white lg:flex lg:flex-col">
           <div className="flex h-[94px] items-center gap-4 border-b border-white/8 px-6">
             <img src={logo} alt="CloudMonkey" className="h-14 w-14 shrink-0" />
-            <div className="text-[28px] font-extrabold text-white" style={{ fontFamily: "var(--font-display)" }}>
+            <div
+              className="text-[28px] font-extrabold text-white"
+              style={{ fontFamily: "var(--font-display)" }}
+            >
               CloudMonkey
             </div>
           </div>
@@ -80,10 +123,10 @@ export function DashboardShell({ children }: { children: ReactNode }) {
             <button className="flex w-full items-center justify-between rounded-lg border border-white/10 bg-white/[0.045] px-4 py-3 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
               <div className="flex min-w-0 items-center gap-3">
                 <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-[#6d34f7] text-base font-bold text-white">
-                  AC
+                  {userInitials}
                 </div>
                 <div className="min-w-0">
-                  <div className="truncate text-sm font-bold text-white">Acme Corporation</div>
+                  <div className="truncate text-sm font-bold text-white">{workspaceName}</div>
                   <div className="text-xs text-white/58">Workspace</div>
                 </div>
               </div>
@@ -110,6 +153,17 @@ export function DashboardShell({ children }: { children: ReactNode }) {
               </nav>
             </div>
 
+            {isAdmin && (
+              <div className="mt-6 border-t border-white/10 pt-5">
+                <div className="mb-2 px-3 text-sm font-semibold text-white">Administration</div>
+                <nav className="space-y-1">
+                  {adminNav.map((item) => (
+                    <SidebarLink key={`${item.label}-${item.to}`} item={item} muted />
+                  ))}
+                </nav>
+              </div>
+            )}
+
             <div className="mt-6 border-t border-white/10 pt-5">
               <nav className="space-y-1">
                 {bottomNav.map((item) => (
@@ -120,49 +174,203 @@ export function DashboardShell({ children }: { children: ReactNode }) {
           </div>
 
           <div className="p-5">
-            <Link to="/" className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.045] p-3 text-white transition-colors hover:bg-white/8">
+            <Link
+              to="/"
+              className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.045] p-3 text-white transition-colors hover:bg-white/8"
+            >
               <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-white">
-                <UserRound className="h-6 w-6 text-[#07102c]" />
+                {hydratedSession?.user?.image ? (
+                  <img
+                    src={hydratedSession.user.image}
+                    alt={userName}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <UserRound className="h-6 w-6 text-[#07102c]" />
+                )}
               </div>
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-bold">John Smith</div>
-                <div className="truncate text-xs text-white/58">john@acme.com</div>
+                <div className="truncate text-sm font-bold">{userName}</div>
+                <div className="truncate text-xs text-white/58">{userEmail}</div>
               </div>
               <ChevronRight className="h-4 w-4 text-white/60" />
             </Link>
           </div>
         </aside>
 
-        <div className="flex min-h-screen flex-col bg-[#f6f8fc]">
+        <div className="flex min-h-screen min-w-0 flex-col bg-[#f6f8fc]">
           <header className="sticky top-0 z-30 border-b border-[#dfe4ef] bg-white/92 px-4 py-3 backdrop-blur lg:hidden">
-            <div className="mb-3 flex items-center justify-between">
-              <Link to="/dashboard" className="flex items-center gap-2">
-                <img src={logo} alt="CloudMonkey" className="h-9 w-9" />
-                <span className="text-lg font-extrabold" style={{ fontFamily: "var(--font-display)" }}>CloudMonkey</span>
+            <div className="flex items-center justify-between gap-3">
+              <Link to="/dashboard" className="flex min-w-0 items-center gap-2">
+                <img src={logo} alt="CloudMonkey" className="h-9 w-9 shrink-0" />
+                <span
+                  className="truncate text-lg font-extrabold"
+                  style={{ fontFamily: "var(--font-display)" }}
+                >
+                  CloudMonkey
+                </span>
               </Link>
-              <img src={mascot} alt="Account" className="h-10 w-10 rounded-full object-cover object-top" />
+              <div className="flex items-center gap-2">
+                <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+                  <SheetTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-10 w-10 rounded-full border-[#dfe4ef] bg-white"
+                    >
+                      <Menu className="h-5 w-5" />
+                      <span className="sr-only">Open navigation menu</span>
+                    </Button>
+                  </SheetTrigger>
+                  <SheetContent
+                    side="left"
+                    className="w-[88vw] max-w-sm overflow-y-auto bg-[#070d23] p-0 text-white"
+                  >
+                    <div className="flex min-h-full flex-col">
+                      <SheetHeader className="border-b border-white/10 px-5 py-5 text-left">
+                        <SheetTitle className="text-white">CloudMonkey</SheetTitle>
+                        <div className="text-sm text-white/60">Dashboard navigation</div>
+                      </SheetHeader>
+
+                      <div className="flex-1 px-4 py-4">
+                        <div className="mb-4 flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.045] p-3">
+                          <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-[#6d34f7] text-sm font-bold text-white">
+                            {userInitials}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold">{workspaceName}</div>
+                            <div className="truncate text-xs text-white/58">
+                              {userEmail || "Signed in user"}
+                            </div>
+                          </div>
+                        </div>
+
+                        <MobileNavSection
+                          title="Main"
+                          items={mainNav}
+                          onNavigate={() => setMobileMenuOpen(false)}
+                        />
+                        <MobileNavSection
+                          title="Business"
+                          items={businessNav}
+                          onNavigate={() => setMobileMenuOpen(false)}
+                          muted
+                        />
+                        {isAdmin && (
+                          <MobileNavSection
+                            title="Administration"
+                            items={adminNav}
+                            onNavigate={() => setMobileMenuOpen(false)}
+                            muted
+                          />
+                        )}
+                        <MobileNavSection
+                          title="Support"
+                          items={bottomNav}
+                          onNavigate={() => setMobileMenuOpen(false)}
+                          muted
+                        />
+                      </div>
+
+                      <div className="border-t border-white/10 p-4">
+                        <SheetClose asChild>
+                          <Link
+                            to="/"
+                            className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.045] p-3 text-white transition-colors hover:bg-white/8"
+                          >
+                            <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full bg-white">
+                              {hydratedSession?.user?.image ? (
+                                <img
+                                  src={hydratedSession.user.image}
+                                  alt={userName}
+                                  className="h-full w-full object-cover"
+                                />
+                              ) : (
+                                <UserRound className="h-5 w-5 text-[#07102c]" />
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-sm font-bold">{userName}</div>
+                              <div className="truncate text-xs text-white/58">{userEmail}</div>
+                            </div>
+                            <ChevronRight className="h-4 w-4 text-white/60" />
+                          </Link>
+                        </SheetClose>
+                      </div>
+                    </div>
+                  </SheetContent>
+                </Sheet>
+                <img
+                  src={userImage}
+                  alt={userName}
+                  className="h-10 w-10 rounded-full object-cover object-top"
+                />
+              </div>
             </div>
-            <div className="flex gap-2 overflow-x-auto pb-1">
+            <div className="mt-3 grid grid-cols-3 gap-2">
               {mobileNav.map((item) => (
                 <Link
                   key={`${item.label}-${item.to}`}
                   to={item.to}
-                  className="inline-flex items-center gap-2 whitespace-nowrap rounded-md border border-[#dfe4ef] bg-white px-3 py-2 text-xs font-semibold text-[#58637e]"
-                  activeProps={{ className: "inline-flex items-center gap-2 whitespace-nowrap rounded-md border border-transparent bg-[#5d2fe8] px-3 py-2 text-xs font-semibold text-white" }}
+                  className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-full border border-[#dfe4ef] bg-white px-2 py-2 text-xs font-semibold text-[#58637e]"
+                  activeProps={{
+                    className:
+                      "inline-flex min-w-0 items-center justify-center gap-1.5 rounded-full border border-transparent bg-[#5d2fe8] px-2 py-2 text-xs font-semibold text-white",
+                  }}
                 >
-                  <item.icon className="h-3.5 w-3.5" />
-                  {item.label}
+                  <item.icon className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{item.label}</span>
                 </Link>
               ))}
             </div>
           </header>
 
-          <main className="flex-1 px-4 py-5 sm:px-6 lg:px-9 lg:py-9 xl:px-10">
-            <div className="mx-auto max-w-[1536px]">{children}</div>
+          <main className="flex-1 min-w-0 overflow-x-clip px-4 py-5 sm:px-6 lg:px-9 lg:py-9 xl:px-10">
+            <div className="mx-auto w-full min-w-0 max-w-[1536px]">{children}</div>
           </main>
+          {hydratedSession && <FloatingSupportChat />}
         </div>
       </div>
     </section>
+  );
+}
+
+function MobileNavSection({
+  title,
+  items,
+  onNavigate,
+  muted = false,
+}: {
+  title: string;
+  items: readonly SidebarItem[];
+  onNavigate: () => void;
+  muted?: boolean;
+}) {
+  return (
+    <div className="mb-5">
+      <div className="mb-2 px-3 text-xs font-semibold uppercase tracking-[0.18em] text-white/45">
+        {title}
+      </div>
+      <nav className="space-y-1">
+        {items.map((item) => (
+          <SheetClose key={`${item.label}-${item.to}`} asChild>
+            <Link
+              to={item.to}
+              onClick={onNavigate}
+              className="flex h-11 items-center gap-3 rounded-lg px-3 text-[15px] font-medium text-white/78 transition-colors hover:bg-white/[0.07] hover:text-white"
+              activeProps={{
+                className:
+                  "flex h-11 items-center gap-3 rounded-lg bg-[#5d2fe8] px-3 text-[15px] font-semibold text-white shadow-[0_10px_28px_-16px_rgba(93,47,232,0.85)]",
+              }}
+            >
+              <item.icon className={`h-5 w-5 ${muted ? "text-white/72" : ""}`} />
+              <span className="min-w-0 flex-1 truncate">{item.label}</span>
+              {item.chevron && <ChevronDown className="h-4 w-4 text-white/60" />}
+            </Link>
+          </SheetClose>
+        ))}
+      </nav>
+    </div>
   );
 }
 
@@ -179,7 +387,8 @@ function SidebarLink({ item, muted = false }: { item: SidebarItem; muted?: boole
       to={item.to}
       className="flex h-11 items-center gap-3 rounded-lg px-3 text-[15px] font-medium text-white/78 transition-colors hover:bg-white/[0.07] hover:text-white"
       activeProps={{
-        className: "flex h-11 items-center gap-3 rounded-lg bg-[#5d2fe8] px-3 text-[15px] font-semibold text-white shadow-[0_10px_28px_-16px_rgba(93,47,232,0.85)]",
+        className:
+          "flex h-11 items-center gap-3 rounded-lg bg-[#5d2fe8] px-3 text-[15px] font-semibold text-white shadow-[0_10px_28px_-16px_rgba(93,47,232,0.85)]",
       }}
     >
       <item.icon className={`h-5 w-5 ${muted ? "text-white/72" : ""}`} />

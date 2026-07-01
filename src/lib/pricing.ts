@@ -37,6 +37,7 @@ export interface ServicePlan {
   tagline?: string;
   priceZar: number | null; // null = custom / contact
   unit?: string; // e.g. "/month", "/user/month", "/device"
+  trialDays?: number;
   features: string[];
   highlighted?: boolean;
   badge?: string;
@@ -58,6 +59,45 @@ export interface ServiceCategory {
   services: Service[];
 }
 
+export type PublicPricingResponse = {
+  categories?: Array<{
+    id: ServiceCategory["id"];
+    name: string;
+    tagline: string;
+    accent: ServiceCategory["accent"];
+    services?: Array<{
+      id: string;
+      name: string;
+      description?: string | null;
+      note?: string | null;
+      plans?: Array<{
+        id: string;
+        name: string;
+        tagline?: string | null;
+        priceZar: string | null;
+        unit?: string | null;
+        trialDays?: number | null;
+        highlighted?: boolean | null;
+        badge?: string | null;
+        features?: Array<{ content: string }>;
+      }>;
+    }>;
+  }>;
+  bundles?: Array<{
+    id: string;
+    name: string;
+    priceZar: string;
+    highlighted?: boolean | null;
+    badge?: string | null;
+    features?: Array<{ content: string }>;
+  }>;
+};
+
+export type PublicPricingCatalog = {
+  categories: ServiceCategory[];
+  bundles: Bundle[];
+};
+
 const MONTH = "/month";
 const USER_MONTH = "/user/month";
 
@@ -73,9 +113,10 @@ export const CATEGORIES: ServiceCategory[] = [
         name: "Domains",
         description: "Register, transfer, and manage your domains with DNS, nameserver, and renewal handled for you.",
         plans: [
-          { id: "dom-productmonthly", name: "ProductMonthly.co.za", priceZar: 99, unit: "/year", features: ["DNS Management", "Nameserver Management", "Renewal Management"] },
-          { id: "dom-r99", name: "DomainR99.com", priceZar: 99, unit: "/year", features: ["DNS Management", "Nameserver Management", "Renewal Management"] },
-          { id: "dom-r150", name: "DomainR150", priceZar: 150, unit: "/year", features: ["DNS Management", "Nameserver Management", "Renewal Management"] },
+          { id: "domain-za", name: ".co.za", priceZar: 99, unit: "/year", features: ["DNS Management", "Nameserver Management", "Renewal Management"] },
+          { id: "dom-r99", name: ".com", priceZar: 299, unit: "/year", features: ["DNS Management", "Nameserver Management", "Renewal Management"] },
+          { id: "dom-productmonthly", name: ".xyz", priceZar: 55, unit: "/year", features: ["DNS Management", "Nameserver Management", "Renewal Management"] },
+          { id: "dom-r150", name: ".store", priceZar: 80, unit: "/year", features: ["DNS Management", "Nameserver Management", "Renewal Management"] },
         ],
       },
       {
@@ -83,8 +124,8 @@ export const CATEGORIES: ServiceCategory[] = [
         name: "Websites",
         description: "AI-built or fully managed websites, hosted and secured.",
         plans: [
-          { id: "web-ai", name: "AI Website", priceZar: 149, unit: MONTH, features: ["AI Generated Website", "Hosting", "SSL", "Basic SEO", "Backups"] },
-          { id: "web-managed", name: "Managed Website", priceZar: 299, unit: MONTH, highlighted: true, features: ["Managed Hosting", "Content Updates", "SSL", "Monitoring", "Backups", "Support"] },
+          { id: "web-ai", name: "AI Website", priceZar: 149, unit: MONTH, trialDays: 7, features: ["AI Generated Website", "Hosting", "SSL", "Basic SEO", "Backups"] },
+          { id: "web-managed", name: "Managed Website", priceZar: 299, unit: MONTH, highlighted: true, trialDays: 7, features: ["Managed Hosting", "Content Updates", "SSL", "Monitoring", "Backups", "Support"] },
         ],
       },
       {
@@ -92,20 +133,20 @@ export const CATEGORIES: ServiceCategory[] = [
         name: "Ecommerce",
         description: "Sell online with hosted stores, payments, and AI-assisted growth tools.",
         plans: [
-          { id: "ecom-starter", name: "Ecommerce Starter", priceZar: 499, unit: MONTH, features: ["Up to 100 Products", "Payment Gateway Integration", "Inventory Management", "Reporting"] },
-          { id: "ecom-growth", name: "Ecommerce Growth", priceZar: 999, unit: MONTH, badge: "Most Popular", highlighted: true, features: ["Unlimited Products", "Multi-user Access", "Advanced Analytics", "AI Product Content"] },
-          { id: "ecom-pro", name: "Ecommerce Pro", priceZar: 1999, unit: MONTH, features: ["Multi-store Support", "AI Marketing Tools", "Advanced Reporting", "Dedicated Support"] },
+          { id: "ecom-starter", name: "Ecommerce Starter", priceZar: 499, unit: MONTH, trialDays: 7, features: ["Up to 100 Products", "Payment Gateway Integration", "Inventory Management", "Reporting"] },
+          { id: "ecom-growth", name: "Ecommerce Growth", priceZar: 999, unit: MONTH, badge: "Most Popular", highlighted: true, trialDays: 7, features: ["Unlimited Products", "Multi-user Access", "Advanced Analytics", "AI Product Content"] },
+          { id: "ecom-pro", name: "Ecommerce Pro", priceZar: 1999, unit: MONTH, trialDays: 7, features: ["Multi-store Support", "AI Marketing Tools", "Advanced Reporting", "Dedicated Support"] },
         ],
       },
       {
         id: "hosting",
-        name: "VPS Hosting",
-        description: "High-performance virtual servers, scale on demand.",
+        name: "CloudMonkey VPS",
+        description: "Managed high-performance virtual servers that scale on demand.",
         plans: [
-          { id: "vps-starter", name: "VPS Starter", priceZar: 299, unit: MONTH, features: ["Entry-level resources", "SSD storage", "Full root access"] },
-          { id: "vps-business", name: "VPS Business", priceZar: 599, unit: MONTH, features: ["Balanced compute", "SSD storage", "Snapshots"] },
-          { id: "vps-growth", name: "VPS Growth", priceZar: 999, unit: MONTH, highlighted: true, features: ["Performance tier", "More RAM & cores", "Priority network"] },
-          { id: "vps-enterprise", name: "VPS Enterprise", priceZar: 1999, unit: MONTH, features: ["Top-tier compute", "Dedicated resources", "Premium support"] },
+          { id: "vps-starter", name: "CloudMonkey VPS Starter", priceZar: 299, unit: MONTH, features: ["Entry-level resources", "SSD storage", "Managed support"] },
+          { id: "vps-business", name: "CloudMonkey VPS Business", priceZar: 599, unit: MONTH, features: ["Balanced compute", "SSD storage", "Snapshots"] },
+          { id: "vps-growth", name: "CloudMonkey VPS Growth", priceZar: 999, unit: MONTH, highlighted: true, features: ["Performance tier", "More RAM & cores", "Priority network"] },
+          { id: "vps-enterprise", name: "CloudMonkey VPS Enterprise", priceZar: 1999, unit: MONTH, features: ["Top-tier compute", "Dedicated resources", "Premium support"] },
         ],
       },
       {
@@ -143,21 +184,10 @@ export const CATEGORIES: ServiceCategory[] = [
       {
         id: "pbx",
         name: "Hosted PBX",
-        description: "Cloud phone system with mobile, softphone, and AI voice add-ons.",
+        description: "Cloud phone system with mobile, softphone, and voice intelligence options.",
         plans: [
           { id: "pbx-server", name: "PBX Server", priceZar: 299, unit: MONTH, features: ["PBX Hosting", "IVR", "Ring Groups", "Queues", "Call Recording"] },
           { id: "pbx-ext", name: "Extension License", priceZar: 49, unit: USER_MONTH, features: ["Mobile App", "Softphone", "Voicemail", "Call Recording"] },
-        ],
-      },
-      {
-        id: "pbx-ai",
-        name: "AI Voice Add-ons",
-        description: "Layer AI intelligence onto every call.",
-        plans: [
-          { id: "voice-analytics", name: "Call Analytics", priceZar: 25, unit: "/extension", features: ["Real-time dashboards", "Call volume insights"] },
-          { id: "voice-sentiment", name: "Sentiment Analysis", priceZar: 25, unit: "/extension", features: ["Caller sentiment scoring", "Trend reporting"] },
-          { id: "voice-summary", name: "AI Call Summaries", priceZar: 25, unit: "/extension", features: ["Automatic transcripts", "Action items"] },
-          { id: "voice-coach", name: "AI Agent Coaching", priceZar: 25, unit: "/extension", features: ["Live coaching prompts", "Quality scoring"] },
         ],
       },
       {
@@ -203,12 +233,22 @@ export const CATEGORIES: ServiceCategory[] = [
         name: "AI Agents",
         description: "Specialised AI agents purpose-built for every part of your business.",
         plans: [
-          { id: "agent-marketing", name: "Marketing Agent", priceZar: 999, unit: MONTH, features: ["Campaign creation", "Content generation", "Performance insights"] },
-          { id: "agent-sales", name: "Sales Agent", priceZar: 999, unit: MONTH, features: ["Lead research", "Personalised outreach", "Deal nudges"] },
-          { id: "agent-support", name: "Support Agent", priceZar: 999, unit: MONTH, features: ["24/7 ticket triage", "Customer chat", "Knowledge search"] },
-          { id: "agent-hr", name: "HR Agent", priceZar: 999, unit: MONTH, features: ["Recruitment workflows", "Onboarding", "Policy Q&A"] },
-          { id: "agent-finance", name: "Finance Agent", priceZar: 999, unit: MONTH, features: ["Expense tracking", "Reporting", "Forecasting"] },
-          { id: "agent-operations", name: "Operations Agent", priceZar: 999, unit: MONTH, features: ["Workflow automation", "Task orchestration", "Process insights"] },
+          { id: "agent-marketing", name: "Marketing Agent", priceZar: 999, unit: MONTH, features: ["Campaign creation", "Content generation", "Performance insights", "1M AI tokens / month", "Managed setup and tuning"] },
+          { id: "agent-sales", name: "Sales Agent", priceZar: 999, unit: MONTH, features: ["Lead research", "Personalised outreach", "Deal nudges", "1M AI tokens / month", "Managed setup and tuning"] },
+          { id: "agent-support", name: "Support Agent", priceZar: 999, unit: MONTH, features: ["24/7 ticket triage", "Customer chat", "Knowledge search", "1M AI tokens / month", "Managed setup and tuning"] },
+          { id: "agent-hr", name: "HR Agent", priceZar: 999, unit: MONTH, features: ["Recruitment workflows", "Onboarding", "Policy Q&A", "1M AI tokens / month", "Managed setup and tuning"] },
+          { id: "agent-finance", name: "Finance Agent", priceZar: 999, unit: MONTH, features: ["Expense tracking", "Reporting", "Forecasting", "1M AI tokens / month", "Managed setup and tuning"] },
+          { id: "agent-operations", name: "Operations Agent", priceZar: 999, unit: MONTH, features: ["Workflow automation", "Task orchestration", "Process insights", "1M AI tokens / month", "Managed setup and tuning"] },
+        ],
+      },
+      {
+        id: "competitor-intelligence",
+        name: "Competitor Intelligence",
+        description: "Managed SEO, website, and competitor intelligence that shows what competitors do better and what to fix next.",
+        plans: [
+          { id: "ci-starter", name: "Starter", priceZar: 499, unit: MONTH, features: ["1 website", "3 competitors", "Monthly AI report", "SEO audit", "Keyword gap starter"] },
+          { id: "ci-growth", name: "Growth", priceZar: 999, unit: MONTH, highlighted: true, badge: "Recommended", features: ["1 website", "5 competitors", "Weekly tracking", "Content gaps", "AI recommendations", "PDF reports"] },
+          { id: "ci-managed", name: "Managed SEO", priceZar: 2500, unit: MONTH, features: ["CloudMonkey executes fixes", "Managed content plan", "Local SEO actions", "Monthly strategy review", "Priority support"] },
         ],
       },
       {
@@ -255,4 +295,52 @@ export const BUNDLES: Bundle[] = [
 
 export function getCategory(id: ServiceCategory["id"]) {
   return CATEGORIES.find((c) => c.id === id)!;
+}
+
+function toPriceZar(priceZar: string | null | undefined) {
+  if (priceZar == null || priceZar === "") return null;
+  const cents = Number.parseInt(priceZar, 10);
+  return Number.isNaN(cents) ? null : cents / 100;
+}
+
+export function normalizePublicPricingCatalog(raw?: PublicPricingResponse): PublicPricingCatalog {
+  return {
+    categories: (raw?.categories ?? []).map((category) => ({
+      id: category.id,
+      name: category.name,
+      tagline: category.tagline,
+      accent: category.accent,
+      services: (category.services ?? []).map((service) => ({
+        id: service.id,
+        name: service.name,
+        description: service.description ?? undefined,
+        note: service.note ?? undefined,
+        plans: (service.plans ?? []).map((plan) => ({
+          id: plan.id,
+          name: plan.name,
+          tagline: plan.tagline ?? undefined,
+          priceZar: toPriceZar(plan.priceZar),
+          unit: plan.unit ?? undefined,
+          trialDays: plan.trialDays ?? undefined,
+          highlighted: plan.highlighted ?? false,
+          badge: plan.badge ?? undefined,
+          features: (plan.features ?? []).map((feature) => feature.content),
+        })),
+      })),
+    })),
+    bundles: (raw?.bundles ?? []).map((bundle) => ({
+      id: bundle.id,
+      name: bundle.name,
+      priceZar: toPriceZar(bundle.priceZar) ?? 0,
+      highlighted: bundle.highlighted ?? false,
+      badge: bundle.badge ?? undefined,
+      features: (bundle.features ?? []).map((feature) => feature.content),
+    })),
+  };
+}
+
+export async function fetchPublicPricingCatalog(): Promise<PublicPricingCatalog> {
+  const response = await fetch("/api/public/pricing");
+  if (!response.ok) throw new Error("Failed to fetch pricing");
+  return normalizePublicPricingCatalog((await response.json()) as PublicPricingResponse);
 }

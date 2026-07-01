@@ -1,21 +1,68 @@
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { authClient } from "@/lib/auth-client";
+import { toast } from "sonner";
+import { useState } from "react";
 
 type ProviderButtonsProps = {
   className?: string;
   label?: string;
+  callbackURL?: string;
 };
 
-export function ProviderButtons({ className, label = "Continue with" }: ProviderButtonsProps) {
+export function ProviderButtons({ className, label = "Continue with", callbackURL = "/dashboard" }: ProviderButtonsProps) {
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [isMicrosoftLoading, setIsMicrosoftLoading] = useState(false);
+
+  const handleGoogleSignIn = async () => {
+    try {
+      setIsGoogleLoading(true);
+      await authClient.signIn.social({
+        provider: "google",
+        callbackURL,
+      });
+    } catch (error) {
+      toast.error("Failed to sign in with Google");
+      console.error(error);
+    } finally {
+      setIsGoogleLoading(false);
+    }
+  };
+
+  const handleMicrosoftSignIn = async () => {
+    try {
+      setIsMicrosoftLoading(true);
+      await authClient.signIn.social({
+        provider: "microsoft",
+        callbackURL,
+      });
+    } catch (error) {
+      toast.error("Failed to sign in with Microsoft");
+      console.error(error);
+    } finally {
+      setIsMicrosoftLoading(false);
+    }
+  };
+
   return (
     <div className={cn("grid gap-3 sm:grid-cols-2", className)}>
-      <Button variant="outline" className="h-11 justify-start rounded-2xl border-border/70 bg-background px-4 shadow-sm">
+      <Button 
+        variant="outline" 
+        className="h-11 justify-start rounded-2xl border-border/70 bg-background px-4 shadow-sm"
+        onClick={handleGoogleSignIn}
+        disabled={isGoogleLoading}
+      >
         <GoogleIcon />
-        {label} Google
+        {isGoogleLoading ? "Connecting..." : `${label} Google`}
       </Button>
-      <Button variant="outline" className="h-11 justify-start rounded-2xl border-border/70 bg-background px-4 shadow-sm">
+      <Button 
+        variant="outline" 
+        className="h-11 justify-start rounded-2xl border-border/70 bg-background px-4 shadow-sm"
+        onClick={handleMicrosoftSignIn}
+        disabled={isMicrosoftLoading}
+      >
         <MicrosoftIcon />
-        {label} Office 365
+        {isMicrosoftLoading ? "Connecting..." : `${label} Office 365`}
       </Button>
     </div>
   );

@@ -1,0 +1,97 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1781677684786,
+      "tag": "0000_nifty_nitro",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1781798400000,
+      "tag": "0001_onboarding_submission",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781959500000,
+      "tag": "0002_server_agent_telemetry",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1781971200000,
+      "tag": "0003_n8n_server_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1782172800000,
+      "tag": "0004_invoice_branding_mailjet",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1782259200000,
+      "tag": "0005_manual_invoices",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1782345600000,
+      "tag": "0006_invoice_no_vat_brand_refresh",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1782432000000,
+      "tag": "0007_domain_orders_support_ai",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1782518400000,
+      "tag": "0008_cloud_trials_and_pbx_voice_cleanup",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1782604800000,
+      "tag": "0009_affiliate_program",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1782691200000,
+      "tag": "0010_support_chat_attachments",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1782777600000,
+      "tag": "0011_support_rag_memory",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1782864000000,
+      "tag": "0012_website_commerce_foundation",
+      "breakpoints": true
+    }
+  ]
+}
