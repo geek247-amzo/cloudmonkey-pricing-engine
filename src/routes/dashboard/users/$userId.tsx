@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, Bot, FileText, Globe, HardDrive, Mail, ReceiptText, Send, Server, UserRound, XCircle } from "lucide-react";
+import { ArrowRight, Bot, FileText, Globe, HardDrive, Mail, ReceiptText, Send, Server, ShoppingCart, UserRound, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -26,6 +26,7 @@ function UserDetailPage() {
   const { authReady, isAdmin } = useAdminAccess();
   const [invoiceForm, setInvoiceForm] = useState({
     planId: "",
+    websitePackageType: "",
     name: "",
     amountRand: "",
     interval: "month",
@@ -71,6 +72,7 @@ function UserDetailPage() {
         body: JSON.stringify({
           userId,
           planId: invoiceForm.planId || null,
+          websitePackageType: invoiceForm.websitePackageType || null,
           name: invoiceForm.name || selectedPlan?.name || "Manual CloudMonkey invoice",
           amount,
           interval: invoiceForm.interval,
@@ -88,6 +90,7 @@ function UserDetailPage() {
       toast.success("Draft invoice created");
       setInvoiceForm({
         planId: "",
+        websitePackageType: "",
         name: "",
         amountRand: "",
         interval: "month",
@@ -152,6 +155,14 @@ function UserDetailPage() {
   const user = data?.user;
   const invoices = data?.invoices ?? [];
   const manualInvoices = invoices.filter((item: any) => item.invoiceSource === "manual");
+  const websitePlans = (products ?? []).filter((plan: any) => ["websites", "ecommerce"].includes(plan.service?.id) || plan.id?.startsWith("web-") || plan.id?.startsWith("ecom-"));
+  const selectedIsWebsitePackage = Boolean(selectedPlan && (["websites", "ecommerce"].includes(selectedPlan.service?.id) || selectedPlan.id?.startsWith("web-") || selectedPlan.id?.startsWith("ecom-")));
+  const visibleProducts = invoiceForm.websitePackageType
+    ? (products ?? []).filter((plan: any) => {
+        if (!websitePlans.some((websitePlan: any) => websitePlan.id === plan.id)) return true;
+        return invoiceForm.websitePackageType === "ecommerce" ? plan.id?.startsWith("ecom-") : plan.id?.startsWith("web-");
+      })
+    : (products ?? []);
   const stats = [
     { label: "Domains", value: data?.domains?.length ?? 0, icon: Globe },
     { label: "Servers", value: data?.servers?.length ?? 0, icon: Server },
@@ -282,15 +293,49 @@ function UserDetailPage() {
                   createInvoiceMutation.mutate();
                 }}
               >
+                <div className="space-y-2 lg:col-span-5">
+                  <Label>Package type</Label>
+                  <div className="grid gap-2 sm:grid-cols-2 lg:max-w-xl">
+                    {[
+                      { value: "website", label: "Website", detail: "Static content site. No database.", icon: Globe },
+                      { value: "ecommerce", label: "Ecommerce", detail: "Online store with database.", icon: ShoppingCart },
+                    ].map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setInvoiceForm({
+                          ...invoiceForm,
+                          websitePackageType: option.value,
+                          planId: invoiceForm.planId && option.value === "website" && invoiceForm.planId.startsWith("ecom-") ? "" : invoiceForm.planId && option.value === "ecommerce" && invoiceForm.planId.startsWith("web-") ? "" : invoiceForm.planId,
+                        })}
+                        className={`flex items-start gap-3 rounded-lg border p-3 text-left text-sm transition ${
+                          invoiceForm.websitePackageType === option.value ? "border-[var(--ai)] bg-[var(--ai-soft)]/30" : "border-border bg-white hover:border-[var(--ai)]/50"
+                        }`}
+                      >
+                        <option.icon className="mt-0.5 h-4 w-4 text-[var(--ai)]" />
+                        <span>
+                          <span className="block font-semibold text-foreground">{option.label}</span>
+                          <span className="block text-xs text-muted-foreground">{option.detail}</span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="space-y-2 lg:col-span-2">
                   <Label>Service</Label>
                   <select
                     value={invoiceForm.planId}
                     onChange={(event) => {
                       const nextPlan = (products ?? []).find((item: any) => item.id === event.target.value);
+                      const nextPackageType = nextPlan?.id?.startsWith("ecom-")
+                        ? "ecommerce"
+                        : nextPlan?.id?.startsWith("web-")
+                          ? "website"
+                          : invoiceForm.websitePackageType;
                       setInvoiceForm({
                         ...invoiceForm,
                         planId: event.target.value,
+                        websitePackageType: nextPackageType,
                         name: nextPlan ? `${nextPlan.service?.name ?? "Service"} - ${nextPlan.name}` : invoiceForm.name,
                         amountRand: nextPlan?.priceZar ? (parseInt(nextPlan.priceZar, 10) / 100).toFixed(2) : invoiceForm.amountRand,
                       });
@@ -298,7 +343,7 @@ function UserDetailPage() {
                     className="h-9 w-full rounded-md border border-input bg-white px-3 text-sm"
                   >
                     <option value="">Custom invoice</option>
-                    {(products ?? []).map((plan: any) => (
+                    {visibleProducts.map((plan: any) => (
                       <option key={plan.id} value={plan.id}>
                         {plan.service?.name} - {plan.name}
                       </option>
@@ -345,7 +390,7 @@ function UserDetailPage() {
                   <Input value={invoiceForm.notes} onChange={(event) => setInvoiceForm({ ...invoiceForm, notes: event.target.value })} />
                 </div>
                 <div className="flex items-end lg:col-span-2">
-                  <Button type="submit" className="rounded-lg bg-[var(--ai)]" disabled={createInvoiceMutation.isPending}>
+                  <Button type="submit" className="rounded-lg bg-[var(--ai)]" disabled={createInvoiceMutation.isPending || (selectedIsWebsitePackage && !invoiceForm.websitePackageType)}>
                     <FileText className="h-4 w-4" />
                     Save draft invoice
                   </Button>

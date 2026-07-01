@@ -32,12 +32,16 @@ function WebsiteApprovalPage() {
     queryKey: ["website-approval", token],
     queryFn: () => fetchJson<any>(`/api/public/website-approvals/${encodeURIComponent(token)}`),
   });
+  const site = approval.data?.website;
+  const isDesign = approval.data?.token?.actionType === "design_approval";
+  const designOptions = site?.designOptions ?? [];
+  const chosenDesignId = selectedDesignId || designOptions[0]?.id || "";
 
   const respond = useMutation({
     mutationFn: async (action: "approve" | "changes_requested") => fetchJson(`/api/public/website-approvals/${encodeURIComponent(token)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, designOptionId: selectedDesignId || undefined, comments }),
+      body: JSON.stringify({ action, designOptionId: isDesign ? chosenDesignId : undefined, comments }),
     }),
     onSuccess: () => {
       toast.success("Response submitted");
@@ -62,11 +66,6 @@ function WebsiteApprovalPage() {
       </div>
     );
   }
-
-  const site = approval.data.website;
-  const isDesign = approval.data.token.actionType === "design_approval";
-  const designOptions = site.designOptions ?? [];
-  const chosenDesignId = selectedDesignId || designOptions[0]?.id || "";
 
   return (
     <main className="min-h-screen bg-[#f6f8fc] p-4 sm:p-8">

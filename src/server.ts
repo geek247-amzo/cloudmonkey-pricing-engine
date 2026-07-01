@@ -614,7 +614,7 @@ function buildWebsiteProvisioningPlan(input: {
   storeId: string;
   temporaryDomain: string;
   siteType: "website" | "ecommerce";
-  database: {
+  database?: {
     containerName: string;
     volumeName: string;
     databaseName: string;
@@ -644,7 +644,7 @@ function buildWebsiteProvisioningPlan(input: {
           STORE_MODE: input.siteType,
           PUBLIC_BASE_URL: `https://${input.temporaryDomain}`,
           CLOUDMONKEY_API_URL: "https://cloudmonkey.co.za",
-          STORE_DATABASE_URL: "secret:website_store_database.connectionSecret",
+          ...(input.siteType === "ecommerce" ? { STORE_DATABASE_URL: "secret:website_store_database.connectionSecret" } : {}),
         },
         labels: {
           "cloudmonkey.website_id": input.websiteId,
@@ -676,7 +676,7 @@ function buildWebsiteProvisioningPlan(input: {
           },
         },
       } : {}),
-      sql: {
+      ...(input.siteType === "ecommerce" && input.database ? { sql: {
         image: "postgres:16-alpine",
         containerName: input.database.containerName,
         internalOnly: true,
@@ -690,7 +690,7 @@ function buildWebsiteProvisioningPlan(input: {
           memory: "512m",
           cpus: "0.50",
         },
-      },
+      } } : {}),
     },
     networks: ["cm_public", "cm_sites"],
   };
@@ -1109,7 +1109,7 @@ type RuntimeDeployPayload = {
     name: string;
     status: string;
   };
-  database: {
+  database?: {
     id: string;
     engine: string;
     version: string;
@@ -1242,10 +1242,13 @@ async function provisionRemoteWebsiteRuntime(input: {
   runtime: typeof websiteRuntimeServer.$inferSelect;
   site: typeof website.$inferSelect;
   store: typeof websiteStore.$inferSelect;
-  database: typeof websiteStoreDatabase.$inferSelect;
+  database?: typeof websiteStoreDatabase.$inferSelect | null;
   buildManifest: unknown;
 }) {
   const isEcommerce = input.site.siteType === "ecommerce";
+  if (isEcommerce && !input.database) {
+    throw new Error("Ecommerce stores require a dedicated database before provisioning");
+  }
   const generatedConfig = isEcommerce
     ? buildEcommerceStoreConfig({
         websiteId: input.site.id,
@@ -1268,7 +1271,9 @@ async function provisionRemoteWebsiteRuntime(input: {
   const medusaContainerName = buildMedusaContainerName(input.site.id);
   const medusaImage = medusaImageTag(input.site.id);
   const redisPrefix = `cm:${input.site.id.replace(/[^a-zA-Z0-9_]/g, "_").toLowerCase()}`;
-  const databaseUrl = `postgres://${encodeURIComponent(input.database.username)}:${encodeURIComponent(decryptSecret(input.database.passwordSecret))}@${input.database.containerName}:5432/${encodeURIComponent(input.database.databaseName)}`;
+  const databaseUrl = input.database
+    ? `postgres://${encodeURIComponent(input.database.username)}:${encodeURIComponent(decryptSecret(input.database.passwordSecret))}@${input.database.containerName}:5432/${encodeURIComponent(input.database.databaseName)}`
+    : "";
   const publicBaseUrl = input.site.temporaryDomain ? `https://${input.site.temporaryDomain}` : "";
   const payload: RuntimeDeployPayload = {
     website: {
@@ -1284,7 +1289,7 @@ async function provisionRemoteWebsiteRuntime(input: {
       name: input.store.name,
       status: input.store.status,
     },
-    database: {
+    database: input.database ? {
       id: input.database.id,
       engine: input.database.engine,
       version: input.database.version,
@@ -1293,7 +1298,7 @@ async function provisionRemoteWebsiteRuntime(input: {
       password: decryptSecret(input.database.passwordSecret),
       containerName: input.database.containerName,
       volumeName: input.database.volumeName,
-    },
+    } : undefined,
     runtime: {
       networkName: input.runtime.dockerNetworkName || "cm_runtime",
       proxyMode: input.runtime.proxyMode || "caddy",
@@ -1341,7 +1346,7 @@ async function provisionRemoteWebsiteRuntime(input: {
         VITE_PUBLIC_BASE_URL: publicBaseUrl,
         VITE_MEDUSA_BACKEND_URL: publicBaseUrl,
         CLOUDMONKEY_API_URL: process.env.PUBLIC_APP_URL ?? "https://cloudmonkey.co.za",
-        DATABASE_URL: databaseUrl,
+        ...(isEcommerce ? { DATABASE_URL: databaseUrl } : {}),
         PAYSTACK_PUBLIC_KEY: process.env.PAYSTACK_PUBLIC_KEY ?? "",
         PAYSTACK_SECRET_KEY: process.env.PAYSTACK_SECRET_KEY ?? "",
         CLOUDMONKEY_PLATFORM_FEE_PERCENT: process.env.CLOUDMONKEY_WEBSITE_PLATFORM_FEE_PERCENT ?? "0",
@@ -1352,7 +1357,7 @@ async function provisionRemoteWebsiteRuntime(input: {
     image: string;
     storefrontContainerName: string;
     medusaContainerName?: string | null;
-    sqlContainerName: string;
+    sqlContainerName?: string | null;
     publicUrl: string | null;
     routeProvider: string;
   }>(input.runtime, "/deploy", payload);
@@ -1417,7 +1422,7 @@ async function runDedicatedStoreMigrations(database: typeof websiteStoreDatabase
 async function dockerCreateStorefrontContainer(input: {
   site: typeof website.$inferSelect;
   store: typeof websiteStore.$inferSelect;
-  database: typeof websiteStoreDatabase.$inferSelect;
+  database?: typeof websiteStoreDatabase.$inferSelect | null;
   image: string;
 }) {
   const containerName = buildStorefrontContainerName(input.site.id);
@@ -1435,7 +1440,7 @@ async function dockerCreateStorefrontContainer(input: {
           `STORE_MODE=${input.site.siteType}`,
           `VITE_PUBLIC_BASE_URL=http://${input.site.temporaryDomain}`,
           "CLOUDMONKEY_API_URL=https://cloudmonkey.co.za",
-          `DATABASE_URL=${decryptSecret(input.database.connectionSecret)}`,
+          ...(input.site.siteType === "ecommerce" && input.database ? [`DATABASE_URL=${decryptSecret(input.database.connectionSecret)}`] : []),
           `PAYSTACK_PUBLIC_KEY=${process.env.PAYSTACK_PUBLIC_KEY ?? ""}`,
           `PAYSTACK_SECRET_KEY=${process.env.PAYSTACK_SECRET_KEY ?? ""}`,
           `CLOUDMONKEY_PLATFORM_FEE_PERCENT=${process.env.CLOUDMONKEY_WEBSITE_PLATFORM_FEE_PERCENT ?? "0"}`,
@@ -1490,11 +1495,12 @@ async function writeNginxWebsiteRoute(input: { domain: string; containerName: st
 async function provisionLocalWebsiteRuntime(input: {
   site: typeof website.$inferSelect;
   store: typeof websiteStore.$inferSelect;
-  database: typeof websiteStoreDatabase.$inferSelect;
+  database?: typeof websiteStoreDatabase.$inferSelect | null;
   buildManifest: unknown;
 }) {
-  await dockerCreateSqlContainer(input.database);
   if (input.site.siteType === "ecommerce") {
+    if (!input.database) throw new Error("Ecommerce stores require a dedicated database before provisioning");
+    await dockerCreateSqlContainer(input.database);
     await runDedicatedStoreMigrations(input.database);
   }
   const image = await dockerBuildStorefrontImage({
@@ -1505,12 +1511,12 @@ async function provisionLocalWebsiteRuntime(input: {
     siteType: input.site.siteType,
     designManifest: input.buildManifest,
     store: input.store,
-    database: input.database,
+    database: input.database ?? undefined,
   });
   const storefrontContainerName = await dockerCreateStorefrontContainer({
     site: input.site,
     store: input.store,
-    database: input.database,
+    database: input.database ?? null,
     image,
   });
   if (input.site.temporaryDomain) {
@@ -1520,7 +1526,7 @@ async function provisionLocalWebsiteRuntime(input: {
     image,
     storefrontContainerName,
     medusaContainerName: null,
-    sqlContainerName: input.database.containerName,
+    sqlContainerName: input.database?.containerName ?? null,
     publicUrl: input.site.temporaryDomain ? `http://${input.site.temporaryDomain}` : null,
     routeProvider: "local-nginx",
   };
@@ -1559,17 +1565,19 @@ async function createWebsiteProjectFromOnboarding(input: {
   const storeId = makeId("store");
   const trialEndsAt = input.subscription.status === "trialing" ? input.subscription.currentPeriodEnd : null;
   const graceEndsAt = trialEndsAt ? addDays(trialEndsAt, 30) : null;
-  const databaseRecord = buildStoreDatabaseRecord({
-    websiteId,
-    storeId,
-    userId: input.userId,
-  });
+  const databaseRecord = siteType === "ecommerce"
+    ? buildStoreDatabaseRecord({
+        websiteId,
+        storeId,
+        userId: input.userId,
+      })
+    : null;
   const provisioningPlan = buildWebsiteProvisioningPlan({
     websiteId,
     storeId,
     temporaryDomain,
     siteType,
-    database: databaseRecord,
+    database: databaseRecord ?? undefined,
   });
   const baseRepo = siteType === "ecommerce" ? "cloudmonkey-commerce-template" : "cloudmonkey-website-template";
 
@@ -1620,7 +1628,9 @@ async function createWebsiteProjectFromOnboarding(input: {
       trialEndsAt,
       terminationScheduledAt: graceEndsAt,
     });
-    await tx.insert(websiteStoreDatabase).values(databaseRecord);
+    if (databaseRecord) {
+      await tx.insert(websiteStoreDatabase).values(databaseRecord);
+    }
     await tx.insert(websiteDomain).values({
       id: makeId("webdomain"),
       websiteId,
@@ -1676,7 +1686,12 @@ async function createWebsiteProjectFromOnboarding(input: {
 
 async function provisionWebsiteRuntime(userId: string, websiteId: string) {
   const detail = await getUserWebsiteDetail(userId, websiteId);
-  if (!detail?.store?.database) {
+  if (!detail?.store) {
+    const error: any = new Error("Website store must exist before provisioning");
+    error.status = 404;
+    throw error;
+  }
+  if (detail.siteType === "ecommerce" && !detail.store.database) {
     const error: any = new Error("Website store and dedicated database must exist before provisioning");
     error.status = 404;
     throw error;
@@ -1692,17 +1707,20 @@ async function provisionWebsiteRuntime(userId: string, websiteId: string) {
     status: "provisioning",
     updatedAt: new Date(),
   }).where(eq(website.id, websiteId));
-  await db.update(websiteStoreDatabase).set({
-    status: "provisioning",
-    updatedAt: new Date(),
-  }).where(eq(websiteStoreDatabase.id, detail.store.database.id));
+  if (detail.store.database) {
+    await db.update(websiteStoreDatabase).set({
+      status: "provisioning",
+      updatedAt: new Date(),
+    }).where(eq(websiteStoreDatabase.id, detail.store.database.id));
+  }
 
   const siteRow = await db.query.website.findFirst({ where: eq(website.id, websiteId) });
   const storeRow = await db.query.websiteStore.findFirst({ where: eq(websiteStore.websiteId, websiteId) });
   const databaseRow = storeRow
     ? await db.query.websiteStoreDatabase.findFirst({ where: eq(websiteStoreDatabase.storeId, storeRow.id) })
     : null;
-  if (!siteRow || !storeRow || !databaseRow) throw new Error("Website runtime records disappeared during provisioning");
+  if (!siteRow || !storeRow) throw new Error("Website runtime records disappeared during provisioning");
+  if (siteRow.siteType === "ecommerce" && !databaseRow) throw new Error("Ecommerce database record disappeared during provisioning");
 
   const buildManifest = safeJsonParse(siteRow.buildManifest) ?? {};
   const runtimeServer = await selectWebsiteRuntimeServer();
@@ -1746,11 +1764,13 @@ async function provisionWebsiteRuntime(userId: string, websiteId: string) {
     status: "trial",
     updatedAt: now,
   }).where(eq(websiteStore.id, storeRow.id));
-  await db.update(websiteStoreDatabase).set({
-    status: "running",
-    host: runtimeServer ? databaseRow.containerName : databaseRow.host,
-    updatedAt: now,
-  }).where(eq(websiteStoreDatabase.id, databaseRow.id));
+  if (databaseRow) {
+    await db.update(websiteStoreDatabase).set({
+      status: "running",
+      host: runtimeServer ? databaseRow.containerName : databaseRow.host,
+      updatedAt: now,
+    }).where(eq(websiteStoreDatabase.id, databaseRow.id));
+  }
   if (runtimeServer && !runtimeServer.id.startsWith("runtime_env_")) {
     await db.update(websiteRuntimeServer).set({
       activeSiteCount: sql`${websiteRuntimeServer.activeSiteCount} + 1`,
@@ -1768,7 +1788,7 @@ async function provisionWebsiteRuntime(userId: string, websiteId: string) {
     metadata: {
       image: runtimeResult.image,
       containerName: runtimeResult.storefrontContainerName,
-      sqlContainerName: runtimeResult.sqlContainerName,
+      sqlContainerName: runtimeResult.sqlContainerName ?? null,
       domain: siteRow.temporaryDomain,
       runtimeServerId: runtimeServer?.id ?? "local",
     },
@@ -4727,6 +4747,7 @@ const manualInvoiceSchema = z.object({
   interval: z.enum(["month", "year"]).default("month"),
   planId: z.string().optional().nullable(),
   bundleId: z.string().optional().nullable(),
+  websitePackageType: z.enum(["website", "ecommerce"]).optional().nullable(),
   billingPeriodStart: z.string().optional().nullable(),
   dueDate: z.string().optional().nullable(),
   billingPeriodEnd: z.string().optional().nullable(),
@@ -8504,17 +8525,19 @@ echo "CloudMonkey agent installed."
             needsDelivery: body.needsDelivery,
             needsPos: body.needsPos,
           };
-          const databaseRecord = buildStoreDatabaseRecord({
-            websiteId,
-            storeId,
-            userId: session.user.id,
-          });
+          const databaseRecord = body.siteType === "ecommerce"
+            ? buildStoreDatabaseRecord({
+                websiteId,
+                storeId,
+                userId: session.user.id,
+              })
+            : null;
           const provisioningPlan = buildWebsiteProvisioningPlan({
             websiteId,
             storeId,
             temporaryDomain,
             siteType: body.siteType,
-            database: databaseRecord,
+            database: databaseRecord ?? undefined,
           });
           const baseRepo = body.siteType === "ecommerce" ? "cloudmonkey-commerce-template" : "cloudmonkey-website-template";
 
@@ -8555,7 +8578,9 @@ echo "CloudMonkey agent installed."
             terminationScheduledAt: graceEndsAt,
           }).returning();
 
-          const [createdDatabase] = await db.insert(websiteStoreDatabase).values(databaseRecord).returning();
+          const [createdDatabase] = databaseRecord
+            ? await db.insert(websiteStoreDatabase).values(databaseRecord).returning()
+            : [null];
           const [createdDomain] = await db.insert(websiteDomain).values({
             id: makeId("webdomain"),
             websiteId,
@@ -8596,11 +8621,11 @@ echo "CloudMonkey agent installed."
             action: "website.created",
             entityType: "website",
             entityId: websiteId,
-            message: `${body.businessName} website runtime created with dedicated SQL container`,
+            message: `${body.businessName} ${body.siteType === "ecommerce" ? "ecommerce runtime created with dedicated SQL container" : "static website runtime created"}`,
             metadata: {
               siteType: body.siteType,
               temporaryDomain,
-              databaseContainer: databaseRecord.containerName,
+              databaseContainer: databaseRecord?.containerName ?? null,
             },
           });
 
@@ -8610,7 +8635,7 @@ echo "CloudMonkey agent installed."
             provisioningPlan,
             store: {
               ...createdStore,
-              database: {
+              database: createdDatabase ? {
                 id: createdDatabase.id,
                 engine: createdDatabase.engine,
                 version: createdDatabase.version,
@@ -8622,7 +8647,7 @@ echo "CloudMonkey agent installed."
                 volumeName: createdDatabase.volumeName,
                 status: createdDatabase.status,
                 backupStatus: createdDatabase.backupStatus,
-              },
+              } : null,
             },
             domains: [createdDomain],
             plugins: body.siteType === "ecommerce" ? [
@@ -9192,6 +9217,26 @@ echo "CloudMonkey agent installed."
           const body = await parseBody(request, manualInvoiceSchema);
           const targetUser = await db.query.user.findFirst({ where: eq(user.id, body.userId) });
           if (!targetUser) return json({ error: "User not found" }, 404);
+          const selectedPlan = body.planId
+            ? await db.query.servicePlan.findFirst({
+                where: eq(servicePlan.id, body.planId),
+                with: { service: true },
+              })
+            : null;
+          const isWebsiteOrEcommercePlan = Boolean(
+            selectedPlan?.id?.startsWith("web-")
+              || selectedPlan?.id?.startsWith("ecom-")
+              || ["websites", "ecommerce"].includes(selectedPlan?.service?.id ?? ""),
+          );
+          if (isWebsiteOrEcommercePlan) {
+            if (!body.websitePackageType) {
+              return json({ error: "Choose whether this package is a website or ecommerce store" }, 400);
+            }
+            const expectedPrefix = body.websitePackageType === "ecommerce" ? "ecom-" : "web-";
+            if (!selectedPlan?.id?.startsWith(expectedPrefix)) {
+              return json({ error: `Choose a ${body.websitePackageType} plan for this package` }, 400);
+            }
+          }
 
           const settings = await getWorkspaceSettings();
           const issuedAt = new Date();
@@ -9235,6 +9280,33 @@ echo "CloudMonkey agent installed."
               unitPrice: body.amount,
               amount: body.amount,
             });
+            if (body.planId || body.bundleId) {
+              await tx.insert(subscription).values({
+                id: createdId,
+                userId: body.userId,
+                planId: body.planId ?? null,
+                bundleId: body.bundleId ?? null,
+                name: body.name,
+                status: "pending",
+                amount: body.amount,
+                interval: body.interval,
+                currentPeriodStart: billingPeriodStart,
+                currentPeriodEnd: billingPeriodEnd,
+              }).onConflictDoUpdate({
+                target: subscription.id,
+                set: {
+                  planId: body.planId ?? null,
+                  bundleId: body.bundleId ?? null,
+                  name: body.name,
+                  status: "pending",
+                  amount: body.amount,
+                  interval: body.interval,
+                  currentPeriodStart: billingPeriodStart,
+                  currentPeriodEnd: billingPeriodEnd,
+                  updatedAt: new Date(),
+                },
+              });
+            }
             return [createdInvoice];
           });
 
@@ -9244,7 +9316,7 @@ echo "CloudMonkey agent installed."
             entityType: "invoice",
             entityId: created.id,
             message: `Manual invoice draft created for ${targetUser.email}`,
-            metadata: { userId: body.userId, amount: body.amount },
+            metadata: { userId: body.userId, amount: body.amount, planId: body.planId ?? null, websitePackageType: body.websitePackageType ?? null },
           });
           return json(created, 201);
         } catch (error: any) {
@@ -9307,13 +9379,16 @@ echo "CloudMonkey agent installed."
           });
 
           await db.transaction(async (tx) => {
+            const existingSubscription = await db.query.subscription.findFirst({ where: eq(subscription.id, invoiceId) });
             await tx.insert(subscription).values({
               id: invoiceId,
               userId: existing.userId,
+              planId: existingSubscription?.planId ?? null,
+              bundleId: existingSubscription?.bundleId ?? null,
               name,
               status: "pending",
               amount: existing.amount,
-              interval: "month",
+              interval: existingSubscription?.interval ?? "month",
               currentPeriodStart: existing.billingPeriodStart ?? new Date(),
               currentPeriodEnd: existing.billingPeriodEnd,
             }).onConflictDoUpdate({
@@ -9322,6 +9397,9 @@ echo "CloudMonkey agent installed."
                 name,
                 status: "pending",
                 amount: existing.amount,
+                interval: existingSubscription?.interval ?? "month",
+                currentPeriodStart: existing.billingPeriodStart ?? new Date(),
+                currentPeriodEnd: existing.billingPeriodEnd,
                 updatedAt: new Date(),
               },
             });
@@ -10183,7 +10261,7 @@ echo "CloudMonkey agent installed."
           });
           await db.update(website).set({ status: "design_review_sent", updatedAt: new Date() }).where(eq(website.id, websiteId));
           const approvalUrl = `${new URL(request.url).origin}/website-approval/${encodeURIComponent(raw)}`;
-          sendEmail({
+          await sendEmail({
             template: "generic",
             to: project.user?.email ?? "",
             subject: `Choose your CloudMonkey website design`,
@@ -10196,7 +10274,11 @@ echo "CloudMonkey agent installed."
               primaryCtaUrl: approvalUrl,
             },
             idempotencyKey: `website:${websiteId}:design-review:${reviewId}`,
-          }).catch((error) => console.error("Design approval email failed:", error));
+          });
+          await db.update(websiteReviewRequest).set({
+            sentAt: new Date(),
+            updatedAt: new Date(),
+          }).where(eq(websiteReviewRequest.id, reviewId));
           return json({ ok: true, approvalUrl, expiresAt });
         } catch (error: any) {
           return json({ error: error.message, issues: error.issues }, error.status ?? 500);
@@ -10243,7 +10325,7 @@ echo "CloudMonkey agent installed."
           });
           await db.update(website).set({ status: "staging_review_sent", updatedAt: new Date() }).where(eq(website.id, websiteId));
           const approvalUrl = `${new URL(request.url).origin}/website-approval/${encodeURIComponent(raw)}`;
-          sendEmail({
+          await sendEmail({
             template: "generic",
             to: project.user?.email ?? "",
             subject: `Review your CloudMonkey staging site`,
@@ -10256,7 +10338,11 @@ echo "CloudMonkey agent installed."
               primaryCtaUrl: approvalUrl,
             },
             idempotencyKey: `website:${websiteId}:staging-review:${reviewId}`,
-          }).catch((error) => console.error("Staging review email failed:", error));
+          });
+          await db.update(websiteReviewRequest).set({
+            sentAt: new Date(),
+            updatedAt: new Date(),
+          }).where(eq(websiteReviewRequest.id, reviewId));
           return json({ ok: true, approvalUrl, expiresAt });
         } catch (error: any) {
           return json({ error: error.message, issues: error.issues }, error.status ?? 500);

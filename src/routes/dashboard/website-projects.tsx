@@ -82,6 +82,8 @@ function WebsiteProjectsPage() {
 
   const project = detail.data;
   const rows = projects.data ?? [];
+  const canSendDesignEmail = Boolean(project?.designOptions?.length);
+  const canProvision = project?.status === "design_selected" || project?.status === "awaiting_provisioning";
 
   return (
     <div className="space-y-6">
@@ -206,11 +208,11 @@ function WebsiteProjectsPage() {
                   </div>
 
                   <div className="flex flex-wrap gap-2">
-                    <Button variant="outline" className="rounded-lg" onClick={() => actionMutation.mutate("send-design-email")} disabled={actionMutation.isPending}>
+                    <Button variant="outline" className="rounded-lg" onClick={() => actionMutation.mutate("send-design-email")} disabled={actionMutation.isPending || !canSendDesignEmail} title={canSendDesignEmail ? "Send design choices to the customer" : "Upload at least one design draft first"}>
                       <Mail className="h-4 w-4" />
                       Send design email
                     </Button>
-                    <Button className="rounded-lg bg-[var(--ai)]" onClick={() => actionMutation.mutate("provision")} disabled={actionMutation.isPending || project.status !== "design_selected"}>
+                    <Button className="rounded-lg bg-[var(--ai)]" onClick={() => actionMutation.mutate("provision")} disabled={actionMutation.isPending || !canProvision} title={canProvision ? "Provision the approved design runtime" : "Customer design approval is required before provisioning"}>
                       <Rocket className="h-4 w-4" />
                       Provision runtime
                     </Button>
