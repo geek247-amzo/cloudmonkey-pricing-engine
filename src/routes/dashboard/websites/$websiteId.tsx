@@ -27,6 +27,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useAdminAccess } from "@/hooks/use-admin-access";
 
 export const Route = createFileRoute("/dashboard/websites/$websiteId")({
   head: () => ({
@@ -55,15 +56,18 @@ function WebsiteManagePage() {
   const { websiteId } = Route.useParams();
   const queryClient = useQueryClient();
   const [showProductForm, setShowProductForm] = useState(false);
+  const { authReady, isAdmin } = useAdminAccess();
 
   const { data: site, isLoading } = useQuery({
-    queryKey: ["user", "websites", websiteId],
+    queryKey: [isAdmin ? "admin" : "user", "websites", websiteId],
     queryFn: async () => {
-      const res = await fetch(`/api/user/websites/${websiteId}`);
+      const path = isAdmin ? `/api/admin/website-projects/${websiteId}` : `/api/user/websites/${websiteId}`;
+      const res = await fetch(path);
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error ?? "Failed to load website");
       return data;
     },
+    enabled: authReady,
   });
 
   const addProduct = useMutation({
@@ -89,7 +93,7 @@ function WebsiteManagePage() {
     onSuccess: async () => {
       toast.success("Product added");
       setShowProductForm(false);
-      await queryClient.invalidateQueries({ queryKey: ["user", "websites", websiteId] });
+      await queryClient.invalidateQueries({ queryKey: [isAdmin ? "admin" : "user", "websites", websiteId] });
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -106,7 +110,7 @@ function WebsiteManagePage() {
     },
     onSuccess: async () => {
       toast.success("Design previews generated");
-      await queryClient.invalidateQueries({ queryKey: ["user", "websites", websiteId] });
+      await queryClient.invalidateQueries({ queryKey: [isAdmin ? "admin" : "user", "websites", websiteId] });
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -123,7 +127,7 @@ function WebsiteManagePage() {
     },
     onSuccess: async () => {
       toast.success("Design selected");
-      await queryClient.invalidateQueries({ queryKey: ["user", "websites", websiteId] });
+      await queryClient.invalidateQueries({ queryKey: [isAdmin ? "admin" : "user", "websites", websiteId] });
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -140,7 +144,7 @@ function WebsiteManagePage() {
     },
     onSuccess: async (data: any) => {
       toast.success("Storefront container started");
-      await queryClient.invalidateQueries({ queryKey: ["user", "websites", websiteId] });
+      await queryClient.invalidateQueries({ queryKey: [isAdmin ? "admin" : "user", "websites", websiteId] });
       if (data?.runtime?.publicUrl) window.open(data.runtime.publicUrl, "_blank");
     },
     onError: (error: Error) => toast.error(error.message),
@@ -177,7 +181,7 @@ function WebsiteManagePage() {
     previewWindow.document.close();
   };
 
-  if (isLoading) {
+  if (!authReady || isLoading) {
     return (
       <div className="p-12 text-center text-muted-foreground">
         <Loader2 className="mx-auto mb-4 h-8 w-8 animate-spin" />
