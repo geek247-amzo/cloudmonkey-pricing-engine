@@ -31,7 +31,6 @@ import { Route as DashboardReportsRouteImport } from './routes/dashboard/reports
 import { Route as DashboardProductsRouteImport } from './routes/dashboard/products'
 import { Route as DashboardIntelligenceWizardRouteImport } from './routes/dashboard/intelligence-wizard'
 import { Route as DashboardIntelligenceRouteImport } from './routes/dashboard/intelligence'
-import { Route as DashboardIntegrationsRouteImport } from './routes/dashboard/integrations'
 import { Route as DashboardHostingRouteImport } from './routes/dashboard/hosting'
 import { Route as DashboardDomainsRouteImport } from './routes/dashboard/domains'
 import { Route as DashboardCustomersRouteImport } from './routes/dashboard/customers'
@@ -168,11 +167,6 @@ const DashboardIntelligenceWizardRoute =
 const DashboardIntelligenceRoute = DashboardIntelligenceRouteImport.update({
   id: '/dashboard/intelligence',
   path: '/dashboard/intelligence',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DashboardIntegrationsRoute = DashboardIntegrationsRouteImport.update({
-  id: '/dashboard/integrations',
-  path: '/dashboard/integrations',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardHostingRoute = DashboardHostingRouteImport.update({
@@ -333,7 +327,6 @@ export interface FileRoutesByFullPath {
   '/dashboard/customers': typeof DashboardCustomersRoute
   '/dashboard/domains': typeof DashboardDomainsRouteWithChildren
   '/dashboard/hosting': typeof DashboardHostingRoute
-  '/dashboard/integrations': typeof DashboardIntegrationsRoute
   '/dashboard/intelligence': typeof DashboardIntelligenceRoute
   '/dashboard/intelligence-wizard': typeof DashboardIntelligenceWizardRoute
   '/dashboard/products': typeof DashboardProductsRoute
@@ -383,7 +376,6 @@ export interface FileRoutesByTo {
   '/dashboard/customers': typeof DashboardCustomersRoute
   '/dashboard/domains': typeof DashboardDomainsRouteWithChildren
   '/dashboard/hosting': typeof DashboardHostingRoute
-  '/dashboard/integrations': typeof DashboardIntegrationsRoute
   '/dashboard/intelligence': typeof DashboardIntelligenceRoute
   '/dashboard/intelligence-wizard': typeof DashboardIntelligenceWizardRoute
   '/dashboard/products': typeof DashboardProductsRoute
@@ -433,7 +425,6 @@ export interface FileRoutesById {
   '/dashboard/customers': typeof DashboardCustomersRoute
   '/dashboard/domains': typeof DashboardDomainsRouteWithChildren
   '/dashboard/hosting': typeof DashboardHostingRoute
-  '/dashboard/integrations': typeof DashboardIntegrationsRoute
   '/dashboard/intelligence': typeof DashboardIntelligenceRoute
   '/dashboard/intelligence-wizard': typeof DashboardIntelligenceWizardRoute
   '/dashboard/products': typeof DashboardProductsRoute
@@ -485,7 +476,6 @@ export interface FileRouteTypes {
     | '/dashboard/customers'
     | '/dashboard/domains'
     | '/dashboard/hosting'
-    | '/dashboard/integrations'
     | '/dashboard/intelligence'
     | '/dashboard/intelligence-wizard'
     | '/dashboard/products'
@@ -535,7 +525,6 @@ export interface FileRouteTypes {
     | '/dashboard/customers'
     | '/dashboard/domains'
     | '/dashboard/hosting'
-    | '/dashboard/integrations'
     | '/dashboard/intelligence'
     | '/dashboard/intelligence-wizard'
     | '/dashboard/products'
@@ -584,7 +573,6 @@ export interface FileRouteTypes {
     | '/dashboard/customers'
     | '/dashboard/domains'
     | '/dashboard/hosting'
-    | '/dashboard/integrations'
     | '/dashboard/intelligence'
     | '/dashboard/intelligence-wizard'
     | '/dashboard/products'
@@ -635,7 +623,6 @@ export interface RootRouteChildren {
   DashboardCustomersRoute: typeof DashboardCustomersRoute
   DashboardDomainsRoute: typeof DashboardDomainsRouteWithChildren
   DashboardHostingRoute: typeof DashboardHostingRoute
-  DashboardIntegrationsRoute: typeof DashboardIntegrationsRoute
   DashboardIntelligenceRoute: typeof DashboardIntelligenceRoute
   DashboardIntelligenceWizardRoute: typeof DashboardIntelligenceWizardRoute
   DashboardProductsRoute: typeof DashboardProductsRoute
@@ -806,13 +793,6 @@ declare module '@tanstack/react-router' {
       path: '/dashboard/intelligence'
       fullPath: '/dashboard/intelligence'
       preLoaderRoute: typeof DashboardIntelligenceRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/dashboard/integrations': {
-      id: '/dashboard/integrations'
-      path: '/dashboard/integrations'
-      fullPath: '/dashboard/integrations'
-      preLoaderRoute: typeof DashboardIntegrationsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard/hosting': {
@@ -1079,7 +1059,6 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardCustomersRoute: DashboardCustomersRoute,
   DashboardDomainsRoute: DashboardDomainsRouteWithChildren,
   DashboardHostingRoute: DashboardHostingRoute,
-  DashboardIntegrationsRoute: DashboardIntegrationsRoute,
   DashboardIntelligenceRoute: DashboardIntelligenceRoute,
   DashboardIntelligenceWizardRoute: DashboardIntelligenceWizardRoute,
   DashboardProductsRoute: DashboardProductsRoute,

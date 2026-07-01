@@ -15,7 +15,6 @@ import {
   Home,
   LifeBuoy,
   Menu,
-  PlugZap,
   ReceiptText,
   Search,
   Server,
@@ -45,9 +44,10 @@ const mainNav = [
   { to: "/dashboard", label: "Overview", icon: Home },
   { to: "/dashboard/ai-wizard", label: "Product Onboarding", icon: WandSparkles },
   { to: "/dashboard/agents", label: "AI Agents", icon: Bot },
-  { to: "/dashboard/integrations", label: "Automation", icon: PlugZap, chevron: true },
-  { to: "/dashboard/reports", label: "Cloud", icon: Cloud, chevron: true },
-  { to: "/dashboard/domains", label: "Domains", icon: Globe },
+] as const;
+
+const cloudNav = [
+  { to: "/dashboard/domains", label: "Add Domains", icon: Globe },
   { to: "/dashboard/hosting", label: "Hosting", icon: Server },
   { to: "/dashboard/websites", label: "Websites", icon: HardDrive },
   { to: "/dashboard/reports", label: "Databases", icon: Database },
@@ -82,8 +82,8 @@ const mobileNav = [
   mainNav[0],
   mainNav[1],
   mainNav[2],
-  mainNav[5],
-  { to: "/dashboard/hosting", label: "Hosting", icon: Server },
+  cloudNav[0],
+  cloudNav[1],
   bottomNav[0],
 ] as const;
 
@@ -139,6 +139,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
               {mainNav.map((item) => (
                 <SidebarLink key={`${item.label}-${item.to}`} item={item} />
               ))}
+              <SidebarGroup label="Cloud" icon={Cloud} items={cloudNav} />
             </nav>
 
             <div className="mt-6 border-t border-white/10 pt-5">
@@ -251,6 +252,12 @@ export function DashboardShell({ children }: { children: ReactNode }) {
                           onNavigate={() => setMobileMenuOpen(false)}
                         />
                         <MobileNavSection
+                          title="Cloud"
+                          items={cloudNav}
+                          onNavigate={() => setMobileMenuOpen(false)}
+                          nested
+                        />
+                        <MobileNavSection
                           title="Business"
                           items={businessNav}
                           onNavigate={() => setMobileMenuOpen(false)}
@@ -340,11 +347,13 @@ function MobileNavSection({
   items,
   onNavigate,
   muted = false,
+  nested = false,
 }: {
   title: string;
   items: readonly SidebarItem[];
   onNavigate: () => void;
   muted?: boolean;
+  nested?: boolean;
 }) {
   return (
     <div className="mb-5">
@@ -357,15 +366,16 @@ function MobileNavSection({
             <Link
               to={item.to}
               onClick={onNavigate}
-              className="flex h-11 items-center gap-3 rounded-lg px-3 text-[15px] font-medium text-white/78 transition-colors hover:bg-white/[0.07] hover:text-white"
+              className={`flex h-11 items-center gap-3 rounded-lg text-[15px] font-medium text-white/78 transition-colors hover:bg-white/[0.07] hover:text-white ${
+                nested ? "px-6" : "px-3"
+              }`}
               activeProps={{
                 className:
                   "flex h-11 items-center gap-3 rounded-lg bg-[#5d2fe8] px-3 text-[15px] font-semibold text-white shadow-[0_10px_28px_-16px_rgba(93,47,232,0.85)]",
               }}
             >
-              <item.icon className={`h-5 w-5 ${muted ? "text-white/72" : ""}`} />
+              <item.icon className={`${nested ? "h-4 w-4" : "h-5 w-5"} ${muted ? "text-white/72" : ""}`} />
               <span className="min-w-0 flex-1 truncate">{item.label}</span>
-              {item.chevron && <ChevronDown className="h-4 w-4 text-white/60" />}
             </Link>
           </SheetClose>
         ))}
@@ -378,22 +388,55 @@ type SidebarItem = {
   to: string;
   label: string;
   icon: typeof Home;
-  chevron?: boolean;
 };
 
-function SidebarLink({ item, muted = false }: { item: SidebarItem; muted?: boolean }) {
+function SidebarGroup({
+  label,
+  icon: Icon,
+  items,
+}: {
+  label: string;
+  icon: typeof Home;
+  items: readonly SidebarItem[];
+}) {
+  return (
+    <div className="pt-1">
+      <div className="flex h-11 items-center gap-3 rounded-lg px-3 text-[15px] font-semibold text-white/88">
+        <Icon className="h-5 w-5" />
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+        <ChevronDown className="h-4 w-4 text-white/60" />
+      </div>
+      <nav className="mt-1 space-y-1 border-l border-white/10 pl-4">
+        {items.map((item) => (
+          <SidebarLink key={`${item.label}-${item.to}`} item={item} nested />
+        ))}
+      </nav>
+    </div>
+  );
+}
+
+function SidebarLink({
+  item,
+  muted = false,
+  nested = false,
+}: {
+  item: SidebarItem;
+  muted?: boolean;
+  nested?: boolean;
+}) {
   return (
     <Link
       to={item.to}
-      className="flex h-11 items-center gap-3 rounded-lg px-3 text-[15px] font-medium text-white/78 transition-colors hover:bg-white/[0.07] hover:text-white"
+      className={`flex h-11 items-center gap-3 rounded-lg px-3 text-[15px] font-medium text-white/78 transition-colors hover:bg-white/[0.07] hover:text-white ${
+        nested ? "text-sm" : ""
+      }`}
       activeProps={{
         className:
           "flex h-11 items-center gap-3 rounded-lg bg-[#5d2fe8] px-3 text-[15px] font-semibold text-white shadow-[0_10px_28px_-16px_rgba(93,47,232,0.85)]",
       }}
     >
-      <item.icon className={`h-5 w-5 ${muted ? "text-white/72" : ""}`} />
+      <item.icon className={`${nested ? "h-4 w-4" : "h-5 w-5"} ${muted ? "text-white/72" : ""}`} />
       <span className="min-w-0 flex-1 truncate">{item.label}</span>
-      {item.chevron && <ChevronDown className="h-4 w-4 text-white/60" />}
     </Link>
   );
 }
