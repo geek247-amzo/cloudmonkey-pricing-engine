@@ -5443,6 +5443,9 @@ echo "CloudMonkey agent installed."
 
         if (tokenRow.actionType === "staging_review") {
           const approved = body.action === "approve";
+          if (approved && site.containerStatus !== "running") {
+            return json({ error: "Staging cannot be approved before the runtime is provisioned" }, 409);
+          }
           if (review) {
             await db.update(websiteReviewRequest).set({
               status: approved ? "approved" : "changes_requested",
@@ -10302,6 +10305,9 @@ echo "CloudMonkey agent installed."
         try {
           const project = await getProject(websiteId);
           if (!project) return json({ error: "Website project not found" }, 404);
+          if (site.containerStatus !== "running") {
+            return json({ error: "Provision the runtime before sending staging review" }, 409);
+          }
           const { raw, hash } = createApprovalToken();
           const expiresAt = addDays(new Date(), 14);
           const reviewId = makeId("review");
