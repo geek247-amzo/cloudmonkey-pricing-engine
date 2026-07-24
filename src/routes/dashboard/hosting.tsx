@@ -216,9 +216,14 @@ function HostingPage() {
                         <p className="text-xs text-muted-foreground font-mono">{srv.id}</p>
                       </div>
                     </div>
-                    <Badge variant={srv.status === "active" ? "default" : "outline"} className="rounded-full">
-                      {srv.status}
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="rounded-full capitalize">
+                        {srv.hostingMode ?? "private"} hosting
+                      </Badge>
+                      <Badge variant={srv.status === "active" ? "default" : "outline"} className="rounded-full">
+                        {srv.status}
+                      </Badge>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-y-4 md:grid-cols-4 gap-4 mt-6">

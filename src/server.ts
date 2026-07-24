@@ -8755,12 +8755,50 @@ echo "CloudMonkey agent installed."
       if (!row || row.revokedAt || row.usedAt || !isUnexpired(row.expiresAt)) {
         return json({ error: "Handout link is invalid or expired" }, 404);
       }
+      if (row.direction === "request") {
+        return json({ ok: true, mode: "request", expiresAt: row.expiresAt }, { headers: { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } });
+      }
       const [claimed] = await db.update(secureHandoutLink)
         .set({ usedAt: new Date() })
         .where(and(eq(secureHandoutLink.id, row.id), isNull(secureHandoutLink.usedAt), isNull(secureHandoutLink.revokedAt)))
         .returning();
       if (!claimed) return json({ error: "Handout link has already been used" }, 410);
       return json({ ok: true, handout: JSON.parse(decryptSecret(row.payloadSecret)) }, { headers: { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } });
+    }
+
+    if (url.pathname.match(/^\/api\/public\/handout\/[^/]+\/submit$/) && request.method === "POST") {
+      const token = decodeURIComponent(url.pathname.split("/")[4] ?? "");
+      const row = await db.query.secureHandoutLink.findFirst({
+        where: eq(secureHandoutLink.tokenHash, hashSecureToken(token)),
+      });
+      if (!row || row.direction !== "request" || row.revokedAt || row.submittedAt || !isUnexpired(row.expiresAt)) {
+        return json({ error: "Handout request is invalid, expired, or already submitted" }, 404);
+      }
+      const form = await request.formData();
+      const credentials = String(form.get("credentials") ?? "").trim().slice(0, 20000);
+      const file = form.get("file");
+      const allowedTypes = new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml", "application/pdf"]);
+      let storagePath: string | null = null;
+      let fileName: string | null = null;
+      let mimeType: string | null = null;
+      if (isUploadedFile(file) && file.size > 0) {
+        if (!allowedTypes.has(file.type ?? "") || file.size > 10 * 1024 * 1024) return json({ error: "Upload must be a PNG, JPG, WEBP, SVG, or PDF under 10 MB" }, 400);
+        await mkdir(CHAT_UPLOAD_DIR, { recursive: true });
+        fileName = sanitizeFileName(file.name ?? "asset");
+        mimeType = file.type ?? "application/octet-stream";
+        storagePath = join(CHAT_UPLOAD_DIR, `handout-${makeId("asset")}-${fileName}`);
+        await writeFile(storagePath, Buffer.from(await file.arrayBuffer()));
+      }
+      if (!credentials && !storagePath) return json({ error: "Provide credentials or upload a file" }, 400);
+      const [submitted] = await db.update(secureHandoutLink)
+        .set({
+          payloadSecret: encryptSecret(JSON.stringify({ credentials: credentials || null })),
+          submittedAt: new Date(), submissionStoragePath: storagePath, submissionFileName: fileName, submissionMimeType: mimeType,
+        })
+        .where(and(eq(secureHandoutLink.id, row.id), isNull(secureHandoutLink.submittedAt), isNull(secureHandoutLink.revokedAt)))
+        .returning();
+      if (!submitted) return json({ error: "Handout request has already been submitted" }, 409);
+      return json({ ok: true, submittedAt: submitted.submittedAt }, { headers: { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } });
     }
 
     if (url.pathname === "/api/public/seo-checker/scan" && request.method === "POST") {
@@ -8793,13 +8831,15 @@ echo "CloudMonkey agent installed."
         const body = await parseBody(request, z.object({
           handout: z.record(z.string(), z.unknown()),
           recipientEmail: z.string().email().optional().nullable(),
+          direction: z.enum(["view", "request"]).default("view"),
+          ticketId: z.string().optional().nullable(),
           expiresInDays: z.coerce.number().int().min(1).max(30).default(7),
         }));
         const token = createSecureToken();
         const expiresAt = new Date(Date.now() + body.expiresInDays * 86400000);
         const [created] = await db.insert(secureHandoutLink).values({
           id: makeId("handout"), userId: session.user.id, tokenHash: token.hash,
-          payloadSecret: encryptSecret(JSON.stringify(body.handout)), recipientEmail: body.recipientEmail ?? null, expiresAt,
+          payloadSecret: encryptSecret(JSON.stringify(body.handout)), direction: body.direction, ticketId: body.ticketId ?? null, recipientEmail: body.recipientEmail ?? null, expiresAt,
         }).returning();
         await recordAudit({ actorUserId: session.user.id, action: "handout_link.created", entityType: "secure_handout_link", entityId: created.id, message: "Secure handout link created", metadata: { expiresAt, recipientEmail: body.recipientEmail ?? null } });
         return json({ id: created.id, url: `${new URL(request.url).origin}/handout/${token.raw}`, expiresAt });

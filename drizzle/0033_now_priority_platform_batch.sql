@@ -15,3 +15,12 @@ CREATE TABLE IF NOT EXISTS "secure_handout_link" (
 );
 
 ALTER TABLE "service" ADD COLUMN IF NOT EXISTS "visibility" text NOT NULL DEFAULT 'public';
+
+ALTER TABLE "secure_handout_link" ADD COLUMN IF NOT EXISTS "direction" text NOT NULL DEFAULT 'view';
+ALTER TABLE "secure_handout_link" ADD COLUMN IF NOT EXISTS "ticketId" text REFERENCES "support_ticket"("id");
+ALTER TABLE "secure_handout_link" ADD COLUMN IF NOT EXISTS "submittedAt" timestamp;
+ALTER TABLE "secure_handout_link" ADD COLUMN IF NOT EXISTS "submissionStoragePath" text;
+ALTER TABLE "secure_handout_link" ADD COLUMN IF NOT EXISTS "submissionFileName" text;
+ALTER TABLE "secure_handout_link" ADD COLUMN IF NOT EXISTS "submissionMimeType" text;
+
+ALTER TABLE "vultr_instance" ADD COLUMN IF NOT EXISTS "hostingMode" text NOT NULL DEFAULT 'private';

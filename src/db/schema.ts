@@ -391,6 +391,7 @@ export const vultrInstance = pgTable("vultr_instance", {
   region: text("region").notNull(),
   status: text("status").notNull(), // active, pending, etc
   powerStatus: text("powerStatus").notNull(), // running, stopped
+  hostingMode: text("hostingMode").notNull().default("private"), // shared, private, managed
   label: text("label"),
   suspendedAt: timestamp("suspendedAt"),
   suspensionReason: text("suspensionReason"),
@@ -670,10 +671,16 @@ export const secureHandoutLink = pgTable("secure_handout_link", {
   userId: text("userId").notNull().references(() => user.id),
   tokenHash: text("tokenHash").notNull().unique(),
   payloadSecret: text("payloadSecret").notNull(),
+  direction: text("direction").notNull().default("view"),
+  ticketId: text("ticketId").references(() => supportTicket.id),
   recipientEmail: text("recipientEmail"),
   expiresAt: timestamp("expiresAt").notNull(),
   usedAt: timestamp("usedAt"),
   revokedAt: timestamp("revokedAt"),
+  submittedAt: timestamp("submittedAt"),
+  submissionStoragePath: text("submissionStoragePath"),
+  submissionFileName: text("submissionFileName"),
+  submissionMimeType: text("submissionMimeType"),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
 });
 
