@@ -1,6 +1,16 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Briefcase, DollarSign, Headphones, MessageCircle, Shield, Workflow, BarChart3, RefreshCcw } from "lucide-react";
+import {
+  ArrowRight,
+  Briefcase,
+  DollarSign,
+  Headphones,
+  MessageCircle,
+  Shield,
+  Workflow,
+  BarChart3,
+  RefreshCcw,
+} from "lucide-react";
 import mascot from "@/assets/cm-mascot.png";
 import { SectionHeading } from "@/components/site/SectionHeading";
 import { CtaBanner } from "@/components/site/CtaBanner";
@@ -12,7 +22,11 @@ export const Route = createFileRoute("/business")({
   head: () => ({
     meta: [
       { title: "CloudMonkey Business — Voice, productivity, security, and managed support" },
-      { name: "description", content: "CloudMonkey Voice, Microsoft 365, Google Workspace, Managed IT and security — business technology managed by CloudMonkey." },
+      {
+        name: "description",
+        content:
+          "CloudMonkey Voice, Microsoft 365, Google Workspace, Managed IT and security — business technology managed by CloudMonkey.",
+      },
       { property: "og:title", content: "CloudMonkey Business" },
       { property: "og:description", content: "Your business. Fully optimized." },
       ogUrl("/business"),
@@ -23,12 +37,36 @@ export const Route = createFileRoute("/business")({
 });
 
 const FEATURES = [
-  { icon: Briefcase, title: "Microsoft 365 Management", desc: "Expert management and optimization of your Microsoft 365 environment." },
-  { icon: Headphones, title: "IT Support & Helpdesk", desc: "Fast, friendly support that keeps your team productive." },
-  { icon: MessageCircle, title: "Managed Voice", desc: "VoIP, hosted PBX, SIP trunks, routing, recording, apps, reporting, and call workflows." },
-  { icon: Shield, title: "Security & Compliance", desc: "Protect your business with proactive security and compliance services." },
-  { icon: Workflow, title: "Workflows & Automation", desc: "Automate repetitive work to save time and money." },
-  { icon: BarChart3, title: "IT Strategy & Consulting", desc: "Strategic guidance and roadmaps aligned to your business goals." },
+  {
+    icon: Briefcase,
+    title: "Microsoft 365 Management",
+    desc: "Expert management and optimization of your Microsoft 365 environment.",
+  },
+  {
+    icon: Headphones,
+    title: "IT Support & Helpdesk",
+    desc: "Fast, friendly support that keeps your team productive.",
+  },
+  {
+    icon: MessageCircle,
+    title: "Managed Voice",
+    desc: "VoIP, hosted PBX, SIP trunks, routing, recording, apps, reporting, and call workflows.",
+  },
+  {
+    icon: Shield,
+    title: "Security & Compliance",
+    desc: "Protect your business with proactive security and compliance services.",
+  },
+  {
+    icon: Workflow,
+    title: "Workflows & Automation",
+    desc: "Automate repetitive work to save time and money.",
+  },
+  {
+    icon: BarChart3,
+    title: "IT Strategy & Consulting",
+    desc: "Strategic guidance and roadmaps aligned to your business goals.",
+  },
 ];
 
 function ProductivityCard() {
@@ -36,15 +74,29 @@ function ProductivityCard() {
     <div className="rounded-lg border border-[#e8edf1] bg-white/95 p-5 shadow-[0_18px_45px_rgba(9,39,19,0.12)] backdrop-blur">
       <div className="text-sm font-semibold text-[#17213a]">Team Productivity</div>
       <div className="mt-3 text-2xl font-extrabold text-[var(--business)]">+32%</div>
-      <svg viewBox="0 0 210 92" className="mt-2 h-24 w-full" role="img" aria-label="Team productivity rising line chart">
+      <svg
+        viewBox="0 0 210 92"
+        className="mt-2 h-24 w-full"
+        role="img"
+        aria-label="Team productivity rising line chart"
+      >
         <defs>
           <linearGradient id="businessChartFill" x1="0" x2="0" y1="0" y2="1">
             <stop offset="0%" stopColor="#09953f" stopOpacity="0.18" />
             <stop offset="100%" stopColor="#09953f" stopOpacity="0.02" />
           </linearGradient>
         </defs>
-        <path d="M4 78 C24 58 34 70 50 53 S77 42 92 50 S116 65 132 42 S158 28 174 36 S196 23 206 8 L206 88 L4 88 Z" fill="url(#businessChartFill)" />
-        <path d="M4 78 C24 58 34 70 50 53 S77 42 92 50 S116 65 132 42 S158 28 174 36 S196 23 206 8" fill="none" stroke="#09953f" strokeLinecap="round" strokeWidth="3" />
+        <path
+          d="M4 78 C24 58 34 70 50 53 S77 42 92 50 S116 65 132 42 S158 28 174 36 S196 23 206 8 L206 88 L4 88 Z"
+          fill="url(#businessChartFill)"
+        />
+        <path
+          d="M4 78 C24 58 34 70 50 53 S77 42 92 50 S116 65 132 42 S158 28 174 36 S196 23 206 8"
+          fill="none"
+          stroke="#09953f"
+          strokeLinecap="round"
+          strokeWidth="3"
+        />
         <circle cx="206" cy="8" r="5" fill="#09953f" />
       </svg>
     </div>
@@ -54,7 +106,10 @@ function ProductivityCard() {
 function TasksCard() {
   return (
     <div className="flex items-center gap-5 rounded-lg border border-[#e8edf1] bg-white/95 p-5 shadow-[0_18px_45px_rgba(9,39,19,0.12)] backdrop-blur">
-      <div className="relative h-20 w-20 shrink-0 rounded-full" style={{ background: "conic-gradient(var(--business) 0 98%, #e6f6ea 98% 100%)" }}>
+      <div
+        className="relative h-20 w-20 shrink-0 rounded-full"
+        style={{ background: "conic-gradient(var(--business) 0 98%, #e6f6ea 98% 100%)" }}
+      >
         <div className="absolute inset-4 rounded-full bg-white" />
       </div>
       <div>
@@ -94,7 +149,7 @@ function BusinessPage() {
     pricingCategories
       .filter((category) => businessCategoryIds.has(category.id))
       .flatMap((category) => category.services)
-      .filter((service) => ["pbx", "sip-trunks", "voice-intel", "voice-quote", "productivity", "security", "managed-it"].includes(service.id)) ?? [];
+      .filter((service) => ["productivity", "security", "managed-it"].includes(service.id)) ?? [];
   return (
     <>
       <section className="relative isolate overflow-hidden bg-white">
@@ -109,13 +164,17 @@ function BusinessPage() {
               </span>
               Business
             </div>
-            <h1 className="text-[clamp(3rem,7vw,5.6rem)] font-extrabold leading-[0.95] text-[#07102c]" style={{ fontFamily: "var(--font-display)" }}>
+            <h1
+              className="text-[clamp(3rem,7vw,5.6rem)] font-extrabold leading-[0.95] text-[#07102c]"
+              style={{ fontFamily: "var(--font-display)" }}
+            >
               Your business.
               <br />
               <span className="text-[var(--business)]">Fully optimized.</span>
             </h1>
             <p className="mt-8 max-w-lg text-lg leading-8 text-[#17213a]">
-              Managed IT, Microsoft 365, Google Workspace, security, workflows, support, and voice services managed by one CloudMonkey team.
+              Managed IT, Microsoft 365, Google Workspace, security, workflows, support, and voice
+              services managed by one CloudMonkey team.
             </p>
             <div className="mt-10 flex flex-wrap gap-4">
               <Link
@@ -123,7 +182,7 @@ function BusinessPage() {
                 search={{ bundle: undefined, plan: undefined, coupon: undefined, ref: undefined }}
                 className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-[var(--business)] px-7 text-sm font-bold text-white shadow-[0_16px_30px_-18px_rgba(0,126,54,0.75)] transition-transform hover:-translate-y-0.5"
               >
-              Explore Business IT <ArrowRight className="h-4 w-4" />
+                Explore Business IT <ArrowRight className="h-4 w-4" />
               </Link>
               <Link
                 to="/auth/sign-up"
@@ -165,10 +224,18 @@ function BusinessPage() {
         <div className="mt-12 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
           {FEATURES.map((f) => (
             <div key={f.title} className="text-center">
-              <div className="mx-auto mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl" style={{ background: "var(--business-soft)", color: "var(--business)" }}>
+              <div
+                className="mx-auto mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl"
+                style={{ background: "var(--business-soft)", color: "var(--business)" }}
+              >
                 <f.icon className="h-7 w-7" />
               </div>
-              <h3 className="text-base font-bold text-foreground" style={{ fontFamily: "var(--font-display)" }}>{f.title}</h3>
+              <h3
+                className="text-base font-bold text-foreground"
+                style={{ fontFamily: "var(--font-display)" }}
+              >
+                {f.title}
+              </h3>
               <p className="mt-2 text-sm text-muted-foreground">{f.desc}</p>
             </div>
           ))}
@@ -195,16 +262,50 @@ function BusinessPage() {
         {isError && (
           <div className="mx-auto mt-12 max-w-7xl px-6 py-12">
             <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-800">
-              <div className="font-semibold">Live business pricing did not load. Static catalog pricing is shown below.</div>
-              <button type="button" onClick={() => refetch()} className="mt-2 font-semibold underline">
+              <div className="font-semibold">
+                Live business pricing did not load. Static catalog pricing is shown below.
+              </div>
+              <button
+                type="button"
+                onClick={() => refetch()}
+                className="mt-2 font-semibold underline"
+              >
                 Try again
               </button>
             </div>
           </div>
         )}
+        <section className="mx-auto max-w-7xl px-6 py-10">
+          <div className="flex flex-col items-start justify-between gap-5 rounded-3xl border border-[var(--business)]/20 bg-[var(--business-soft)] p-8 md:flex-row md:items-center">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-widest text-[var(--business)]">
+                Managed voice
+              </p>
+              <h2 className="mt-2 text-2xl font-bold tracking-tight">
+                Yeastar Cloud PBX and voice pricing
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                See the complete Hosted PBX, SIP Trunks, Voice Intelligence, and voice quote options
+                on the dedicated Voice page.
+              </p>
+            </div>
+            <Link
+              to="/voice"
+              className="inline-flex shrink-0 items-center gap-2 rounded-full px-5 py-3 text-sm font-semibold text-white"
+              style={{ background: "var(--business)" }}
+            >
+              See full Voice pricing <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        </section>
         {businessServices.length ? (
           businessServices.map((s) => (
-            <ServiceSection key={s.id} service={s} accent="business" ctaHref={(plan) => `/auth/sign-up?plan=${encodeURIComponent(plan.id)}`} />
+            <ServiceSection
+              key={s.id}
+              service={s}
+              accent="business"
+              ctaHref={(plan) => `/auth/sign-up?plan=${encodeURIComponent(plan.id)}`}
+            />
           ))
         ) : (
           <div className="mx-auto mt-12 max-w-7xl px-6 py-12 text-center text-muted-foreground">

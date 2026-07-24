@@ -107,6 +107,12 @@ function VoicePage() {
                 "Call recording, reporting, and queue tools",
                 "CRM and helpdesk integrations",
                 "Microsoft 365 connectivity",
+                "AI Receptionist for 24/7 automated call handling and routing",
+                "Automated call transcription, summaries, and neural text-to-speech",
+                "WhatsApp, SMS, Facebook, and Live Chat in one inbox",
+                "Video conferencing with screen sharing",
+                "500+ compatible IP phone models",
+                "210+ SIP trunk providers",
               ].map((feature) => (
                 <div key={feature} className="rounded-2xl border border-border bg-background p-4">
                   {feature}
