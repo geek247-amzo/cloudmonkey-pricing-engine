@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as VoiceRouteImport } from './routes/voice'
+import { Route as SsoCheckerRouteImport } from './routes/sso-checker'
 import { Route as SeoCheckerRouteImport } from './routes/seo-checker'
 import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as MarketingRouteImport } from './routes/marketing'
@@ -81,6 +82,11 @@ import { Route as DashboardBillingInvoicesInvoiceIdRouteImport } from './routes/
 const VoiceRoute = VoiceRouteImport.update({
   id: '/voice',
   path: '/voice',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SsoCheckerRoute = SsoCheckerRouteImport.update({
+  id: '/sso-checker',
+  path: '/sso-checker',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SeoCheckerRoute = SeoCheckerRouteImport.update({
@@ -438,6 +444,7 @@ export interface FileRoutesByFullPath {
   '/marketing': typeof MarketingRoute
   '/pricing': typeof PricingRoute
   '/seo-checker': typeof SeoCheckerRoute
+  '/sso-checker': typeof SsoCheckerRoute
   '/voice': typeof VoiceRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
   '/auth/link-account': typeof AuthLinkAccountRoute
@@ -508,6 +515,7 @@ export interface FileRoutesByTo {
   '/marketing': typeof MarketingRoute
   '/pricing': typeof PricingRoute
   '/seo-checker': typeof SeoCheckerRoute
+  '/sso-checker': typeof SsoCheckerRoute
   '/voice': typeof VoiceRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
   '/auth/link-account': typeof AuthLinkAccountRoute
@@ -577,6 +585,7 @@ export interface FileRoutesById {
   '/marketing': typeof MarketingRoute
   '/pricing': typeof PricingRoute
   '/seo-checker': typeof SeoCheckerRoute
+  '/sso-checker': typeof SsoCheckerRoute
   '/voice': typeof VoiceRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
   '/auth/link-account': typeof AuthLinkAccountRoute
@@ -649,6 +658,7 @@ export interface FileRouteTypes {
     | '/marketing'
     | '/pricing'
     | '/seo-checker'
+    | '/sso-checker'
     | '/voice'
     | '/auth/forgot-password'
     | '/auth/link-account'
@@ -719,6 +729,7 @@ export interface FileRouteTypes {
     | '/marketing'
     | '/pricing'
     | '/seo-checker'
+    | '/sso-checker'
     | '/voice'
     | '/auth/forgot-password'
     | '/auth/link-account'
@@ -787,6 +798,7 @@ export interface FileRouteTypes {
     | '/marketing'
     | '/pricing'
     | '/seo-checker'
+    | '/sso-checker'
     | '/voice'
     | '/auth/forgot-password'
     | '/auth/link-account'
@@ -858,6 +870,7 @@ export interface RootRouteChildren {
   MarketingRoute: typeof MarketingRoute
   PricingRoute: typeof PricingRoute
   SeoCheckerRoute: typeof SeoCheckerRoute
+  SsoCheckerRoute: typeof SsoCheckerRoute
   VoiceRoute: typeof VoiceRoute
   AuthForgotPasswordRoute: typeof AuthForgotPasswordRoute
   AuthLinkAccountRoute: typeof AuthLinkAccountRoute
@@ -908,6 +921,13 @@ declare module '@tanstack/react-router' {
       path: '/voice'
       fullPath: '/voice'
       preLoaderRoute: typeof VoiceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sso-checker': {
+      id: '/sso-checker'
+      path: '/sso-checker'
+      fullPath: '/sso-checker'
+      preLoaderRoute: typeof SsoCheckerRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/seo-checker': {
@@ -1489,6 +1509,7 @@ const rootRouteChildren: RootRouteChildren = {
   MarketingRoute: MarketingRoute,
   PricingRoute: PricingRoute,
   SeoCheckerRoute: SeoCheckerRoute,
+  SsoCheckerRoute: SsoCheckerRoute,
   VoiceRoute: VoiceRoute,
   AuthForgotPasswordRoute: AuthForgotPasswordRoute,
   AuthLinkAccountRoute: AuthLinkAccountRoute,
