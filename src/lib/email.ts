@@ -7,6 +7,8 @@ type EmailTemplateId =
   | "lead_created"
   | "onboarding_received"
   | "support_notification"
+  | "welcome"
+  | "seo_scan_results"
   | "generic";
 
 type SendEmailInput = {
@@ -108,6 +110,10 @@ function getTemplateTitle(template: string, data: Record<string, unknown>) {
       return "Onboarding received";
     case "support_notification":
       return "Support update";
+    case "welcome":
+      return "Welcome to CloudMonkey";
+    case "seo_scan_results":
+      return "Your CloudMonkey SEO check is ready";
     default:
       return "CloudMonkey update";
   }
@@ -126,6 +132,10 @@ function getTemplateIntro(template: string, data: Record<string, unknown>) {
       return "A customer submitted onboarding details for a paid subscription.";
     case "support_notification":
       return firstString(data.summary, "There is an update on a CloudMonkey support request.");
+    case "welcome":
+      return "Your CloudMonkey account is ready. Here are the next steps to get value quickly.";
+    case "seo_scan_results":
+      return "Your initial SEO checker results are ready to review.";
     default:
       return firstString(data.emailIntro, "We're writing with an update from CloudMonkey.");
   }
@@ -144,6 +154,10 @@ function getTemplateBody(template: string, data: Record<string, unknown>) {
       return `Customer: ${firstString(data.customerEmail, data.email, "N/A")}\nSubscription: ${firstString(data.subscriptionName, "N/A")}`;
     case "support_notification":
       return firstString(data.body, "Open the dashboard to review the support update.");
+    case "welcome":
+      return "Complete your profile, connect your first service, and use the dashboard to keep everything in one place.";
+    case "seo_scan_results":
+      return `We found ${firstString(data.findingCount, "a few")} items worth reviewing. The dashboard shows the recommended next actions.`;
     default:
       return firstString(data.body, "Open your CloudMonkey dashboard for more detail.");
   }

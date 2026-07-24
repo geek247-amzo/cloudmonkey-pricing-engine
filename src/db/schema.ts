@@ -122,6 +122,7 @@ export const service = pgTable("service", {
   note: text("note"),
   sortOrder: integer("sortOrder").notNull().default(0),
   active: boolean("active").notNull().default(true),
+  visibility: text("visibility").notNull().default("public"),
 });
 
 export const servicePlan = pgTable("service_plan", {
@@ -657,7 +658,22 @@ export const lead = pgTable("lead", {
   qualification: text("qualification"),
   services: text("services"), // JSON string or comma separated
   setupStyle: text("setupStyle"),
+  captureSource: text("captureSource"),
+  consentAt: timestamp("consentAt"),
+  scanFingerprint: text("scanFingerprint"),
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+});
+
+export const secureHandoutLink = pgTable("secure_handout_link", {
+  id: text("id").primaryKey(),
+  userId: text("userId").notNull().references(() => user.id),
+  tokenHash: text("tokenHash").notNull().unique(),
+  payloadSecret: text("payloadSecret").notNull(),
+  recipientEmail: text("recipientEmail"),
+  expiresAt: timestamp("expiresAt").notNull(),
+  usedAt: timestamp("usedAt"),
+  revokedAt: timestamp("revokedAt"),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
 });
 

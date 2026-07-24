@@ -66,6 +66,7 @@ import {
   websiteStore,
   websiteStoreDatabase,
   workspaceSettings,
+  adminChatMessage,
 } from "../../db/schema";
 
 function toCentsFromZarInput(value: unknown) {
@@ -117,6 +118,7 @@ type AdminDeps = {
   }>;
   syncMicrosoft365Tenant: (row: any) => Promise<any>;
   microsoft365RedirectUri: (request: Request) => string;
+  adminChatMessage?: any;
 };
 
 const adminUserUpdateSchema = z.object({
@@ -154,6 +156,9 @@ const adminChatSchema = z.object({
     )
     .optional()
     .default([]),
+  proactive: z.boolean().optional().default(false),
+  customerUserId: z.string().optional().nullable(),
+  ticketId: z.string().optional().nullable(),
 });
 
 const ticketAiInstructionSchema = z.object({
@@ -1875,7 +1880,7 @@ export function createAdminHandlers(deps: AdminDeps) {
       return deps.json({ session: chatSession, history });
     }
 
-    if (url.pathname === "/api/admin/chat" && request.method === "POST") {
+    if ((url.pathname === "/api/admin/chat" || url.pathname === "/api/admin/chat/proactive") && request.method === "POST") {
       try {
         const body = await deps.parseBody(request, adminChatSchema);
         const chatSession = await deps.resolveAdminChatSession(session.user.id, body.sessionId);
@@ -1888,13 +1893,18 @@ export function createAdminHandlers(deps: AdminDeps) {
           createdAt: new Date().toISOString(),
         };
 
+        const proactiveContext = body.proactive
+          ? await deps.getSupportCrmContext(body.customerUserId ?? session.user.id)
+          : null;
         const responseData = await deps.sendN8nAdminChat({
           sessionId: chatSession.id,
-          message: body.message,
-          contextType: body.contextType,
-          contextId: body.contextId,
+          message: body.proactive
+            ? `Proactively review the customer situation and suggest one safe next conversation step.\n\n${body.message}`
+            : body.message,
+          contextType: body.contextType ?? (body.proactive ? "proactive_customer_conversation" : null),
+          contextId: body.contextId ?? body.ticketId ?? body.customerUserId,
           conversationHistory: body.conversationHistory,
-          user: { id: session.user.id, email: session.user.email, name: session.user.name },
+          user: { id: session.user.id, email: session.user.email, name: session.user.name, allowMutations: false, proactiveContext },
           idempotencyKey: `admin-chat:${chatSession.id}:${userMessageId}`,
         });
         const botMessage = {
@@ -1903,6 +1913,23 @@ export function createAdminHandlers(deps: AdminDeps) {
           body: extractAiResponseText(responseData, "I have logged this for the team."),
           createdAt: new Date().toISOString(),
         };
+        if (deps.adminChatMessage) {
+          await deps.db.insert(deps.adminChatMessage).values({
+            id: userMessageId,
+            sessionId: chatSession.id,
+            userId: session.user.id,
+            role: "user",
+            body: body.message,
+          });
+          await deps.db.insert(deps.adminChatMessage).values({
+            id: botMessage.id,
+            sessionId: chatSession.id,
+            userId: null,
+            role: "assistant",
+            body: botMessage.body,
+            metadata: JSON.stringify({ proactive: body.proactive, contextType: body.contextType ?? null }),
+          });
+        }
         return deps.json({
           session: chatSession,
           userMessage,

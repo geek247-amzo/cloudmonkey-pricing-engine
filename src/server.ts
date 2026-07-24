@@ -93,8 +93,9 @@ import {
   websiteStore,
   websiteStoreDatabase,
   workspaceSettings,
+  secureHandoutLink,
 } from "./db/schema";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   listInstances,
@@ -110,6 +111,8 @@ import { captureInvoicePaymentAtomically } from "./lib/invoice-payment-capture";
 import { createPublicScanHandlers } from "./lib/public-scans";
 import { initializePayment, verifyPayment } from "./lib/paystack";
 import { sendEmail } from "./lib/email";
+import { stripPii, stripPiiJson } from "./lib/pii";
+import { createSecureToken, hashSecureToken, isUnexpired } from "./lib/secure-handout";
 import { isAdmin, requireAdmin, requireSession } from "./lib/auth-guards";
 import {
   buildIntelligenceProjectUpdateSchema,
@@ -3193,7 +3196,7 @@ async function recordAudit(input: {
       entityId: input.entityId ?? null,
       message: input.message,
       level: input.level ?? "info",
-      metadata: input.metadata ? JSON.stringify(input.metadata) : null,
+      metadata: input.metadata ? stripPiiJson(input.metadata) : null,
     });
   } catch (error) {
     console.error("Audit write failed:", error);
@@ -4176,10 +4179,10 @@ async function sendN8nAdminChat(input: {
       ...(cloudMonkeyApiToken ? { "X-CloudMonkey-API-Token": cloudMonkeyApiToken } : {}),
       "X-CloudMonkey-Idempotency-Key": input.idempotencyKey,
     },
-    body: JSON.stringify({
+    body: JSON.stringify(stripPii({
       event: "admin.chat.message",
       ...input,
-    }),
+    })),
   });
 
   const responseText = await response.text();
@@ -8074,6 +8077,7 @@ const adminHandlers = createAdminHandlers({
   getAdminServerStatus,
   resolveAdminChatSession,
   loadAdminChatHistory,
+  adminChatMessage,
   sendN8nAdminChat,
   generateGeminiText,
   sanitizeN8nIntegration,
@@ -8454,6 +8458,7 @@ export default {
               orderBy: (row: any, { asc }: any) => [asc(row.sortOrder)],
             }),
             db.query.service.findMany({
+              where: eq(service.visibility, "public"),
               orderBy: (row: any, { asc }: any) => [asc(row.sortOrder)],
             }),
             db.query.servicePlan.findMany({
@@ -8493,7 +8498,20 @@ export default {
     }
 
     if (url.pathname.startsWith("/api/auth")) {
-      return auth.handler(request);
+      const signupBody = url.pathname.endsWith("/sign-up/email") && request.method === "POST"
+        ? await request.clone().json().catch(() => null)
+        : null;
+      const authResponse = await auth.handler(request);
+      if (signupBody && authResponse.ok && typeof signupBody?.email === "string") {
+        sendEmail({
+          template: "welcome",
+          to: signupBody.email,
+          subject: "Welcome to CloudMonkey",
+          data: { firstName: signupBody.name, primaryCtaText: "Open your dashboard", primaryCtaUrl: `${new URL(request.url).origin}/dashboard` },
+          idempotencyKey: `welcome:${signupBody.email}`,
+        }).catch((error) => console.error("Welcome email failed:", error));
+      }
+      return authResponse;
     }
 
     if (url.pathname === "/api/user/security-status" && request.method === "GET") {
@@ -8660,10 +8678,16 @@ echo "CloudMonkey agent installed."
 
     if (url.pathname.startsWith("/api/leads") && request.method === "POST") {
       try {
-        const body = await request.json();
+        const body = await parseBody(request, z.object({
+          name: z.string().trim().min(1).max(140), email: z.string().email().max(320),
+          company: z.string().trim().max(160).optional().nullable(), phone: z.string().max(80).optional().nullable(),
+          services: z.string().max(2000).optional().nullable(), setupStyle: z.string().max(160).optional().nullable(),
+          wizardAnswers: z.record(z.string(), z.unknown()).optional(), captureSource: z.string().max(80).optional(),
+          consent: z.literal(true),
+        }));
         const wizardAnswers =
           body.wizardAnswers && typeof body.wizardAnswers === "object" ? body.wizardAnswers : null;
-        const servicesValue = wizardAnswers ? JSON.stringify(wizardAnswers) : body.services;
+        const servicesValue = wizardAnswers ? JSON.stringify(stripPii(wizardAnswers)) : body.services;
         await db.insert(lead).values({
           id: "lead_" + Date.now(),
           name: body.name,
@@ -8671,6 +8695,10 @@ echo "CloudMonkey agent installed."
           company: body.company,
           services: servicesValue,
           setupStyle: body.setupStyle,
+          phone: body.phone ?? null,
+          captureSource: body.captureSource ?? "website",
+          consentAt: new Date(),
+          scanFingerprint: body.captureSource === "seo_checker" ? sha256(JSON.stringify(stripPii(wizardAnswers ?? body.services ?? ""))) : null,
         });
         await recordAudit({
           action: "lead.created",
@@ -8719,6 +8747,30 @@ echo "CloudMonkey agent installed."
       return publicScanHandlers.handleGeneralScan(request);
     }
 
+    if (url.pathname.match(/^\/api\/public\/handout\/[^/]+\/consume$/) && request.method === "POST") {
+      const token = decodeURIComponent(url.pathname.split("/")[4] ?? "");
+      const row = await db.query.secureHandoutLink.findFirst({
+        where: eq(secureHandoutLink.tokenHash, hashSecureToken(token)),
+      });
+      if (!row || row.revokedAt || row.usedAt || !isUnexpired(row.expiresAt)) {
+        return json({ error: "Handout link is invalid or expired" }, 404);
+      }
+      const [claimed] = await db.update(secureHandoutLink)
+        .set({ usedAt: new Date() })
+        .where(and(eq(secureHandoutLink.id, row.id), isNull(secureHandoutLink.usedAt), isNull(secureHandoutLink.revokedAt)))
+        .returning();
+      if (!claimed) return json({ error: "Handout link has already been used" }, 410);
+      return json({ ok: true, handout: JSON.parse(decryptSecret(row.payloadSecret)) }, { headers: { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } });
+    }
+
+    if (url.pathname === "/api/public/seo-checker/scan" && request.method === "POST") {
+      const { session, response } = await requireSession(request);
+      if (response) return response;
+      const scanResponse = await publicScanHandlers.handleGeneralScan(request);
+      if (!session) return scanResponse;
+      return scanResponse;
+    }
+
     if (url.pathname.startsWith("/api/user/wallet")) {
       if (url.pathname.startsWith("/api/user/wallet/top-ups")) {
         return walletHandlers.handleUserWalletTopUps(request);
@@ -8731,6 +8783,29 @@ echo "CloudMonkey agent installed."
         return walletHandlers.handleAdminWalletAdjustments(request);
       }
       return walletHandlers.handleAdminWallet(request);
+    }
+
+    if (url.pathname === "/api/admin/handout-links" && request.method === "POST") {
+      const { session, response } = await requireAdmin(request);
+      if (response) return response;
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      try {
+        const body = await parseBody(request, z.object({
+          handout: z.record(z.string(), z.unknown()),
+          recipientEmail: z.string().email().optional().nullable(),
+          expiresInDays: z.coerce.number().int().min(1).max(30).default(7),
+        }));
+        const token = createSecureToken();
+        const expiresAt = new Date(Date.now() + body.expiresInDays * 86400000);
+        const [created] = await db.insert(secureHandoutLink).values({
+          id: makeId("handout"), userId: session.user.id, tokenHash: token.hash,
+          payloadSecret: encryptSecret(JSON.stringify(body.handout)), recipientEmail: body.recipientEmail ?? null, expiresAt,
+        }).returning();
+        await recordAudit({ actorUserId: session.user.id, action: "handout_link.created", entityType: "secure_handout_link", entityId: created.id, message: "Secure handout link created", metadata: { expiresAt, recipientEmail: body.recipientEmail ?? null } });
+        return json({ id: created.id, url: `${new URL(request.url).origin}/handout/${token.raw}`, expiresAt });
+      } catch (error: any) {
+        return json({ error: error.message, issues: error.issues }, error.status ?? 400);
+      }
     }
 
     if (url.pathname.startsWith("/api/user/intelligence")) {

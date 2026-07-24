@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as VoiceRouteImport } from './routes/voice'
+import { Route as SeoCheckerRouteImport } from './routes/seo-checker'
 import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as MarketingRouteImport } from './routes/marketing'
 import { Route as LegalRouteImport } from './routes/legal'
@@ -32,6 +33,7 @@ import { Route as LegalPrivacyRouteImport } from './routes/legal/privacy'
 import { Route as LegalPopiaRouteImport } from './routes/legal/popia'
 import { Route as LegalCookiesRouteImport } from './routes/legal/cookies'
 import { Route as LegalAupRouteImport } from './routes/legal/aup'
+import { Route as HandoutTokenRouteImport } from './routes/handout/$token'
 import { Route as DashboardWebsitesRouteImport } from './routes/dashboard/websites'
 import { Route as DashboardWebsiteWizardRouteImport } from './routes/dashboard/website-wizard'
 import { Route as DashboardWebsiteProjectsRouteImport } from './routes/dashboard/website-projects'
@@ -79,6 +81,11 @@ import { Route as DashboardBillingInvoicesInvoiceIdRouteImport } from './routes/
 const VoiceRoute = VoiceRouteImport.update({
   id: '/voice',
   path: '/voice',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SeoCheckerRoute = SeoCheckerRouteImport.update({
+  id: '/seo-checker',
+  path: '/seo-checker',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PricingRoute = PricingRouteImport.update({
@@ -190,6 +197,11 @@ const LegalAupRoute = LegalAupRouteImport.update({
   id: '/aup',
   path: '/aup',
   getParentRoute: () => LegalRoute,
+} as any)
+const HandoutTokenRoute = HandoutTokenRouteImport.update({
+  id: '/handout/$token',
+  path: '/handout/$token',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardWebsitesRoute = DashboardWebsitesRouteImport.update({
   id: '/dashboard/websites',
@@ -425,6 +437,7 @@ export interface FileRoutesByFullPath {
   '/legal': typeof LegalRouteWithChildren
   '/marketing': typeof MarketingRoute
   '/pricing': typeof PricingRoute
+  '/seo-checker': typeof SeoCheckerRoute
   '/voice': typeof VoiceRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
   '/auth/link-account': typeof AuthLinkAccountRoute
@@ -462,6 +475,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/website-projects': typeof DashboardWebsiteProjectsRoute
   '/dashboard/website-wizard': typeof DashboardWebsiteWizardRoute
   '/dashboard/websites': typeof DashboardWebsitesRouteWithChildren
+  '/handout/$token': typeof HandoutTokenRoute
   '/legal/aup': typeof LegalAupRoute
   '/legal/cookies': typeof LegalCookiesRoute
   '/legal/popia': typeof LegalPopiaRoute
@@ -493,6 +507,7 @@ export interface FileRoutesByTo {
   '/legal': typeof LegalRouteWithChildren
   '/marketing': typeof MarketingRoute
   '/pricing': typeof PricingRoute
+  '/seo-checker': typeof SeoCheckerRoute
   '/voice': typeof VoiceRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
   '/auth/link-account': typeof AuthLinkAccountRoute
@@ -529,6 +544,7 @@ export interface FileRoutesByTo {
   '/dashboard/website-projects': typeof DashboardWebsiteProjectsRoute
   '/dashboard/website-wizard': typeof DashboardWebsiteWizardRoute
   '/dashboard/websites': typeof DashboardWebsitesRouteWithChildren
+  '/handout/$token': typeof HandoutTokenRoute
   '/legal/aup': typeof LegalAupRoute
   '/legal/cookies': typeof LegalCookiesRoute
   '/legal/popia': typeof LegalPopiaRoute
@@ -560,6 +576,7 @@ export interface FileRoutesById {
   '/legal': typeof LegalRouteWithChildren
   '/marketing': typeof MarketingRoute
   '/pricing': typeof PricingRoute
+  '/seo-checker': typeof SeoCheckerRoute
   '/voice': typeof VoiceRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
   '/auth/link-account': typeof AuthLinkAccountRoute
@@ -597,6 +614,7 @@ export interface FileRoutesById {
   '/dashboard/website-projects': typeof DashboardWebsiteProjectsRoute
   '/dashboard/website-wizard': typeof DashboardWebsiteWizardRoute
   '/dashboard/websites': typeof DashboardWebsitesRouteWithChildren
+  '/handout/$token': typeof HandoutTokenRoute
   '/legal/aup': typeof LegalAupRoute
   '/legal/cookies': typeof LegalCookiesRoute
   '/legal/popia': typeof LegalPopiaRoute
@@ -630,6 +648,7 @@ export interface FileRouteTypes {
     | '/legal'
     | '/marketing'
     | '/pricing'
+    | '/seo-checker'
     | '/voice'
     | '/auth/forgot-password'
     | '/auth/link-account'
@@ -667,6 +686,7 @@ export interface FileRouteTypes {
     | '/dashboard/website-projects'
     | '/dashboard/website-wizard'
     | '/dashboard/websites'
+    | '/handout/$token'
     | '/legal/aup'
     | '/legal/cookies'
     | '/legal/popia'
@@ -698,6 +718,7 @@ export interface FileRouteTypes {
     | '/legal'
     | '/marketing'
     | '/pricing'
+    | '/seo-checker'
     | '/voice'
     | '/auth/forgot-password'
     | '/auth/link-account'
@@ -734,6 +755,7 @@ export interface FileRouteTypes {
     | '/dashboard/website-projects'
     | '/dashboard/website-wizard'
     | '/dashboard/websites'
+    | '/handout/$token'
     | '/legal/aup'
     | '/legal/cookies'
     | '/legal/popia'
@@ -764,6 +786,7 @@ export interface FileRouteTypes {
     | '/legal'
     | '/marketing'
     | '/pricing'
+    | '/seo-checker'
     | '/voice'
     | '/auth/forgot-password'
     | '/auth/link-account'
@@ -801,6 +824,7 @@ export interface FileRouteTypes {
     | '/dashboard/website-projects'
     | '/dashboard/website-wizard'
     | '/dashboard/websites'
+    | '/handout/$token'
     | '/legal/aup'
     | '/legal/cookies'
     | '/legal/popia'
@@ -833,6 +857,7 @@ export interface RootRouteChildren {
   LegalRoute: typeof LegalRouteWithChildren
   MarketingRoute: typeof MarketingRoute
   PricingRoute: typeof PricingRoute
+  SeoCheckerRoute: typeof SeoCheckerRoute
   VoiceRoute: typeof VoiceRoute
   AuthForgotPasswordRoute: typeof AuthForgotPasswordRoute
   AuthLinkAccountRoute: typeof AuthLinkAccountRoute
@@ -870,6 +895,7 @@ export interface RootRouteChildren {
   DashboardWebsiteProjectsRoute: typeof DashboardWebsiteProjectsRoute
   DashboardWebsiteWizardRoute: typeof DashboardWebsiteWizardRoute
   DashboardWebsitesRoute: typeof DashboardWebsitesRouteWithChildren
+  HandoutTokenRoute: typeof HandoutTokenRoute
   WebsiteApprovalTokenRoute: typeof WebsiteApprovalTokenRoute
   AuthIndexRoute: typeof AuthIndexRoute
   DashboardIndexRoute: typeof DashboardIndexRoute
@@ -882,6 +908,13 @@ declare module '@tanstack/react-router' {
       path: '/voice'
       fullPath: '/voice'
       preLoaderRoute: typeof VoiceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/seo-checker': {
+      id: '/seo-checker'
+      path: '/seo-checker'
+      fullPath: '/seo-checker'
+      preLoaderRoute: typeof SeoCheckerRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pricing': {
@@ -1037,6 +1070,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/legal/aup'
       preLoaderRoute: typeof LegalAupRouteImport
       parentRoute: typeof LegalRoute
+    }
+    '/handout/$token': {
+      id: '/handout/$token'
+      path: '/handout/$token'
+      fullPath: '/handout/$token'
+      preLoaderRoute: typeof HandoutTokenRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/dashboard/websites': {
       id: '/dashboard/websites'
@@ -1448,6 +1488,7 @@ const rootRouteChildren: RootRouteChildren = {
   LegalRoute: LegalRouteWithChildren,
   MarketingRoute: MarketingRoute,
   PricingRoute: PricingRoute,
+  SeoCheckerRoute: SeoCheckerRoute,
   VoiceRoute: VoiceRoute,
   AuthForgotPasswordRoute: AuthForgotPasswordRoute,
   AuthLinkAccountRoute: AuthLinkAccountRoute,
@@ -1485,6 +1526,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardWebsiteProjectsRoute: DashboardWebsiteProjectsRoute,
   DashboardWebsiteWizardRoute: DashboardWebsiteWizardRoute,
   DashboardWebsitesRoute: DashboardWebsitesRouteWithChildren,
+  HandoutTokenRoute: HandoutTokenRoute,
   WebsiteApprovalTokenRoute: WebsiteApprovalTokenRoute,
   AuthIndexRoute: AuthIndexRoute,
   DashboardIndexRoute: DashboardIndexRoute,
