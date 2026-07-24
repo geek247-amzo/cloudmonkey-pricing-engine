@@ -49,6 +49,7 @@ export function Footer() {
             links={[
               { to: "/voice", label: "Hosted PBX" },
               { to: "/voice", label: "SIP Trunks" },
+              { to: "/business", label: "Business" },
               { to: "/business", label: "Managed IT" },
               { to: "/business", label: "Microsoft 365" },
               { to: "/business", label: "Security" },
