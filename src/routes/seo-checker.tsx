@@ -41,6 +41,9 @@ function SeoCheckerPage() {
   const [email, setEmail] = useState("");
   const [result, setResult] = useState<{ findings: SeoFinding[] } | null>(null);
   const [loading, setLoading] = useState(false);
+  const [leadSubmitting, setLeadSubmitting] = useState(false);
+  const [leadSubmitted, setLeadSubmitted] = useState(false);
+  const [leadError, setLeadError] = useState("");
   const [error, setError] = useState("");
   const { data: session, isPending: isSessionPending } = authClient.useSession();
   async function scan() {
@@ -66,19 +69,33 @@ function SeoCheckerPage() {
     }
   }
   async function captureLead() {
-    if (!email || !result) return;
-    await fetch("/api/leads", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: email.split("@")[0],
-        email,
-        services: "SEO Checker",
-        captureSource: "seo_checker",
-        consent: true,
-        wizardAnswers: { url, findingCount: result.findings.length },
-      }),
-    });
+    if (!email || !result || leadSubmitting || leadSubmitted) return;
+    setLeadSubmitting(true);
+    setLeadError("");
+    try {
+      const response = await fetch("/api/leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: email.split("@")[0],
+          email,
+          services: "SEO Checker",
+          captureSource: "seo_checker",
+          consent: true,
+          wizardAnswers: { url, findingCount: result.findings.length },
+        }),
+      });
+      const body = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok)
+        throw new Error(body.error ?? "We could not send your plan. Please try again.");
+      setLeadSubmitted(true);
+    } catch (err) {
+      setLeadError(
+        err instanceof Error ? err.message : "We could not send your plan. Please try again.",
+      );
+    } finally {
+      setLeadSubmitting(false);
+    }
   }
   const findings = result?.findings ?? [];
   const summary = summarizeFindings(findings);
@@ -153,10 +170,24 @@ function SeoCheckerPage() {
                     placeholder="you@company.com"
                     type="email"
                   />
-                  <Button onClick={captureLead} disabled={!email}>
-                    Send plan
+                  <Button
+                    onClick={captureLead}
+                    disabled={!email || leadSubmitting || leadSubmitted}
+                  >
+                    {leadSubmitting ? "Sending..." : leadSubmitted ? "Plan requested" : "Send plan"}
                   </Button>
                 </div>
+                {leadSubmitted && (
+                  <p className="mt-3 text-sm font-medium text-green-700" role="status">
+                    Thanks — your request has been received. We&apos;ll follow up with your action
+                    plan.
+                  </p>
+                )}
+                {leadError && (
+                  <p className="mt-3 text-sm text-red-600" role="alert">
+                    {leadError}
+                  </p>
+                )}
               </div>
             )}
             {mapFindingsToUpsells(findings).map((upsell) => (
