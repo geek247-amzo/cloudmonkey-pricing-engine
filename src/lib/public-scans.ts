@@ -57,7 +57,7 @@ export function createPublicScanHandlers(deps: ScanDeps) {
         return json({ error: "Redirects are not followed by the public scanner" }, 400);
       }
       const html = await readLimitedBody(response);
-      const findings = analyzeHtml(parsed.url, response, html);
+      const findings = await analyzeHtml(parsed.url, response, html, fetchImpl);
       return json({
         ok: response.ok,
         url: parsed.url,
@@ -173,9 +173,17 @@ async function readLimitedBody(response: Response) {
   return new TextDecoder().decode(bytes);
 }
 
-function analyzeHtml(url: string, response: Response, html: string) {
-  const lower = html.toLowerCase();
+async function analyzeHtml(url: string, response: Response, html: string, fetchImpl: typeof fetch) {
   const findings: Array<{ code: string; title: string; detail: string }> = [];
+  const parsedUrl = new URL(url);
+  const title = extractTitle(html);
+  const description = extractMetaContent(html, "description");
+  const h1Count = [...html.matchAll(/<h1\b[^>]*>[\s\S]*?<\/h1\s*>/gi)].length;
+  const images = [...html.matchAll(/<img\b[^>]*>/gi)];
+  const missingAlt = images.filter(([tag]) => !/\balt\s*=\s*["'][^"']*["']/i.test(tag)).length;
+  const missingOpenGraph = ["og:title", "og:description", "og:image"].filter(
+    (property) => !new RegExp(`<meta\\b[^>]*property=["']${property}["'][^>]*>`, "i").test(html),
+  );
   if (!response.ok)
     findings.push({
       code: "http_status",
@@ -188,31 +196,166 @@ function analyzeHtml(url: string, response: Response, html: string) {
       title: "Site is not using HTTPS",
       detail: "HTTPS protects visitors and is expected by modern browsers and search engines.",
     });
-  if (!/<title\b[^>]*>[^<]+<\/title>/i.test(html))
+  if (!title || title.length < 10 || title.length > 60)
     findings.push({
       code: "missing_title",
-      title: "Page is missing a title",
-      detail: "A descriptive title helps visitors and search engines understand the page.",
+      title: title ? "Page title length needs attention" : "Page is missing a title",
+      detail: title
+        ? `The title is ${title.length} characters; keep it between 10 and 60 characters.`
+        : "A descriptive title helps visitors and search engines understand the page.",
     });
-  if (!/<meta\b[^>]*name=["']description["'][^>]*>/i.test(lower))
+  if (!description || description.length < 50 || description.length > 160)
     findings.push({
       code: "missing_description",
-      title: "Page is missing a meta description",
-      detail: "Add a concise description for search previews.",
+      title: description
+        ? "Meta description length needs attention"
+        : "Page is missing a meta description",
+      detail: description
+        ? `The meta description is ${description.length} characters; keep it between 50 and 160 characters.`
+        : "Add a concise description for search previews.",
     });
-  if (!/<meta\b[^>]*name=["']viewport["'][^>]*>/i.test(lower))
+  if (!/<meta\b[^>]*name=["']viewport["'][^>]*>/i.test(html))
     findings.push({
       code: "missing_viewport",
       title: "Mobile viewport metadata is missing",
       detail: "Add viewport metadata so the layout behaves correctly on phones.",
     });
-  if (/<img\b/i.test(html) && /<img\b(?![^>]*\balt\s*=)/i.test(html))
+  if (h1Count === 0 || h1Count > 1)
+    findings.push({
+      code: "h1_structure",
+      title: h1Count === 0 ? "Page is missing an H1 heading" : "Page has multiple H1 headings",
+      detail: `Found ${h1Count} H1 headings; use exactly one clear primary heading.`,
+    });
+  if (missingAlt > 0)
     findings.push({
       code: "missing_alt_text",
-      title: "Some images may be missing alt text",
-      detail: "Descriptive alt text improves accessibility and image search.",
+      title: "Some images are missing alt text",
+      detail: `${missingAlt} of ${images.length} images missing alt text. Descriptive alt text improves accessibility and image search.`,
+    });
+  if (!/<link\b[^>]*rel=["'][^"']*canonical[^"']*["'][^>]*>/i.test(html))
+    findings.push({
+      code: "missing_canonical",
+      title: "Canonical link is missing",
+      detail: "Add a canonical URL to identify the preferred version of this page.",
+    });
+  if (missingOpenGraph.length > 0)
+    findings.push({
+      code: "missing_open_graph",
+      title: "Open Graph metadata is incomplete",
+      detail: `Missing ${missingOpenGraph.join(", ")}; these tags control how the page appears when shared socially.`,
+    });
+  if (!/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>/i.test(html))
+    findings.push({
+      code: "missing_structured_data",
+      title: "Structured data is missing",
+      detail: "Add JSON-LD structured data to help search engines understand the page.",
+    });
+  if (!/<html\b[^>]*\blang\s*=\s*["'][^"']+["']/i.test(html))
+    findings.push({
+      code: "missing_html_lang",
+      title: "HTML language attribute is missing",
+      detail:
+        "Set the html lang attribute to identify the page language for browsers and assistive technology.",
+    });
+
+  const [robots, sitemap, brokenLinks] = await Promise.all([
+    fetchText(`${parsedUrl.origin}/robots.txt`, fetchImpl),
+    fetchText(`${parsedUrl.origin}/sitemap.xml`, fetchImpl),
+    findBrokenInternalLinks(parsedUrl, html, fetchImpl),
+  ]);
+  if (!robots.ok || !robots.body.trim())
+    findings.push({
+      code: "missing_robots",
+      title: "robots.txt is missing",
+      detail: "Publish a robots.txt file to provide crawl guidance to search engines.",
+    });
+  if (!sitemap.ok || !sitemap.body.trim())
+    findings.push({
+      code: "missing_sitemap",
+      title: "sitemap.xml is missing",
+      detail: "Publish an XML sitemap so search engines can discover your important pages.",
+    });
+  if (brokenLinks.length > 0)
+    findings.push({
+      code: "broken_links",
+      title: "Broken internal links were found",
+      detail: `${brokenLinks.length} of the first 10 internal links returned an error: ${brokenLinks.join(", ")}.`,
     });
   return findings;
+}
+
+function extractTitle(html: string) {
+  const match = html.match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i);
+  return match ? decodeHtmlEntities(match[1].replace(/<[^>]+>/g, "").trim()) : "";
+}
+
+function extractMetaContent(html: string, name: string) {
+  for (const tag of html.match(/<meta\b[^>]*>/gi) ?? []) {
+    const nameMatch = tag.match(/\bname\s*=\s*["']([^"']+)["']/i);
+    if (nameMatch?.[1].toLowerCase() !== name.toLowerCase()) continue;
+    return decodeHtmlEntities(tag.match(/\bcontent\s*=\s*["']([^"']*)["']/i)?.[1]?.trim() ?? "");
+  }
+  return "";
+}
+
+function decodeHtmlEntities(value: string) {
+  return value.replace(
+    /&(?:amp|lt|gt|quot|#39);/gi,
+    (entity) =>
+      ({ "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'" })[
+        entity.toLowerCase()
+      ] ?? entity,
+  );
+}
+
+async function fetchText(url: string, fetchImpl: typeof fetch) {
+  try {
+    const response = await fetchImpl(url, {
+      redirect: "manual",
+      signal: AbortSignal.timeout(3_000),
+      headers: { "User-Agent": "CloudMonkey-Free-Scan/1.0" },
+    });
+    return { ok: response.ok, body: await response.text() };
+  } catch {
+    return { ok: false, body: "" };
+  }
+}
+
+async function findBrokenInternalLinks(url: URL, html: string, fetchImpl: typeof fetch) {
+  const links = [...html.matchAll(/<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>/gi)]
+    .map(([, href]) => {
+      try {
+        const link = new URL(href, url);
+        link.hash = "";
+        return link;
+      } catch {
+        return null;
+      }
+    })
+    .filter(
+      (link): link is URL =>
+        Boolean(link) && link.origin === url.origin && ["http:", "https:"].includes(link.protocol),
+    );
+  const uniqueLinks = [...new Map(links.map((link) => [link.toString(), link])).values()].slice(
+    0,
+    10,
+  );
+  const results = await Promise.all(
+    uniqueLinks.map(async (link) => {
+      try {
+        const response = await fetchImpl(link.toString(), {
+          method: "HEAD",
+          redirect: "manual",
+          signal: AbortSignal.timeout(3_000),
+          headers: { "User-Agent": "CloudMonkey-Free-Scan/1.0" },
+        });
+        return response.status >= 400 ? link.pathname : null;
+      } catch {
+        return link.pathname;
+      }
+    }),
+  );
+  return results.filter((result): result is string => Boolean(result));
 }
 
 function isPrivateAddress(value: string) {
