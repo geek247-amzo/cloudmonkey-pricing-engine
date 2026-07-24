@@ -8,10 +8,22 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { canonicalLink, ogUrl } from "@/lib/seo";
 
 export const Route = createFileRoute("/affiliates")({
   head: () => ({
-    meta: [{ title: "CloudMonkey Affiliate Program" }],
+    meta: [
+      { title: "CloudMonkey Affiliate Program" },
+      {
+        name: "description",
+        content:
+          "Join the CloudMonkey affiliate program and earn commission for referred cloud, managed IT, domain, website, and AI service customers.",
+      },
+      { property: "og:title", content: "CloudMonkey Affiliate Program" },
+      { property: "og:description", content: "Earn commission by referring CloudMonkey customers." },
+      ogUrl("/affiliates"),
+    ],
+    links: [canonicalLink("/affiliates")],
   }),
   component: AffiliatesPage,
 });

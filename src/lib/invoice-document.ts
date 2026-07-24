@@ -178,7 +178,6 @@ export function renderInvoiceHtml(data: InvoiceDocumentData, options: { document
   const body = `
     <main class="cm-invoice ${options.pdf ? "cm-invoice-print" : ""}">
       <section class="cm-invoice-sheet">
-        ${options.pdf ? "" : `
         <header class="cm-invoice-header">
           <div class="cm-brand">
             <img src="${assetUrl(logo)}" alt="CloudMonkey" class="cm-brand-image" />
@@ -193,7 +192,6 @@ export function renderInvoiceHtml(data: InvoiceDocumentData, options: { document
             <span>${formatDate(data.invoice.issuedAt)}</span>
           </div>
         </header>
-        `}
 
         <section class="cm-invoice-grid">
           <div>
@@ -283,7 +281,6 @@ export function renderInvoiceHtml(data: InvoiceDocumentData, options: { document
           <p>${escapeHtml(data.invoice.notes || data.workspaceBilling.invoiceNotes)}</p>
         </section>
 
-        ${options.pdf ? "" : `
         <footer class="cm-invoice-footer">
           <div class="cm-brand cm-brand-footer">
             <img src="${assetUrl(logo)}" alt="CloudMonkey" class="cm-brand-image" />
@@ -309,7 +306,6 @@ export function renderInvoiceHtml(data: InvoiceDocumentData, options: { document
           </div>
           <div class="cm-footer-line">Cloud made simple. Support that cares.</div>
         </footer>
-        `}
       </section>
     </main>
   `;
@@ -378,8 +374,6 @@ export const invoiceCss = `
   .cm-invoice-print .cm-items thead { display: table-header-group; }
   .cm-invoice-print .cm-items tbody { display: table-row-group; }
   .cm-invoice-print .cm-items tr { break-inside: avoid; page-break-inside: avoid; }
-  .cm-invoice-print .cm-invoice-header,
-  .cm-invoice-print .cm-invoice-footer { display: none; }
   @media print {
     @page { size: A4; margin: 0; }
     body { background: #fff; }
@@ -391,8 +385,6 @@ export const invoiceCss = `
       box-shadow: none;
       overflow: visible;
     }
-    .cm-invoice-print .cm-invoice-header,
-    .cm-invoice-print .cm-invoice-footer { display: none !important; }
     .cm-invoice-print .cm-plan-card,
     .cm-invoice-print .cm-payment,
     .cm-invoice-print .cm-notes {

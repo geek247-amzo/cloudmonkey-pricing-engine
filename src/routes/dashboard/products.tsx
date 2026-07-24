@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { useAdminAccess } from "@/hooks/use-admin-access";
 
 export const Route = createFileRoute("/dashboard/products")({
@@ -18,6 +19,32 @@ export const Route = createFileRoute("/dashboard/products")({
   }),
   component: AdminProductsPage,
 });
+
+function billingFrequency(plan: any): "month" | "year" | "once_off" {
+  if (["month", "year", "once_off"].includes(plan?.billingFrequency)) return plan.billingFrequency;
+  if (plan?.billingType === "once_off") return "once_off";
+  const unit = String(plan?.unit ?? "").toLowerCase();
+  if (unit.includes("year")) return "year";
+  if (unit.includes("once")) return "once_off";
+  return "month";
+}
+
+function frequencyLabel(plan: any) {
+  const frequency = billingFrequency(plan);
+  if (frequency === "once_off") return "once off";
+  if (frequency === "year") return "per year";
+  return "per month";
+}
+
+function minimumTermMonths(plan: any) {
+  if (typeof plan?.minimumTermMonths === "number") return plan.minimumTermMonths;
+  const text = String(plan?.minimumTerm ?? "").toLowerCase();
+  if (!text) return "";
+  if (text === "monthly" || text === "month") return 1;
+  const months = parseInt(text.replace(/[^0-9]/g, ""), 10);
+  if (!Number.isFinite(months) || months <= 0) return "";
+  return text.includes("year") ? months * 12 : months;
+}
 
 function AdminProductsPage() {
   const navigate = useNavigate();
@@ -64,22 +91,25 @@ function AdminProductsPage() {
 
   const filteredProducts = products?.filter((p: any) => 
     p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.service.name.toLowerCase().includes(searchTerm.toLowerCase())
+    p.service.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    p.service.categoryId.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const money = (value?: string | null) => value ? (parseInt(value) / 100).toFixed(2) : "";
 
   return (
     <div className="space-y-6 relative">
       {/* Edit Modal */}
       {editingPlan && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <Card className="w-full max-w-md bg-white shadow-2xl">
+          <Card className="w-full max-w-3xl bg-white shadow-2xl">
             <CardHeader className="flex flex-row items-center justify-between pb-4">
               <CardTitle>Edit Product</CardTitle>
               <Button variant="ghost" size="icon" onClick={() => setEditingPlan(null)}>
                 <X className="h-4 w-4" />
               </Button>
             </CardHeader>
-            <CardContent>
+            <CardContent className="max-h-[78vh] overflow-y-auto">
               <form 
                 className="space-y-4"
                 onSubmit={(e) => {
@@ -90,26 +120,93 @@ function AdminProductsPage() {
                     name: formData.get("name"),
                     tagline: formData.get("tagline"),
                     priceZar: formData.get("priceZar"),
+                    setupPriceZar: formData.get("setupPriceZar"),
+                    billingFrequency: formData.get("billingFrequency"),
+                    minimumTermMonths: formData.get("minimumTermMonths"),
+                    billingType: formData.get("billingType"),
+                    priceLabel: formData.get("priceLabel"),
+                    isBundle: formData.get("isBundle") === "on",
+                    sortOrder: formData.get("sortOrder"),
+                    serviceNote: formData.get("serviceNote"),
+                    active: formData.get("active") === "on",
                   });
                 }}
               >
-                <div className="space-y-2">
-                  <Label>Plan Name</Label>
-                  <Input name="name" defaultValue={editingPlan.name} required />
-                </div>
-                <div className="space-y-2">
-                  <Label>Tagline / Short Desc</Label>
-                  <Input name="tagline" defaultValue={editingPlan.tagline || ""} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Price (ZAR)</Label>
-                  <Input 
-                    name="priceZar" 
-                    type="number" 
-                    step="0.01" 
-                    defaultValue={editingPlan.priceZar ? (parseInt(editingPlan.priceZar) / 100).toFixed(2) : ""} 
-                  />
-                  <p className="text-[10px] text-muted-foreground">Leave blank if the price is custom or handled externally.</p>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Plan Name</Label>
+                    <Input name="name" defaultValue={editingPlan.name} required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Category</Label>
+                    <Input value={editingPlan.service.categoryId} readOnly />
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>Tagline / Short Desc</Label>
+                    <Input name="tagline" defaultValue={editingPlan.tagline || ""} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Monthly / Product Price (ZAR)</Label>
+                    <Input name="priceZar" type="number" step="0.01" defaultValue={money(editingPlan.priceZar)} />
+                    <p className="text-[10px] text-muted-foreground">Blank for quote-only products.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Setup Price (ZAR)</Label>
+                    <Input name="setupPriceZar" type="number" step="0.01" defaultValue={money(editingPlan.setupPriceZar)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Billing Type</Label>
+                    <select name="billingType" defaultValue={editingPlan.billingType || "recurring"} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+                      <option value="recurring">Recurring</option>
+                      <option value="once_off">Once-off</option>
+                      <option value="quote">Quote</option>
+                    </select>
+                  </div>
+	                  <div className="space-y-2">
+	                    <Label>Frequency</Label>
+	                    <select
+	                      name="billingFrequency"
+	                      defaultValue={billingFrequency(editingPlan)}
+	                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+	                    >
+	                      <option value="month">Per month</option>
+	                      <option value="year">Per year</option>
+	                      <option value="once_off">Once off</option>
+	                    </select>
+	                  </div>
+                  <div className="space-y-2">
+                    <Label>Price Label</Label>
+                    <Input name="priceLabel" defaultValue={editingPlan.priceLabel || ""} placeholder="Request Quote, Once-off" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Minimum Term (months)</Label>
+                    <Input
+                      name="minimumTermMonths"
+                      type="number"
+                      min="0"
+                      step="1"
+                      defaultValue={minimumTermMonths(editingPlan)}
+                      placeholder="0 for no fixed term"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Sort Order</Label>
+                    <Input name="sortOrder" type="number" defaultValue={editingPlan.sortOrder ?? 0} />
+                  </div>
+                  <div className="flex items-center gap-6 pt-8">
+                    <label className="flex items-center gap-2 text-sm font-medium">
+                      <input type="checkbox" name="isBundle" defaultChecked={Boolean(editingPlan.isBundle)} />
+                      Bundle flag
+                    </label>
+                    <label className="flex items-center gap-2 text-sm font-medium">
+                      <input type="checkbox" name="active" defaultChecked={editingPlan.active !== false} />
+                      Active
+                    </label>
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>Product Note</Label>
+                    <Textarea name="serviceNote" defaultValue={editingPlan.serviceNote || ""} rows={3} />
+                  </div>
                 </div>
                 <Button type="submit" className="w-full mt-4 bg-[var(--ai)]" disabled={updateMutation.isPending}>
                   {updateMutation.isPending ? "Saving..." : "Save Changes"}
@@ -152,7 +249,7 @@ function AdminProductsPage() {
         <CardHeader className="border-b border-border/60 bg-muted/20 px-6 py-4">
            <div className="flex items-center justify-between">
               <CardTitle className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Full Catalog</CardTitle>
-              <Badge variant="outline" className="bg-white">{filteredProducts?.length || 0} Plans Active</Badge>
+              <Badge variant="outline" className="bg-white">{filteredProducts?.length || 0} Plans</Badge>
            </div>
         </CardHeader>
         <CardContent className="p-0 overflow-x-auto">
@@ -167,8 +264,10 @@ function AdminProductsPage() {
                 <tr>
                   <th className="px-6 py-4">Service / Category</th>
                   <th className="px-6 py-4">Plan Name</th>
-                  <th className="px-6 py-4">Description</th>
-                  <th className="px-6 py-4">Price (ZAR)</th>
+                  <th className="px-6 py-4">Description / Notes</th>
+                  <th className="px-6 py-4">Pricing</th>
+                  <th className="px-6 py-4">Status</th>
+                  <th className="px-6 py-4">Sort</th>
                   <th className="px-6 py-4 text-right">Actions</th>
                 </tr>
               </thead>
@@ -177,18 +276,37 @@ function AdminProductsPage() {
                   <tr key={plan.id} className="border-b border-border/40 last:border-0 hover:bg-muted/30 transition-colors">
                     <td className="px-6 py-4">
                        <div className="font-bold text-[#07102c]">{plan.service.name}</div>
-                       <div className="text-[10px] uppercase text-muted-foreground font-bold tracking-tighter">{plan.service.categoryId}</div>
+                       <div className="text-[10px] uppercase text-muted-foreground font-bold tracking-tighter">{plan.service.category?.name ?? plan.service.categoryId}</div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="font-medium">{plan.name}</div>
                       {plan.badge && <Badge className="text-[9px] h-4 px-1.5 bg-purple-50 text-purple-700 border-purple-200 mt-1">{plan.badge}</Badge>}
+                      {plan.isBundle && <Badge variant="outline" className="ml-1 text-[9px] h-4 px-1.5 mt-1">Bundle</Badge>}
                     </td>
                     <td className="px-6 py-4 text-xs text-muted-foreground max-w-[250px]">
                       {plan.tagline}
+                      {plan.serviceNote && <div className="mt-1 text-[10px]">{plan.serviceNote}</div>}
                     </td>
                     <td className="px-6 py-4">
-                       <div className="font-extrabold text-[#07102c]">R {(parseInt(plan.priceZar) / 100).toFixed(2)}</div>
-                       <div className="text-[10px] text-muted-foreground">{plan.unit || "/month"}</div>
+                       <div className="font-extrabold text-[#07102c]">
+                         {plan.billingType === "quote" ? (plan.priceLabel || "Request Quote") : plan.priceZar ? `R ${(parseInt(plan.priceZar) / 100).toFixed(2)}` : "No price"}
+                       </div>
+	                       <div className="text-[10px] text-muted-foreground">{plan.billingType || "recurring"} {frequencyLabel(plan)}</div>
+                       {plan.setupPriceZar && <div className="text-[10px] text-muted-foreground">Setup R {(parseInt(plan.setupPriceZar) / 100).toFixed(2)}</div>}
+                       {(plan.minimumTermMonths || plan.minimumTerm) && (
+                         <div className="text-[10px] text-muted-foreground">
+                           Minimum term: {plan.minimumTermMonths ? `${plan.minimumTermMonths} month${plan.minimumTermMonths === 1 ? "" : "s"}` : plan.minimumTerm}
+                         </div>
+                       )}
+                    </td>
+                    <td className="px-6 py-4">
+                      <Badge variant={plan.active === false ? "outline" : "default"} className={plan.active === false ? "bg-gray-50 text-gray-600" : "bg-green-50 text-green-700 border-green-200"}>
+                        {plan.active === false ? "Inactive" : "Active"}
+                      </Badge>
+                      {plan.billingType === "quote" && <Badge variant="outline" className="mt-1 block w-fit">Quote</Badge>}
+                    </td>
+                    <td className="px-6 py-4 text-xs text-muted-foreground">
+                      {plan.sortOrder ?? 0}
                     </td>
                     <td className="px-6 py-4 text-right">
                        <div className="flex justify-end gap-1">

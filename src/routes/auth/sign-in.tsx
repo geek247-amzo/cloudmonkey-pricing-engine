@@ -9,16 +9,26 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { authClient } from "@/lib/auth-client";
+import { captchaFetchOptions, getRecaptchaToken } from "@/lib/recaptcha";
+import { canonicalLink } from "@/lib/seo";
+import { safeDashboardCallback } from "@/lib/auth-redirect";
+import { claimCaesarSession } from "@/lib/caesar-client";
 
 export const Route = createFileRoute("/auth/sign-in")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    callbackURL: typeof search.callbackURL === "string" ? search.callbackURL : undefined,
+  }),
   head: () => ({
     meta: [{ title: "Sign in - CloudMonkey" }],
+    links: [canonicalLink("/auth/sign-in")],
   }),
   component: SignInPage,
 });
 
 function SignInPage() {
   const router = useRouter();
+  const { callbackURL } = Route.useSearch();
+  const returnTo = safeDashboardCallback(callbackURL);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -32,15 +42,20 @@ function SignInPage() {
 
     try {
       setIsLoading(true);
-      const { error } = await authClient.signIn.email({
-        email,
-        password,
-      });
+      const recaptchaToken = await getRecaptchaToken();
+      const { error } = await authClient.signIn.email(
+        {
+          email,
+          password,
+        },
+        captchaFetchOptions(recaptchaToken),
+      );
 
       if (error) {
         toast.error(error.message || "Failed to sign in");
       } else {
-        router.navigate({ to: "/dashboard" });
+        await claimCaesarSession().catch(() => null);
+        window.location.assign(returnTo);
       }
     } catch (error) {
       toast.error("An unexpected error occurred");
@@ -56,11 +71,11 @@ function SignInPage() {
       subtitle="Use your email address, Google account, or Office 365 identity to access the backend and platform tools."
       footer={
         <>
-          New here? <Link to="/auth/sign-up" className="font-medium text-foreground hover:underline">Create an account</Link>
+          New here? <Link to="/auth/sign-up" search={{ callbackURL: returnTo }} className="font-medium text-foreground hover:underline">Create an account</Link>
         </>
       }
     >
-      <ProviderButtons label="Sign in with" />
+      <ProviderButtons label="Sign in with" callbackURL={returnTo} />
       <SectionDivider />
 
       <form className="space-y-4" onSubmit={handleSignIn}>

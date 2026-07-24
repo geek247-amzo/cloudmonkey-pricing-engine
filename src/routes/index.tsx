@@ -1,21 +1,25 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowRight, Cloud, Briefcase, Brain, Check, Shield, Zap, Headphones, Sparkles, RefreshCcw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import type { CSSProperties } from "react";
 import mascot from "@/assets/cm-mascot.png";
 import { SectionHeading } from "@/components/site/SectionHeading";
 import { CtaBanner } from "@/components/site/CtaBanner";
-import { formatPrice } from "@/lib/pricing";
+import { BUNDLES, fetchPublicPricingCatalog, formatPrice } from "@/lib/pricing";
 import { useCurrency } from "@/lib/currency";
 import { useHydratedSession } from "@/hooks/use-admin-access";
+import { canonicalLink, ogUrl } from "@/lib/seo";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "CloudMonkey — Everything your business needs. Simplified." },
-      { name: "description", content: "Cloud infrastructure, business solutions, and AI agents in one platform. Single invoice. Single support team. Single dashboard." },
+      { title: "Managed Cloud, Websites & AI Services South Africa | CloudMonkey" },
+      { name: "description", content: "CloudMonkey manages cloud infrastructure, websites, business systems, voice and AI automation for South African SMEs through one team, invoice and dashboard." },
       { property: "og:title", content: "CloudMonkey — Everything your business needs. Simplified." },
       { property: "og:description", content: "Cloud, Business and AI — one platform, one invoice, one dashboard." },
+      ogUrl("/"),
     ],
+    links: [canonicalLink("/")],
   }),
   component: HomePage,
 });
@@ -57,12 +61,43 @@ const DIVISIONS = [
 ] as const;
 
 const WHY = [
-  { icon: Shield, title: "All-in-One Platform", desc: "Cloud, business, and AI seamlessly integrated in one powerful platform." },
-  { icon: Zap, title: "Built for Growth", desc: "Scalable solutions that grow with your business, from startup to enterprise." },
-  { icon: Check, title: "Secure by Design", desc: "Enterprise-grade security and compliance to keep your data and business safe." },
-  { icon: Sparkles, title: "Optimize Costs", desc: "Reduce operational costs and increase efficiency with smart automation." },
-  { icon: Headphones, title: "Expert Support", desc: "24/7 expert support from real people who are here to help you succeed." },
+  { icon: Shield, title: "All-in-One Platform", desc: "Replace 4 vendor invoices with 1 — clients typically cut admin time by 10+ hours/month." },
+  { icon: Zap, title: "Built for Growth", desc: "Start small and scale instantly without migrating platforms or changing providers." },
+  { icon: Check, title: "Secure by Design", desc: "POPIA-compliant data residency and built-in backups ensure your business is always protected." },
+  { icon: Sparkles, title: "Optimize Costs", desc: "Bundle cloud, IT, and AI to save up to 30% compared to paying separate vendors." },
+  { icon: Headphones, title: "Local Expert Support", desc: "Direct support from South African engineers who understand the context—no offshore call centers." },
 ];
+
+const COMPARISON = [
+  {
+    title: "Hosting only",
+    price: "From R55/year",
+    description: "Domains and basic hosting components when you already know what you need.",
+    bullets: ["Domain registration", "DNS management", "Hosting options"],
+    to: "/domains",
+  },
+  {
+    title: "Managed Cloud",
+    price: "From R1,450/month",
+    description: "Infrastructure operated by CloudMonkey with monitoring, backups, support, and updates.",
+    bullets: ["Managed VPS", "SSL and backups", "Support included"],
+    to: "/cloud",
+  },
+  {
+    title: "Build + Managed Cloud",
+    price: "From R999/month + setup",
+    description: "We build the website, store, portal, or app and keep the platform running after launch.",
+    bullets: ["Website/app build", "Managed hosting", "Monthly improvements"],
+    to: "/build",
+  },
+  {
+    title: "AI Agent Bundle",
+    price: "R999/agent/month",
+    description: "Purpose-built AI agents with business knowledge, managed setup, and monthly optimisation.",
+    bullets: ["1M tokens/month", "Knowledge base", "Tuning review"],
+    to: "/ai-agents",
+  },
+] as const;
 
 const AGENT_COLORS = ["#12a04a", "#28a7e1", "#d947ef", "#fb923c"];
 
@@ -119,13 +154,13 @@ function SystemStatusCard() {
 function CostOptimizationCard() {
   return (
     <div className="rounded-lg border border-[#ece8ff] bg-white/95 p-5 shadow-[0_18px_45px_rgba(77,48,170,0.12)] backdrop-blur">
-      <div className="text-sm font-extrabold text-[#07102c]">Cost Optimization</div>
+      <div className="text-sm font-extrabold text-[#07102c]">Managed Simplicity</div>
       <div className="mt-5 flex items-end justify-between gap-4">
         <div>
-          <div className="text-3xl font-extrabold text-[#07102c]">$12,540</div>
-          <div className="mt-1 text-sm font-semibold text-[#5d6477]">Saved this month</div>
+          <div className="text-3xl font-extrabold text-[#07102c]">One team</div>
+          <div className="mt-1 text-sm font-semibold text-[#5d6477]">Less vendor chasing</div>
         </div>
-        <div className="rounded-full bg-[#dff7e7] px-3 py-1.5 text-sm font-extrabold text-[var(--business)]">+24%</div>
+        <div className="rounded-full bg-[#dff7e7] px-3 py-1.5 text-sm font-extrabold text-[var(--business)]">Managed</div>
       </div>
     </div>
   );
@@ -136,20 +171,17 @@ function HomePage() {
   const { data: session, authReady } = useHydratedSession();
   const isSignedIn = authReady && !!session;
   const primaryHeroHref = isSignedIn ? "/dashboard" : "/auth/sign-up";
-  const primaryHeroLabel = isSignedIn ? "Dashboard" : "Get Started for Free";
+  const primaryHeroLabel = isSignedIn ? "Dashboard" : "View Pricing";
   const bannerPrimaryHref = isSignedIn ? "/dashboard" : "/auth/sign-up";
-  const bannerPrimaryLabel = isSignedIn ? "Go to Dashboard" : "Get Started for Free";
+  const bannerPrimaryLabel = isSignedIn ? "Go to Dashboard" : "Request a Quote";
 
   const { data, isLoading } = useQuery({
     queryKey: ["public", "pricing"],
-    queryFn: async () => {
-      const res = await fetch("/api/public/pricing");
-      if (!res.ok) throw new Error("Failed to fetch pricing");
-      return res.json();
-    },
+    queryFn: fetchPublicPricingCatalog,
   });
 
-  const bundles = data?.bundles || [];
+  const bundles = data?.bundles || BUNDLES;
+  const bundleColumnCount = Math.min(Math.max(bundles.length || 1, 1), 5);
 
   return (
     <>
@@ -160,7 +192,7 @@ function HomePage() {
         <div className="mx-auto grid min-h-[620px] max-w-7xl items-center gap-8 px-6 py-14 lg:grid-cols-[0.95fr_1.45fr] lg:py-8">
           <div className="relative z-10 max-w-xl">
             <div className="mb-7 inline-flex rounded-full bg-[#f0eafd] px-4 py-2 text-sm font-extrabold text-[var(--ai)]">
-              One Platform. Endless Possibilities.
+              Built for South African Businesses.
             </div>
             <h1 className="text-[clamp(3.2rem,7vw,5.75rem)] font-extrabold leading-[0.94] text-[#07102c]" style={{ fontFamily: "var(--font-display)" }}>
               Everything your
@@ -174,16 +206,28 @@ function HomePage() {
             </p>
             <div className="mt-10 flex flex-wrap gap-4">
               <Link
-                to={primaryHeroHref}
+                to={isSignedIn ? primaryHeroHref : "/pricing"}
                 className="group inline-flex min-h-14 items-center justify-center gap-2 rounded-lg bg-[var(--ai)] px-8 text-sm font-extrabold text-white shadow-[0_18px_34px_-20px_rgba(91,44,214,0.85)] transition-transform hover:-translate-y-0.5"
               >
                 {primaryHeroLabel} <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
               </Link>
               <Link
+                to="/build"
+                className="inline-flex min-h-14 items-center justify-center rounded-lg border border-[#cfc3f8] bg-white/80 px-8 text-sm font-extrabold text-[var(--ai)] shadow-sm transition-colors hover:bg-[#f5f1ff]"
+              >
+                Build My Website/App
+              </Link>
+              <Link
                 to="/cloud"
                 className="inline-flex min-h-14 items-center justify-center rounded-lg border border-[#cfc3f8] bg-white/80 px-8 text-sm font-extrabold text-[var(--ai)] shadow-sm transition-colors hover:bg-[#f5f1ff]"
               >
-                Explore Solutions
+                Get Managed Cloud
+              </Link>
+              <Link
+                to="/ai-agents"
+                className="inline-flex min-h-14 items-center justify-center rounded-lg border border-[#cfc3f8] bg-white/80 px-8 text-sm font-extrabold text-[var(--ai)] shadow-sm transition-colors hover:bg-[#f5f1ff]"
+              >
+                Add an AI Agent
               </Link>
             </div>
             <div className="mt-7 flex flex-wrap gap-x-8 gap-y-3 text-sm font-semibold text-[#515a70]">
@@ -217,6 +261,57 @@ function HomePage() {
             <AiAgentsCard />
             <SystemStatusCard />
             <CostOptimizationCard />
+          </div>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-6 py-16">
+        <SectionHeading
+          eyebrow="Choose the right engagement"
+          accent="var(--ai)"
+          title={<>Hosting only vs managed platform</>}
+          subtitle="CloudMonkey is not just raw hosting. Pick the service envelope that matches how much setup, support, and business outcome you want included."
+        />
+        <div className="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-4">
+          {COMPARISON.map((item) => (
+            <Link key={item.title} to={item.to} className="group rounded-2xl border border-border bg-card p-6 shadow-[var(--shadow-card)] transition-all hover:-translate-y-1 hover:shadow-[var(--shadow-elevated)]">
+              <div className="text-xs font-bold uppercase tracking-[0.16em] text-[var(--ai)]">{item.price}</div>
+              <h3 className="mt-3 text-xl font-bold text-foreground" style={{ fontFamily: "var(--font-display)" }}>{item.title}</h3>
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">{item.description}</p>
+              <ul className="mt-5 space-y-2 text-sm text-foreground/80">
+                {item.bullets.map((bullet) => (
+                  <li key={bullet} className="flex gap-2">
+                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-[var(--ai)]" />
+                    {bullet}
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-6 inline-flex items-center gap-1 text-sm font-semibold text-[var(--ai)]">
+                View option <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+              </div>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      {/* Trust Signals */}
+      <section className="mx-auto max-w-7xl px-6 py-12">
+        <div className="grid gap-6 rounded-3xl border border-border bg-card p-8 shadow-[var(--shadow-card)] sm:grid-cols-2 lg:grid-cols-4 text-center">
+          <div>
+            <div className="text-4xl font-extrabold text-[var(--ai)]" style={{ fontFamily: "var(--font-display)" }}>50+</div>
+            <div className="mt-2 text-sm font-semibold text-muted-foreground">Businesses Managed</div>
+          </div>
+          <div>
+            <div className="text-4xl font-extrabold text-[var(--ai)]" style={{ fontFamily: "var(--font-display)" }}>99.9%</div>
+            <div className="mt-2 text-sm font-semibold text-muted-foreground">Uptime Delivered</div>
+          </div>
+          <div>
+            <div className="text-4xl font-extrabold text-[var(--ai)]" style={{ fontFamily: "var(--font-display)" }}>24/7</div>
+            <div className="mt-2 text-sm font-semibold text-muted-foreground">Local Expert Support</div>
+          </div>
+          <div>
+            <div className="text-4xl font-extrabold text-[var(--ai)]" style={{ fontFamily: "var(--font-display)" }}>1</div>
+            <div className="mt-2 text-sm font-semibold text-muted-foreground">Simplified Invoice</div>
           </div>
         </div>
       </section>
@@ -288,13 +383,12 @@ function HomePage() {
               </div>
             ))}
           </div>
-          <div className="mt-12 grid gap-6 md:grid-cols-2 lg:grid-cols-5">
-            {isLoading ? (
-               <div className="col-span-full py-8 text-center text-muted-foreground animate-pulse">
-                  <RefreshCcw className="h-6 w-6 animate-spin mx-auto mb-2" />
-                  Loading bundles...
-               </div>
-            ) : bundles.map((b: any) => (
+          <div
+            className="mt-12 grid gap-6 md:grid-cols-2 lg:grid-cols-[repeat(var(--bundle-columns),minmax(0,1fr))]"
+            style={{ "--bundle-columns": String(bundleColumnCount) } as CSSProperties}
+          >
+
+            {bundles.map((b: any) => (
               <div
                 key={b.id}
                 className="relative flex flex-col rounded-2xl border bg-card p-6"
@@ -309,19 +403,23 @@ function HomePage() {
                   Managed service
                 </div>
                 <div className="text-sm font-semibold text-foreground" style={{ fontFamily: "var(--font-display)" }}>{b.name}</div>
-                <div className="mt-2 text-3xl font-bold text-foreground" style={{ fontFamily: "var(--font-display)" }}>
-                  {formatPrice(parseInt(b.priceZar) / 100, currency)}
-                  <span className="ml-1 text-xs font-normal text-muted-foreground">/month</span>
-                </div>
+	                <div className="mt-2 text-3xl font-bold text-foreground" style={{ fontFamily: "var(--font-display)" }}>
+	                  {formatPrice(b.priceZar, currency)}
+	                  <span className="ml-1 text-xs font-normal text-muted-foreground">{b.unit || "/month"}</span>
+	                </div>
                 <ul className="mt-4 flex-1 space-y-1.5 text-xs text-foreground/80">
                   {b.features.map((f: any) => (
-                    <li key={f.id} className="flex gap-1.5">
+                    <li key={typeof f === "string" ? f : f.id} className="flex gap-1.5">
                       <Check className="mt-0.5 h-3 w-3 flex-shrink-0" style={{ color: "var(--ai)" }} />
-                      {f.content}
+                      {typeof f === "string" ? f : f.content}
                     </li>
                   ))}
                 </ul>
-                <Link to={`/auth/sign-up?bundle=${encodeURIComponent(b.id)}`} className="mt-5 rounded-full border border-border px-3 py-2 text-center text-xs font-semibold text-foreground hover:bg-secondary">
+                <Link
+                  to="/auth/sign-up"
+                  search={{ bundle: b.id, plan: undefined, coupon: undefined, ref: undefined }}
+                  className="mt-5 rounded-full border border-border px-3 py-2 text-center text-xs font-semibold text-foreground hover:bg-secondary"
+                >
                   Choose bundle
                 </Link>
               </div>
@@ -348,9 +446,9 @@ function HomePage() {
 
       <CtaBanner
         title={isSignedIn ? "Your dashboard is ready." : "Ready to transform your business?"}
-        subtitle="Join thousands of businesses using CloudMonkey to build, run, and grow smarter every day."
+        subtitle="Designed to reduce vendor chasing, manual admin, support complexity, and disconnected business systems."
         primary={{ label: bannerPrimaryLabel, to: bannerPrimaryHref }}
-        secondary={isSignedIn ? { label: "Explore Solutions", to: "/cloud" } : { label: "Talk to an Expert", to: "/auth/sign-up" }}
+        secondary={isSignedIn ? { label: "Explore Solutions", to: "/cloud" } : { label: "View Pricing", to: "/pricing" }}
         accent="var(--primary)"
       />
     </>

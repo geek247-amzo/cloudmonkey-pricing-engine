@@ -54,6 +54,11 @@ async function sendResponse(res, response) {
     }
   });
 
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("text/html")) {
+    res.setHeader("cache-control", "no-store, max-age=0");
+  }
+
   if (setCookies.length) {
     res.setHeader("set-cookie", setCookies);
   }
@@ -85,6 +90,8 @@ async function tryServeStatic(req, res) {
   } catch {
     res.statusCode = 404;
     res.setHeader("content-type", "text/plain; charset=utf-8");
+    res.setHeader("cache-control", "no-store, max-age=0");
+    res.setHeader("x-robots-tag", "noindex, nofollow");
     res.end("Not Found");
     return true;
   }
@@ -92,6 +99,8 @@ async function tryServeStatic(req, res) {
   if (!fileStat.isFile()) {
     res.statusCode = 404;
     res.setHeader("content-type", "text/plain; charset=utf-8");
+    res.setHeader("cache-control", "no-store, max-age=0");
+    res.setHeader("x-robots-tag", "noindex, nofollow");
     res.end("Not Found");
     return true;
   }

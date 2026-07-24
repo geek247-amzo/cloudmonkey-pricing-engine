@@ -1,30 +1,40 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Cloud, Shield, Database, Activity, RefreshCcw } from "lucide-react";
+import { ArrowRight, Cloud, Shield, Database, Activity, RefreshCcw, Headphones } from "lucide-react";
 import mascot from "@/assets/cm-mascot.png";
 import { SectionHeading } from "@/components/site/SectionHeading";
 import { CtaBanner } from "@/components/site/CtaBanner";
 import { ServiceSection } from "@/components/site/ServiceSection";
-import { fetchPublicPricingCatalog } from "@/lib/pricing";
+import { CATEGORIES, fetchPublicPricingCatalog } from "@/lib/pricing";
+import { canonicalLink, ogUrl } from "@/lib/seo";
 
 export const Route = createFileRoute("/cloud")({
   head: () => ({
     meta: [
-      { title: "CloudMonkey Cloud — Infrastructure without complexity" },
-      { name: "description", content: "Scalable, secure, reliable cloud hosting, websites, ecommerce, CloudMonkey VPS and managed infrastructure." },
+      { title: "Managed VPS Hosting & Server Support South Africa | CloudMonkey" },
+      { name: "description", content: "Managed VPS hosting and Linux server administration in South Africa, including monitoring, backups, SSL, security patching and support." },
       { property: "og:title", content: "CloudMonkey Cloud" },
       { property: "og:description", content: "Infrastructure without complexity." },
+      ogUrl("/cloud"),
     ],
+    links: [canonicalLink("/cloud")],
   }),
   component: CloudPage,
 });
 
 const FEATURES = [
-  { icon: Cloud, title: "Cloud Hosting & Servers", desc: "High-performance hosting built for speed, reliability, and scale." },
-  { icon: Shield, title: "Security & Compliance", desc: "Enterprise-grade security and compliance protecting your data and your business." },
-  { icon: Database, title: "Backups & Disaster Recovery", desc: "Automated backups and rapid recovery to keep your business running." },
-  { icon: Activity, title: "Scalability & Performance", desc: "Elastic infrastructure that scales with your needs, on demand." },
+  { icon: Cloud, title: "Managed Hosting & Servers", desc: "Private VPS, web hosting, databases, SSL, and deployment support." },
+  { icon: Database, title: "Backups & Recovery", desc: "Automated backups, restore support, and business continuity." },
+  { icon: Shield, title: "Security & Monitoring", desc: "Server hardening, uptime monitoring, updates, and protection." },
+  { icon: Activity, title: "Performance & Scale", desc: "Scalable infrastructure that can grow from website to app platform." },
+  { icon: Headphones, title: "Managed Support", desc: "One team to help with hosting, server, DNS, email routing, and technical issues." },
 ];
+
+const UPSELLS = [
+  { title: "CloudMonkey Build", desc: "Apps, MVPs, dashboards, and portals.", to: "/build" },
+  { title: "CloudMonkey Voice", desc: "VoIP, SIP trunks, hosted PBX, routing, and reporting.", to: "/voice" },
+  { title: "CloudMonkey Marketing", desc: "Content, campaigns, competitor intelligence, and growth.", to: "/marketing" },
+] as const;
 
 function CloudUploadGraphic() {
   return (
@@ -75,7 +85,9 @@ function CloudPage() {
     queryKey: ["public", "pricing"],
     queryFn: fetchPublicPricingCatalog,
   });
-  const cat = data?.categories.find((category) => category.id === "cloud");
+  const pricingCategories = data?.categories ?? CATEGORIES;
+  const managedCloudCategory = pricingCategories.find((category) => category.id === "managed-cloud");
+  const cloudServices = managedCloudCategory?.services.filter((service) => service.id === "managed-cloud-plans") ?? [];
   return (
     <>
       <section className="relative isolate overflow-hidden bg-white">
@@ -96,17 +108,19 @@ function CloudPage() {
               <span className="text-[var(--cloud)]">without complexity.</span>
             </h1>
             <p className="mt-8 max-w-lg text-lg leading-8 text-[#17213a]">
-              Scalable, secure, and reliable cloud solutions that grow with your business. We handle the complexity so you can focus on what matters.
+              Managed servers, hosting, backups, SSL, monitoring, security, and support — all handled by CloudMonkey.
             </p>
             <div className="mt-10 flex flex-wrap gap-4">
               <Link
                 to="/auth/sign-up"
+                search={{ bundle: undefined, plan: undefined, coupon: undefined, ref: undefined }}
                 className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-[var(--cloud)] px-7 text-sm font-bold text-white shadow-[0_16px_30px_-18px_rgba(25,116,220,0.75)] transition-transform hover:-translate-y-0.5"
               >
                 Explore Cloud Solutions <ArrowRight className="h-4 w-4" />
               </Link>
               <Link
                 to="/auth/sign-up"
+                search={{ bundle: undefined, plan: undefined, coupon: undefined, ref: undefined }}
                 className="inline-flex min-h-12 items-center justify-center rounded-lg border border-[#b8d7f7] bg-white/80 px-7 text-sm font-bold text-[var(--cloud)] transition-colors hover:bg-[var(--cloud-soft)]"
               >
                 Get Started
@@ -142,7 +156,7 @@ function CloudPage() {
       </section>
 
       <section className="mx-auto max-w-7xl px-6 py-20">
-        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-5">
           {FEATURES.map((f) => (
             <div key={f.title} className="text-center">
               <div className="mx-auto mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl" style={{ background: "var(--cloud-soft)", color: "var(--cloud)" }}>
@@ -158,28 +172,32 @@ function CloudPage() {
       <div className="border-t border-border">
         <div className="mx-auto max-w-7xl px-6 pt-16 text-center">
           <SectionHeading
-            eyebrow="Cloud Services"
+            eyebrow="Managed Cloud Plans"
             accent="var(--cloud)"
-            title="Choose your cloud stack"
+            title="Choose your managed infrastructure plan"
             subtitle="From domain to managed CloudMonkey VPS — all the building blocks for a modern web presence, configured and supported by our team."
           />
         </div>
-        {isLoading ? (
-          <div className="mx-auto mt-12 max-w-7xl px-6 py-12 text-center text-muted-foreground">
-            <RefreshCcw className="mx-auto mb-3 h-6 w-6 animate-spin" />
-            Loading cloud catalog...
+        {isLoading && (
+          <div className="mx-auto mt-8 max-w-7xl px-6">
+            <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 text-center text-sm text-blue-800">
+              <RefreshCcw className="mr-2 inline h-4 w-4 animate-spin" />
+              Refreshing live cloud pricing. Crawlable fallback plans are shown below.
+            </div>
           </div>
-        ) : isError ? (
+        )}
+        {isError && (
           <div className="mx-auto mt-12 max-w-7xl px-6 py-12">
             <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-800">
-              <div className="font-semibold">Failed to load cloud pricing.</div>
+              <div className="font-semibold">Live cloud pricing did not load. Static catalog pricing is shown below.</div>
               <button type="button" onClick={() => refetch()} className="mt-2 font-semibold underline">
                 Try again
               </button>
             </div>
           </div>
-        ) : cat ? (
-          cat.services.map((s) => (
+        )}
+        {cloudServices.length ? (
+          cloudServices.map((s) => (
             <ServiceSection key={s.id} service={s} accent="cloud" ctaHref={(plan) => `/auth/sign-up?plan=${encodeURIComponent(plan.id)}`} />
           ))
         ) : (
@@ -188,6 +206,26 @@ function CloudPage() {
           </div>
         )}
       </div>
+
+      <section className="mx-auto max-w-7xl px-6 py-16">
+        <SectionHeading
+          eyebrow="Need more than hosting?"
+          accent="var(--cloud)"
+          title="Add the right commercial lane when you need it"
+          subtitle="Cloud is infrastructure. Build, Voice, and Marketing can be added when the business needs more than hosting."
+        />
+        <div className="mt-10 grid gap-5 md:grid-cols-3">
+          {UPSELLS.map((item) => (
+            <Link key={item.title} to={item.to} className="rounded-2xl border border-border bg-card p-6 shadow-[var(--shadow-card)] transition-all hover:-translate-y-1 hover:shadow-[var(--shadow-elevated)]">
+              <h3 className="text-base font-bold text-foreground" style={{ fontFamily: "var(--font-display)" }}>{item.title}</h3>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.desc}</p>
+              <div className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-[var(--cloud)]">
+                View options <ArrowRight className="h-4 w-4" />
+              </div>
+            </Link>
+          ))}
+        </div>
+      </section>
 
       <CtaBanner
         title="Let's build your cloud the smart way."

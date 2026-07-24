@@ -6,8 +6,10 @@ import {
   Loader2,
   MessageSquare,
   Mic,
+  Minimize2,
   Paperclip,
   Play,
+  Maximize2,
   Send,
   Square,
   Volume2,
@@ -16,6 +18,9 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { authClient } from "@/lib/auth-client";
+import { extractAiResponseText } from "@/lib/ai-response";
+import { renderSafeMarkdown } from "@/lib/safe-markdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -41,6 +46,7 @@ type ChatMessage = {
 };
 
 export function FloatingSupportChat() {
+  const { data: session } = authClient.useSession();
   const [isOpen, setIsOpen] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
@@ -48,17 +54,39 @@ export function FloatingSupportChat() {
   const [pendingAttachments, setPendingAttachments] = useState<ChatAttachment[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
+  const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setIsOpen(localStorage.getItem("cloudmonkey:support-chat-open") === "1");
   }, []);
 
+  useEffect(() => {
+    const storageKey = session?.user?.id
+      ? `cloudmonkey:support-chat-session:${session.user.id}`
+      : null;
+    if (!storageKey) return;
+    const savedSessionId = localStorage.getItem(storageKey);
+    if (savedSessionId) {
+      setSessionId(savedSessionId);
+    }
+  }, [session?.user?.id]);
+
   function setOpen(value: boolean) {
     setIsOpen(value);
     localStorage.setItem("cloudmonkey:support-chat-open", value ? "1" : "0");
+  }
+
+  function toggleExpanded() {
+    setIsExpanded((current) => !current);
+  }
+
+  function persistSessionId(nextSessionId: string | null | undefined) {
+    if (!session?.user?.id || !nextSessionId) return;
+    localStorage.setItem(`cloudmonkey:support-chat-session:${session.user.id}`, nextSessionId);
   }
 
   async function uploadFiles(files: File[]) {
@@ -75,8 +103,10 @@ export function FloatingSupportChat() {
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || "Upload failed");
       setSessionId(body.session?.id ?? sessionId);
+      persistSessionId(body.session?.id ?? sessionId);
       setPendingAttachments((current) => [...current, ...(body.attachments ?? [])]);
       setOpen(true);
+      requestAnimationFrame(() => scrollAnchorRef.current?.scrollIntoView({ block: "end" }));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Upload failed");
     } finally {
@@ -143,13 +173,16 @@ export function FloatingSupportChat() {
         }),
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error || "Failed to contact support agent");
+      if (!res.ok) {
+        throw new Error(body.error || "Failed to contact support agent");
+      }
       return body;
     },
     onSuccess: (data) => {
       const sentMessage = message;
       const sentAttachments = pendingAttachments;
       setSessionId(data.session?.id ?? sessionId);
+      persistSessionId(data.session?.id ?? sessionId);
       setMessages((current) => [
         ...current,
         {
@@ -169,9 +202,12 @@ export function FloatingSupportChat() {
       ]);
       setMessage("");
       setPendingAttachments([]);
+      requestAnimationFrame(() => scrollAnchorRef.current?.scrollIntoView({ block: "end" }));
       if (data.ticket?.id) toast.success("Support ticket linked");
     },
-    onError: (error: Error) => toast.error(error.message),
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
   });
 
   const quickPrompts = [
@@ -181,11 +217,24 @@ export function FloatingSupportChat() {
     "I need billing help",
   ];
   const canSend = !!message.trim() || pendingAttachments.length > 0;
+  const canSubmit = canSend && !chatMutation.isPending && !isUploading;
+
+  useEffect(() => {
+    if (!isOpen) return;
+    requestAnimationFrame(() => scrollAnchorRef.current?.scrollIntoView({ block: "end" }));
+  }, [isOpen, messages, pendingAttachments.length, chatMutation.isPending]);
 
   return (
     <div className="fixed bottom-4 right-4 z-50 sm:bottom-6 sm:right-6">
       {isOpen && (
-        <section className="mb-3 flex max-h-[calc(100vh-7rem)] w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-lg border border-[#dfe4ef] bg-white shadow-[0_24px_80px_-30px_rgba(15,23,42,0.55)] sm:w-[420px]">
+        <section
+          className={[
+            "mb-3 flex w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-lg border border-[#dfe4ef] bg-white shadow-[0_24px_80px_-30px_rgba(15,23,42,0.55)]",
+            isExpanded
+              ? "fixed inset-4 z-50 mb-0 max-h-none sm:inset-6"
+              : "max-h-[calc(100vh-7rem)] sm:w-[420px]",
+          ].join(" ")}
+        >
           <header className="flex items-start justify-between gap-3 border-b border-[#dfe4ef] p-4">
             <div>
               <div className="flex items-center gap-2 font-bold text-[#07102c]">
@@ -200,6 +249,16 @@ export function FloatingSupportChat() {
               <Badge variant="outline" className="hidden rounded-lg sm:inline-flex">
                 Context aware
               </Badge>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 rounded-full"
+                onClick={toggleExpanded}
+              >
+                {isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                <span className="sr-only">{isExpanded ? "Minimize chat" : "Expand chat"}</span>
+              </Button>
               <Button
                 type="button"
                 variant="ghost"
@@ -247,6 +306,7 @@ export function FloatingSupportChat() {
                   Thinking through the next step...
                 </div>
               )}
+              <div ref={scrollAnchorRef} />
             </div>
 
             {pendingAttachments.length > 0 && (
@@ -270,7 +330,7 @@ export function FloatingSupportChat() {
             className="space-y-3 border-t border-[#dfe4ef] p-4"
             onSubmit={(event) => {
               event.preventDefault();
-              if (!canSend) return;
+              if (!canSubmit) return;
               chatMutation.mutate();
             }}
           >
@@ -279,6 +339,13 @@ export function FloatingSupportChat() {
               onChange={(event) => setMessage(event.target.value)}
               placeholder="Ask CloudMonkey support..."
               className="min-h-20 rounded-lg"
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  if (!canSubmit) return;
+                  chatMutation.mutate();
+                }
+              }}
             />
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex flex-wrap gap-2">
@@ -315,11 +382,7 @@ export function FloatingSupportChat() {
                   {isRecording ? "Stop" : "Voice note"}
                 </Button>
               </div>
-              <Button
-                type="submit"
-                className="rounded-lg bg-[var(--ai)]"
-                disabled={chatMutation.isPending || isUploading || !canSend}
-              >
+              <Button type="submit" className="rounded-lg bg-[var(--ai)]" disabled={!canSubmit}>
                 {chatMutation.isPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
@@ -346,12 +409,20 @@ export function FloatingSupportChat() {
 
 function ChatBubble({ item, onSpeak }: { item: ChatMessage; onSpeak: (text: string) => void }) {
   const isUser = item.role === "user";
+  const displayBody = isUser ? item.body : extractAiResponseText(item.body, item.body);
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
         className={`max-w-[92%] rounded-lg p-3 text-sm ${isUser ? "bg-[var(--ai)] text-white" : "bg-white text-[#07102c] shadow-sm"}`}
       >
-        <div className="whitespace-pre-wrap break-words">{item.body}</div>
+        {isUser ? (
+          <div className="whitespace-pre-wrap break-words">{displayBody}</div>
+        ) : (
+          <div
+            className="break-words leading-relaxed [&_blockquote]:border-l-2 [&_blockquote]:border-[var(--ai)] [&_blockquote]:pl-3 [&_code]:rounded [&_code]:bg-[#eef0f5] [&_code]:px-1 [&_h2]:mb-2 [&_h2]:mt-3 [&_h2]:font-bold [&_h3]:mb-1.5 [&_h3]:mt-3 [&_h3]:font-semibold [&_hr]:my-3 [&_li]:my-1 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-2 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5"
+            dangerouslySetInnerHTML={{ __html: renderSafeMarkdown(displayBody) }}
+          />
+        )}
         {!!item.attachments?.length && (
           <div className="mt-3 grid gap-2">
             {item.attachments.map((attachment) => (

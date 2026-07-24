@@ -18,9 +18,23 @@ export function PricingCard({
 }) {
   const { currency } = useCurrency();
   const resolvedCurrency = currencyOverride ?? currency;
-  const resolvedHref = typeof href === "function" ? href(plan) : href;
+  const billingType = plan.billingType ?? "recurring";
+  const canCheckout = billingType !== "quote";
+  const resolvedHref = canCheckout ? (typeof href === "function" ? href(plan) : href) : "mailto:sales@cloudmonkey.co.za?subject=CloudMonkey%20Quote";
   const accentColor = accent === "cloud" ? "var(--cloud)" : accent === "business" ? "var(--business)" : "var(--ai)";
   const ringStyle: CSSProperties | undefined = plan.highlighted ? { boxShadow: `0 0 0 2px ${accentColor}, var(--shadow-elevated)` } : undefined;
+  const displayPrice =
+    billingType === "quote"
+      ? plan.priceLabel || "Request Quote"
+      : `${plan.priceLabel ? `${plan.priceLabel} ` : ""}${formatPrice(plan.priceZar, resolvedCurrency)}`;
+  const ctaLabel =
+    billingType === "quote"
+      ? "Request Quote"
+      : billingType === "once_off"
+        ? "Buy Once Off"
+        : plan.trialDays
+          ? "Start Free Trial"
+          : "Choose Plan";
   return (
     <div
       className={cn(
@@ -45,12 +59,23 @@ export function PricingCard({
           {plan.trialDays}-day free trial
         </div>
       ) : null}
+      {plan.isBundle ? (
+        <div className="mb-3 inline-flex rounded-full bg-secondary px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-foreground">
+          Bundle
+        </div>
+      ) : null}
       {plan.tagline && <p className="mb-3 text-xs text-muted-foreground">{plan.tagline}</p>}
-      <div className="mb-5 flex items-baseline gap-1">
+      <div className="mb-3 flex flex-wrap items-baseline gap-1">
         <span className="text-4xl font-bold tracking-tight text-foreground" style={{ fontFamily: "var(--font-display)" }}>
-          {formatPrice(plan.priceZar, resolvedCurrency)}
+          {displayPrice}
         </span>
-        {plan.unit && <span className="text-sm text-muted-foreground">{plan.unit}</span>}
+        {billingType !== "quote" && plan.unit && <span className="text-sm text-muted-foreground">{plan.unit}</span>}
+      </div>
+      <div className="mb-5 min-h-10 space-y-1 text-xs text-muted-foreground">
+        {plan.setupPriceZar != null && plan.setupPriceZar > 0 && <div>Setup: {formatPrice(plan.setupPriceZar, resolvedCurrency)}</div>}
+        {plan.minimumTerm && <div>Minimum term: {plan.minimumTerm}</div>}
+        {billingType === "once_off" && <div>Once-off product. No monthly subscription.</div>}
+        {plan.serviceNote && <div>{plan.serviceNote}</div>}
       </div>
       <ul className="mb-6 flex-1 space-y-2.5 text-sm">
         {(plan.features as Array<string | { id?: string; content?: string }>).map((feature) => (
@@ -60,16 +85,29 @@ export function PricingCard({
           </li>
         ))}
       </ul>
-      <Link
-        to={resolvedHref}
-        className={cn(
-          "rounded-full px-4 py-2.5 text-center text-sm font-semibold transition-all",
-          plan.highlighted ? "text-white hover:opacity-90" : "border border-border text-foreground hover:bg-secondary",
-        )}
-        style={plan.highlighted ? { background: accentColor } : undefined}
-      >
-        {plan.priceZar === null ? "Contact Sales" : plan.trialDays ? "Start Free Trial" : "Choose Plan"}
-      </Link>
+      {canCheckout ? (
+        <Link
+          to={resolvedHref}
+          className={cn(
+            "rounded-full px-4 py-2.5 text-center text-sm font-semibold transition-all",
+            plan.highlighted ? "text-white hover:opacity-90" : "border border-border text-foreground hover:bg-secondary",
+          )}
+          style={plan.highlighted ? { background: accentColor } : undefined}
+        >
+          {ctaLabel}
+        </Link>
+      ) : (
+        <a
+          href={resolvedHref}
+          className={cn(
+            "rounded-full px-4 py-2.5 text-center text-sm font-semibold transition-all",
+            plan.highlighted ? "text-white hover:opacity-90" : "border border-border text-foreground hover:bg-secondary",
+          )}
+          style={plan.highlighted ? { background: accentColor } : undefined}
+        >
+          {ctaLabel}
+        </a>
+      )}
     </div>
   );
 }

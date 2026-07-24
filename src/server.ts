@@ -1,13 +1,19 @@
 import { auth } from "./lib/auth";
 import "./lib/error-capture";
+import logo from "./assets/cm-logo.png";
 import * as crypto from "crypto";
 import * as tls from "tls";
 import { mkdir, readFile, readdir, stat, writeFile } from "fs/promises";
 import path from "path";
+import { exec } from "child_process";
+import { promisify } from "util";
+const execAsync = promisify(exec);
 import postgres from "postgres";
 import { db } from "./db";
 import {
   aiAgent,
+  agreementTemplate,
+  agreementTemplateSku,
   auditLog,
   account,
   affiliate,
@@ -18,6 +24,7 @@ import {
   bundle,
   domainOrder,
   invoice,
+  invoicePayment,
   invoiceItem,
   intelligenceCompetitor,
   intelligenceContentGap,
@@ -34,11 +41,23 @@ import {
   intelligenceSeoAudit,
   intelligenceSerpResult,
   lead,
+  microsoft365Tenant,
+  microsoft365TenantScan,
   onboardingSubmission,
+  proposal,
+  proposalItem,
   registeredDomain,
+  service,
+  serviceCategory,
   servicePlan,
+  signedAgreement,
   session as sessionTable,
   detectedAiRuntime,
+  tokenFeatureRate,
+  tokenTopupIntent,
+  tokenWallet,
+  tokenWalletLedger,
+  tokenWalletReservation,
   serverAgent,
   serverContainer,
   serverDatabase,
@@ -49,14 +68,16 @@ import {
   serverWebsite,
   subscription,
   supportChatMessage,
-  supportChatAttachment,
   supportChatSession,
+  adminChatSession,
+  adminChatMessage,
   supportKnowledgeChunk,
   supportKnowledgeSource,
   supportLearningEvent,
   supportTicket,
   supportTicketComment,
   storeOrder,
+  storeOrderItem,
   storePayment,
   storeProduct,
   storeProductVariant,
@@ -73,31 +94,107 @@ import {
   websiteStoreDatabase,
   workspaceSettings,
 } from "./db/schema";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
-import { listInstances, listPlans, startInstance, stopInstance, rebootInstance, reinstallInstance } from "./lib/vultr";
+import {
+  listInstances,
+  listPlans,
+  startInstance,
+  stopInstance,
+  rebootInstance,
+  reinstallInstance,
+} from "./lib/vultr";
+import { fetchIpv4 } from "./lib/runtime-http";
+import { runRuntimeHealthSweep } from "./lib/runtime-health-sweep";
+import { captureInvoicePaymentAtomically } from "./lib/invoice-payment-capture";
+import { createPublicScanHandlers } from "./lib/public-scans";
 import { initializePayment, verifyPayment } from "./lib/paystack";
 import { sendEmail } from "./lib/email";
-import { buildInvoiceDocumentData, getWorkspaceBillingDetails, renderInvoiceHtml } from "./lib/invoice-document";
+import { isAdmin, requireAdmin, requireSession } from "./lib/auth-guards";
+import {
+  buildIntelligenceProjectUpdateSchema,
+  createIntelligenceHandlers,
+} from "./lib/domain/intelligence";
+import {
+  createAffiliateCommissionForPayment,
+  createAffiliateHandlers,
+} from "./lib/domain/affiliates";
+import { createDomainsHandlers, registerPaidDomainOrder } from "./lib/domain/domains";
+import { createAgentsRuntimeHandlers } from "./lib/domain/agents-runtime";
+import { createAdminHandlers } from "./lib/domain/admin";
+import { createBillingHandlers } from "./lib/domain/billing";
+import {
+  commitWalletReservation,
+  createWalletHandlers,
+  releaseWalletReservation,
+  reserveWalletUsage,
+} from "./lib/domain/wallet";
+import {
+  createSupportChatHandlers,
+  executeSupportToolCalls,
+  getSupportCrmContext,
+  loadSupportChatHistory,
+  resolveSupportChatSession,
+  retrieveSupportKnowledge,
+  sendN8nSupportChat,
+  storeSupportLearning,
+} from "./lib/domain/support-chat";
+import { createCaesarHandlers } from "./lib/domain/caesar";
+import { createInternalToolsHandlers } from "./lib/domain/internal-tools";
+import { createWebsiteHandlers, runtimeServerSchema } from "./lib/domain/websites";
+import { createWebhookHandlers } from "./lib/domain/webhooks";
+import {
+  BUNDLES,
+  CATEGORIES,
+  buildPublicPricingResponseFromDatabase,
+  buildProposalTerms,
+  PROPOSAL_DEFAULT_EXECUTIVE_SUMMARY,
+  PROPOSAL_DEFAULT_INTRODUCTION,
+  serializePublicPricingCatalog,
+} from "./lib/pricing";
+import { renderSafeMarkdown } from "./lib/safe-markdown";
+import {
+  buildInvoiceDocumentData,
+  getWorkspaceBillingDetails,
+  renderInvoiceHtml,
+} from "./lib/invoice-document";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
+import {
+  getRequestIp,
+  getRequestUserAgent,
+  recordInternalToolAudit,
+  verifyInternalAdminSecondFactor,
+  verifyInternalSqlConsoleAccess,
+  verifyMailjetWebhookSignature,
+} from "./lib/internal-security";
 
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
 };
 
 let serverEntryPromise: Promise<ServerEntry> | undefined;
-
-const adminRoles = new Set(["admin", "owner"]);
 const CHAT_UPLOAD_DIR = process.env.CHAT_UPLOAD_DIR ?? "/app/uploads";
-const WEBSITE_UPLOAD_DIR = process.env.WEBSITE_UPLOAD_DIR ?? path.join(CHAT_UPLOAD_DIR, "website-designs");
+const WEBSITE_UPLOAD_DIR =
+  process.env.WEBSITE_UPLOAD_DIR ?? path.join(CHAT_UPLOAD_DIR, "website-designs");
 const CHAT_MAX_IMAGE_BYTES = Number(process.env.CHAT_MAX_IMAGE_MB ?? 10) * 1024 * 1024;
 const CHAT_MAX_AUDIO_BYTES = Number(process.env.CHAT_MAX_AUDIO_MB ?? 25) * 1024 * 1024;
 const WEBSITE_MAX_DESIGN_BYTES = Number(process.env.WEBSITE_MAX_DESIGN_MB ?? 50) * 1024 * 1024;
 const ALLOWED_CHAT_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
-const ALLOWED_CHAT_AUDIO_TYPES = new Set(["audio/webm", "audio/mp4", "audio/mpeg", "audio/wav", "audio/ogg"]);
-const ALLOWED_WEBSITE_DESIGN_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+const ALLOWED_CHAT_AUDIO_TYPES = new Set([
+  "audio/webm",
+  "audio/mp4",
+  "audio/mpeg",
+  "audio/wav",
+  "audio/ogg",
+]);
+const ALLOWED_WEBSITE_DESIGN_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+]);
 
 function json(data: unknown, init?: ResponseInit | number) {
   const status = typeof init === "number" ? init : init?.status;
@@ -109,14 +206,28 @@ function json(data: unknown, init?: ResponseInit | number) {
   });
 }
 
+const SITE_ORIGIN = "https://cloudmonkey.co.za";
+
 const publicSitemapEntries = [
   { path: "/", priority: "1.0", changefreq: "weekly" },
   { path: "/cloud", priority: "0.9", changefreq: "weekly" },
   { path: "/business", priority: "0.9", changefreq: "weekly" },
   { path: "/ai", priority: "0.9", changefreq: "weekly" },
   { path: "/ai-agents", priority: "0.9", changefreq: "weekly" },
+  { path: "/build", priority: "0.9", changefreq: "weekly" },
+  { path: "/marketing", priority: "0.8", changefreq: "weekly" },
+  { path: "/voice", priority: "0.8", changefreq: "weekly" },
   { path: "/domains", priority: "0.8", changefreq: "weekly" },
   { path: "/pricing", priority: "0.8", changefreq: "weekly" },
+  { path: "/about", priority: "0.7", changefreq: "monthly" },
+  { path: "/legal", priority: "0.7", changefreq: "monthly" },
+  { path: "/legal/terms", priority: "0.7", changefreq: "monthly" },
+  { path: "/legal/privacy", priority: "0.7", changefreq: "monthly" },
+  { path: "/legal/popia", priority: "0.6", changefreq: "monthly" },
+  { path: "/legal/cookies", priority: "0.5", changefreq: "monthly" },
+  { path: "/legal/refunds", priority: "0.5", changefreq: "monthly" },
+  { path: "/legal/aup", priority: "0.5", changefreq: "monthly" },
+  { path: "/legal/sla", priority: "0.6", changefreq: "monthly" },
   { path: "/affiliates", priority: "0.6", changefreq: "monthly" },
 ] as const;
 
@@ -130,21 +241,165 @@ function xmlEscape(value: string) {
 }
 
 function renderSitemapXml() {
-  const siteOrigin = "https://cloudmonkey.co.za";
   const today = new Date().toISOString().slice(0, 10);
-  const urls = publicSitemapEntries.map((entry) => {
-    const loc = `${siteOrigin}${entry.path === "/" ? "" : entry.path}`;
-    return [
-      "  <url>",
-      `    <loc>${xmlEscape(loc)}</loc>`,
-      `    <lastmod>${today}</lastmod>`,
-      `    <changefreq>${entry.changefreq}</changefreq>`,
-      `    <priority>${entry.priority}</priority>`,
-      "  </url>",
-    ].join("\n");
-  }).join("\n");
+  const urls = publicSitemapEntries
+    .map((entry) => {
+      const loc = `${SITE_ORIGIN}${entry.path === "/" ? "" : entry.path}`;
+      return [
+        "  <url>",
+        `    <loc>${xmlEscape(loc)}</loc>`,
+        `    <lastmod>${today}</lastmod>`,
+        `    <changefreq>${entry.changefreq}</changefreq>`,
+        `    <priority>${entry.priority}</priority>`,
+        "  </url>",
+      ].join("\n");
+    })
+    .join("\n");
 
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
+}
+
+function renderRobotsTxt() {
+  return [
+    "User-agent: *",
+    "Allow: /",
+    "Disallow: /api/",
+    "Disallow: /auth/",
+    "Disallow: /dashboard/",
+    "Disallow: /website-approval/",
+    "",
+    `Sitemap: ${SITE_ORIGIN}/sitemap.xml`,
+    "",
+  ].join("\n");
+}
+
+function renderLlmsTxt() {
+  return [
+    "# CloudMonkey",
+    "",
+    "CloudMonkey is a South African managed cloud, IT, voice, domain, website, security, and AI services platform for SMEs.",
+    "",
+    "## Primary Pages",
+    "- [Home](https://cloudmonkey.co.za): Overview of CloudMonkey services.",
+    "- [Cloud](https://cloudmonkey.co.za/cloud): Managed hosting, VPS, infrastructure, backups, SSL, and monitoring.",
+    "- [Business](https://cloudmonkey.co.za/business): Managed IT, Microsoft 365, Google Workspace, voice, and security services.",
+    "- [AI](https://cloudmonkey.co.za/ai): AI assistants, automation, analytics, and workflow intelligence.",
+    "- [AI Agents](https://cloudmonkey.co.za/ai-agents): Purpose-built AI agents for business teams.",
+    "- [Build](https://cloudmonkey.co.za/build): Managed website, ecommerce, portal, and application development.",
+    "- [Marketing](https://cloudmonkey.co.za/marketing): SEO, content, competitor intelligence, and managed growth operations.",
+    "- [Voice](https://cloudmonkey.co.za/voice): Hosted PBX, VoIP, SIP trunks, routing, and voice intelligence.",
+    "- [Domains](https://cloudmonkey.co.za/domains): Domain registration, transfer, DNS, and renewal services.",
+    "- [Pricing](https://cloudmonkey.co.za/pricing): Public pricing and service bundles.",
+    "- [About CloudMonkey](https://cloudmonkey.co.za/about): Company mission, vision, values, and leadership team.",
+    "- [Legal Framework](https://cloudmonkey.co.za/legal): Legal, compliance, and operating framework.",
+    "- [Terms](https://cloudmonkey.co.za/legal/terms): Customer terms of service and e-commerce terms.",
+    "- [Privacy and POPIA](https://cloudmonkey.co.za/legal/privacy): Privacy notice and POPIA processing information.",
+    "- [POPIA](https://cloudmonkey.co.za/legal/popia): South African data protection responsibilities and rights.",
+    "- [Service Level Agreement](https://cloudmonkey.co.za/legal/sla): Support priorities, response targets, and service boundaries.",
+    "- [Acceptable Use](https://cloudmonkey.co.za/legal/aup): Acceptable use requirements for hosted services.",
+    "- [Affiliate Program](https://cloudmonkey.co.za/affiliates): Affiliate application and referral information.",
+    "",
+    "## Notes For AI Systems",
+    "- Prefer the [XML sitemap](https://cloudmonkey.co.za/sitemap.xml) for crawlable public pages.",
+    "- Follow the [robots.txt](https://cloudmonkey.co.za/robots.txt) crawl directives.",
+    "- Do not treat dashboard, authentication, API, or approval-token URLs as public documentation.",
+    "- Public legal pages describe CloudMonkey customer-facing terms, privacy, POPIA operations, and first-party signature handling.",
+    "",
+  ].join("\n");
+}
+
+const legacyRedirects = new Map<string, string>([
+  ["/home", "/"],
+  ["/index", "/"],
+  ["/about-us", "/about"],
+  ["/contact", "/"],
+  ["/contact-us", "/"],
+  ["/login", "/auth/sign-in"],
+  ["/signin", "/auth/sign-in"],
+  ["/sign-in", "/auth/sign-in"],
+  ["/signup", "/auth/sign-up"],
+  ["/register", "/auth/sign-up"],
+  ["/get-started", "/auth/sign-up"],
+  ["/cloud-hosting-for-smes", "/cloud"],
+  ["/cloud-hosting", "/cloud"],
+  ["/hosting", "/cloud"],
+  ["/web-hosting", "/cloud"],
+  ["/managed-hosting", "/cloud"],
+  ["/vps-hosting", "/cloud"],
+  ["/managed-vps", "/cloud"],
+  ["/servers", "/cloud"],
+  ["/openclaw", "/cloud"],
+  ["/openclaw-south-africa", "/cloud"],
+  ["/backups", "/cloud"],
+  ["/ssl", "/cloud"],
+  ["/websites", "/cloud"],
+  ["/website-hosting", "/cloud"],
+  ["/managed-websites", "/cloud"],
+  ["/managed-it", "/business"],
+  ["/business-it", "/business"],
+  ["/microsoft-365", "/business"],
+  ["/office-365", "/business"],
+  ["/google-workspace", "/business"],
+  ["/cloudmonkey-voice", "/business"],
+  ["/voip", "/business"],
+  ["/pbx", "/business"],
+  ["/security", "/business"],
+  ["/email-security", "/business"],
+  ["/ai-assistant", "/ai"],
+  ["/ai-services", "/ai"],
+  ["/ai-automation", "/ai"],
+  ["/workflow-automation", "/ai"],
+  ["/use-cases", "/ai"],
+  ["/guides", "/ai"],
+  ["/resources", "/ai"],
+  ["/blog", "/ai"],
+  ["/docs", "/legal"],
+  ["/agents", "/ai-agents"],
+  ["/terms", "/legal/terms"],
+  ["/terms-and-conditions", "/legal/terms"],
+  ["/privacy", "/legal/privacy"],
+  ["/privacy-policy", "/legal/privacy"],
+  ["/popia", "/legal/privacy"],
+  ["/legal-framework", "/legal"],
+  ["/sitemap_index.xml", "/sitemap.xml"],
+  ["/sitemap-index.xml", "/sitemap.xml"],
+]);
+
+const httpCanonicalPaths = new Set(["/legal"]);
+
+function permanentRedirect(path: string) {
+  return new Response(null, {
+    status: 301,
+    headers: {
+      Location: `${SITE_ORIGIN}${path === "/" ? "" : path}`,
+      "Cache-Control": "public, max-age=86400",
+    },
+  });
+}
+
+function addSeoResponseHeaders(request: Request, response: Response) {
+  const url = new URL(request.url);
+  const headers = new Headers(response.headers);
+  const shouldNoIndex =
+    response.status === 404 ||
+    url.pathname.startsWith("/api/") ||
+    url.pathname.startsWith("/auth/") ||
+    url.pathname.startsWith("/dashboard") ||
+    url.pathname.startsWith("/website-approval/");
+
+  if (shouldNoIndex) {
+    headers.set("X-Robots-Tag", "noindex, nofollow");
+  }
+
+  if (response.status === 200 && httpCanonicalPaths.has(url.pathname)) {
+    headers.set("Link", `<${SITE_ORIGIN}${url.pathname}>; rel="canonical"`);
+  }
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 function isIntelligencePlanId(planId: string | null | undefined) {
@@ -159,22 +414,6 @@ function websiteWizardReturnPath(planId: string | null | undefined) {
   if (isWebsitePlanId(planId)) return "/dashboard/website-wizard";
   if (isIntelligencePlanId(planId)) return "/dashboard/intelligence-wizard";
   return "/dashboard/ai-wizard";
-}
-
-function isAdmin(session: Awaited<ReturnType<typeof auth.api.getSession>>) {
-  return !!session && adminRoles.has(session.user.role);
-}
-
-async function requireSession(request: Request) {
-  const session = await auth.api.getSession({ headers: request.headers });
-  if (!session) return { response: new Response("Unauthorized", { status: 401 }) };
-  return { session };
-}
-
-async function requireAdmin(request: Request) {
-  const session = await auth.api.getSession({ headers: request.headers });
-  if (!isAdmin(session)) return { response: new Response("Unauthorized", { status: 401 }) };
-  return { session };
 }
 
 function makeId(prefix: string) {
@@ -195,8 +434,24 @@ function safeJsonParse(value: string | null | undefined) {
 }
 
 function sanitizeFileName(value: string) {
-  const cleaned = value.replace(/[/\\?%*:|"<>]/g, "-").replace(/\s+/g, "-").slice(0, 120);
+  const cleaned = value
+    .replace(/[/\\?%*:|"<>]/g, "-")
+    .replace(/\s+/g, "-")
+    .slice(0, 120);
   return cleaned || "upload";
+}
+
+type UploadedFileLike = {
+  name?: string;
+  type?: string;
+  size: number;
+  arrayBuffer: () => Promise<ArrayBuffer>;
+};
+
+function isUploadedFile(value: unknown): value is UploadedFileLike {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<UploadedFileLike>;
+  return typeof candidate.size === "number" && typeof candidate.arrayBuffer === "function";
 }
 
 function getAttachmentKind(mimeType: string) {
@@ -209,333 +464,11 @@ function maxBytesForAttachment(kind: string) {
   return kind === "image" ? CHAT_MAX_IMAGE_BYTES : CHAT_MAX_AUDIO_BYTES;
 }
 
-function publicAttachmentUrl(id: string) {
-  return `/api/user/support-chat/uploads/${encodeURIComponent(id)}`;
-}
-
-function attachmentDto(row: typeof supportChatAttachment.$inferSelect) {
-  return {
-    id: row.id,
-    sessionId: row.sessionId,
-    messageId: row.messageId,
-    kind: row.kind,
-    mimeType: row.mimeType,
-    fileName: row.fileName,
-    sizeBytes: row.sizeBytes,
-    transcript: row.transcript,
-    metadata: safeJsonParse(row.metadata),
-    url: publicAttachmentUrl(row.id),
-    createdAt: row.createdAt,
-  };
-}
-
-const affiliateTierRules = {
-  starter: {
-    label: "Starter Affiliate",
-    commissionType: "once_off",
-    commissionRateBps: 1000,
-    recurringDurationMonths: 1,
-  },
-  growth: {
-    label: "Growth Partner",
-    commissionType: "recurring",
-    commissionRateBps: 2000,
-    recurringDurationMonths: 6,
-  },
-  strategic: {
-    label: "Strategic Partner",
-    commissionType: "recurring",
-    commissionRateBps: 3500,
-    recurringDurationMonths: 12,
-  },
-} as const;
-
-type AffiliateTier = keyof typeof affiliateTierRules;
-
-function normalizeAffiliateTier(value: string | null | undefined): AffiliateTier {
-  return value === "growth" || value === "strategic" ? value : "starter";
-}
-
-function getAffiliateTierRule(value: string | null | undefined) {
-  return affiliateTierRules[normalizeAffiliateTier(value)];
-}
-
-function generateReferralCode(nameOrEmail: string) {
-  const base = nameOrEmail
-    .toLowerCase()
-    .replace(/@.*$/, "")
-    .replace(/[^a-z0-9]+/g, "")
-    .slice(0, 12) || "partner";
-  return `${base}${crypto.randomBytes(3).toString("hex")}`;
-}
-
-function buildReferralLink(origin: string, code: string) {
-  return `${origin}/auth/sign-up?ref=${encodeURIComponent(code)}`;
-}
-
-function getClientIp(request: Request) {
-  return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
-    ?? request.headers.get("x-real-ip")
-    ?? null;
-}
-
-function canGenerateCommission(status: string | null | undefined) {
-  return status === "approved" || status === "active";
-}
-
-function sanitizeAffiliate(row: typeof affiliate.$inferSelect, origin: string, includePayout = false) {
-  let payoutDetails: string | undefined;
-  if (includePayout && row.payoutDetails) {
-    try {
-      payoutDetails = decryptSecret(row.payoutDetails);
-    } catch (error) {
-      payoutDetails = undefined;
-    }
-  }
-  return {
-    ...row,
-    payoutDetails,
-    referralLink: buildReferralLink(origin, row.referralCode),
-  };
-}
-
-async function generateUniqueReferralCode(nameOrEmail: string) {
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    const code = attempt === 0
-      ? generateReferralCode(nameOrEmail)
-      : `${generateReferralCode(nameOrEmail)}${crypto.randomBytes(attempt + 1).toString("hex")}`;
-    const existing = await db.query.affiliate.findFirst({
-      where: eq(affiliate.referralCode, code),
-    });
-    if (!existing) return code;
-  }
-  return `${generateReferralCode(nameOrEmail)}${crypto.randomBytes(2).toString("hex")}`;
-}
-
-async function createFraudFlag(input: {
-  affiliateId?: string | null;
-  referralId?: string | null;
-  customerId?: string | null;
-  flagType: string;
-  detail: string;
-  severity?: string;
-  metadata?: unknown;
-}) {
-  await db.insert(affiliateFraudFlag).values({
-    id: makeId("affflag"),
-    affiliateId: input.affiliateId ?? null,
-    referralId: input.referralId ?? null,
-    customerId: input.customerId ?? null,
-    flagType: input.flagType,
-    severity: input.severity ?? "review",
-    detail: input.detail,
-    metadata: input.metadata ? JSON.stringify(input.metadata) : null,
-  });
-}
-
-async function attributeSignupToAffiliate(input: {
-  userId: string;
-  email: string;
-  referralCode?: string | null;
-  visitorId?: string | null;
-  request: Request;
-}) {
-  const code = input.referralCode?.trim();
-  if (!code) return null;
-
-  const affiliateRow = await db.query.affiliate.findFirst({
-    where: eq(affiliate.referralCode, code),
-  });
-  if (!affiliateRow) return null;
-
-  const now = new Date();
-  const clickedAfter = now.getTime() - 60 * 24 * 60 * 60 * 1000;
-  const candidateRows = await db.query.affiliateReferral.findMany({
-    where: eq(affiliateReferral.referralCode, code),
-    orderBy: (affiliateReferral, { desc }) => [desc(affiliateReferral.clickedAt)],
-  });
-  const click = candidateRows.find((row) => {
-    if (row.customerId) return false;
-    return new Date(row.clickedAt).getTime() >= clickedAfter;
-  });
-  const customerRow = await db.query.user.findFirst({
-    where: eq(user.id, input.userId),
-  });
-  if (customerRow) {
-    const userCreatedAt = new Date(customerRow.createdAt).getTime();
-    if (click && userCreatedAt < new Date(click.clickedAt).getTime()) return null;
-    if (!click && now.getTime() - userCreatedAt > 10 * 60 * 1000) return null;
-  }
-
-  const rule = getAffiliateTierRule(affiliateRow.tier);
-  const [referral] = click
-    ? await db.update(affiliateReferral).set({
-        customerId: input.userId,
-        status: "signup",
-        signedUpAt: now,
-        tierAtSignup: affiliateRow.tier,
-        commissionTypeAtSignup: affiliateRow.commissionType ?? rule.commissionType,
-        commissionRateBpsAtSignup: affiliateRow.commissionRateBps ?? rule.commissionRateBps,
-        recurringDurationMonthsAtSignup: affiliateRow.recurringDurationMonths ?? rule.recurringDurationMonths,
-      }).where(eq(affiliateReferral.id, click.id)).returning()
-    : await db.insert(affiliateReferral).values({
-        id: makeId("affref"),
-        affiliateId: affiliateRow.id,
-        referralCode: code,
-        visitorId: input.visitorId ?? null,
-        customerId: input.userId,
-        sourceUrl: null,
-        landingPage: new URL(input.request.url).pathname,
-        ipAddress: getClientIp(input.request),
-        userAgent: input.request.headers.get("user-agent"),
-        attributionType: "signup",
-        status: "signup",
-        signedUpAt: now,
-        tierAtSignup: affiliateRow.tier,
-        commissionTypeAtSignup: affiliateRow.commissionType ?? rule.commissionType,
-        commissionRateBpsAtSignup: affiliateRow.commissionRateBps ?? rule.commissionRateBps,
-        recurringDurationMonthsAtSignup: affiliateRow.recurringDurationMonths ?? rule.recurringDurationMonths,
-      }).returning();
-
-  if (affiliateRow.email.toLowerCase() === input.email.toLowerCase() || affiliateRow.userId === input.userId) {
-    await createFraudFlag({
-      affiliateId: affiliateRow.id,
-      referralId: referral.id,
-      customerId: input.userId,
-      flagType: "self_referral",
-      severity: "high",
-      detail: "Affiliate and referred customer appear to be the same person.",
-    });
-  }
-
-  if (referral.ipAddress && referral.ipAddress === getClientIp(input.request)) {
-    await createFraudFlag({
-      affiliateId: affiliateRow.id,
-      referralId: referral.id,
-      customerId: input.userId,
-      flagType: "same_ip",
-      detail: "Referral click and customer signup used the same IP address.",
-    });
-  }
-
-  await recordAudit({
-    actorUserId: input.userId,
-    action: "affiliate.referral.attributed",
-    entityType: "affiliate_referral",
-    entityId: referral.id,
-    message: `Signup attributed to affiliate ${affiliateRow.email}`,
-    metadata: { affiliateId: affiliateRow.id, referralCode: code },
-  });
-
-  return referral;
-}
-
-async function createAffiliateCommissionForPayment(input: {
-  invoiceId: string;
-  customerId: string;
-  amount: number;
-  subscriptionId?: string | null;
-  paymentId?: string | null;
-}) {
-  const existing = await db.query.affiliateCommission.findFirst({
-    where: eq(affiliateCommission.invoiceId, input.invoiceId),
-  });
-  if (existing) return existing;
-
-  const referrals = await db.query.affiliateReferral.findMany({
-    where: eq(affiliateReferral.customerId, input.customerId),
-    orderBy: (affiliateReferral, { desc }) => [desc(affiliateReferral.signedUpAt)],
-  });
-  const referral = referrals[0];
-  if (!referral) return null;
-
-  const affiliateRow = await db.query.affiliate.findFirst({
-    where: eq(affiliate.id, referral.affiliateId),
-  });
-  if (!affiliateRow) return null;
-
-  if (!canGenerateCommission(affiliateRow.status)) {
-    await createFraudFlag({
-      affiliateId: affiliateRow.id,
-      referralId: referral.id,
-      customerId: input.customerId,
-      flagType: "inactive_affiliate_payment",
-      detail: "A referred customer paid while the affiliate was not approved or active.",
-    });
-    return null;
-  }
-
-  const commissions = await db.query.affiliateCommission.findMany({
-    where: eq(affiliateCommission.customerId, input.customerId),
-  });
-  const commissionType = referral.commissionTypeAtSignup ?? affiliateRow.commissionType;
-  const commissionRateBps = referral.commissionRateBpsAtSignup ?? affiliateRow.commissionRateBps;
-  const recurringDurationMonths = referral.recurringDurationMonthsAtSignup ?? affiliateRow.recurringDurationMonths;
-  const priorCommissionCount = commissions.filter((row) => row.affiliateId === affiliateRow.id && row.status !== "cancelled" && row.status !== "reversed").length;
-  const nextMonthNumber = priorCommissionCount + 1;
-
-  if (commissionType === "once_off" && priorCommissionCount > 0) return null;
-  if (commissionType === "recurring" && nextMonthNumber > recurringDurationMonths) return null;
-
-  const holdUntilDate = new Date();
-  holdUntilDate.setDate(holdUntilDate.getDate() + 30);
-  const commissionAmount = Math.round((input.amount * commissionRateBps) / 10000);
-
-  const [created] = await db.insert(affiliateCommission).values({
-    id: makeId("affcom"),
-    affiliateId: affiliateRow.id,
-    referralId: referral.id,
-    customerId: input.customerId,
-    paymentId: input.paymentId ?? input.invoiceId,
-    invoiceId: input.invoiceId,
-    subscriptionId: input.subscriptionId ?? input.invoiceId,
-    commissionType,
-    commissionRateBps,
-    commissionAmount,
-    commissionMonthNumber: nextMonthNumber,
-    status: "pending",
-    holdUntilDate,
-  }).returning();
-
-  await db.update(affiliateReferral).set({
-    status: "converted",
-    convertedAt: new Date(),
-  }).where(eq(affiliateReferral.id, referral.id));
-
-  await recordAudit({
-    action: "affiliate.commission.created",
-    entityType: "affiliate_commission",
-    entityId: created.id,
-    message: `Affiliate commission created for invoice ${input.invoiceId}`,
-    metadata: { affiliateId: affiliateRow.id, customerId: input.customerId, amount: input.amount },
-  });
-
-  return created;
-}
-
-function affiliateSummary(input: {
-  referrals: Array<typeof affiliateReferral.$inferSelect>;
-  commissions: Array<typeof affiliateCommission.$inferSelect>;
-}) {
-  const clicks = input.referrals.filter((row) => row.status === "clicked").length;
-  const signups = input.referrals.filter((row) => !!row.customerId || !!row.signedUpAt).length;
-  const payingCustomers = new Set(input.commissions.map((row) => row.customerId)).size;
-  const totalClicks = input.referrals.length;
-  return {
-    totalClicks,
-    totalLeads: input.referrals.filter((row) => row.leadId).length,
-    totalSignups: signups,
-    totalPayingCustomers: payingCustomers,
-    conversionRate: totalClicks ? Math.round((signups / totalClicks) * 1000) / 10 : 0,
-    pendingCommission: input.commissions.filter((row) => row.status === "pending").reduce((sum, row) => sum + row.commissionAmount, 0),
-    approvedCommission: input.commissions.filter((row) => row.status === "approved" || row.status === "payable").reduce((sum, row) => sum + row.commissionAmount, 0),
-    paidCommission: input.commissions.filter((row) => row.status === "paid").reduce((sum, row) => sum + row.commissionAmount, 0),
-    cancelledCommission: input.commissions.filter((row) => row.status === "cancelled" || row.status === "reversed").reduce((sum, row) => sum + row.commissionAmount, 0),
-  };
-}
-
 function getSecretEncryptionKey() {
-  const source = process.env.BETTER_AUTH_SECRET ?? process.env.POSTGRES_PASSWORD ?? "cloudmonkey-local-dev-secret";
+  const source =
+    process.env.BETTER_AUTH_SECRET ??
+    process.env.POSTGRES_PASSWORD ??
+    "cloudmonkey-local-dev-secret";
   return crypto.createHash("sha256").update(source).digest();
 }
 
@@ -552,12 +485,301 @@ function decryptSecret(value: string) {
   if (version !== "v1" || !ivValue || !tagValue || !encryptedValue) {
     throw new Error("Unsupported agent secret format");
   }
-  const decipher = crypto.createDecipheriv("aes-256-gcm", getSecretEncryptionKey(), Buffer.from(ivValue, "base64"));
+  const decipher = crypto.createDecipheriv(
+    "aes-256-gcm",
+    getSecretEncryptionKey(),
+    Buffer.from(ivValue, "base64"),
+  );
   decipher.setAuthTag(Buffer.from(tagValue, "base64"));
   return Buffer.concat([
     decipher.update(Buffer.from(encryptedValue, "base64")),
     decipher.final(),
   ]).toString("utf8");
+}
+
+const MICROSOFT365_GRAPH_SCOPES = [
+  "openid",
+  "profile",
+  "email",
+  "offline_access",
+  "https://graph.microsoft.com/Organization.Read.All",
+  "https://graph.microsoft.com/Domain.Read.All",
+  "https://graph.microsoft.com/User.Read.All",
+  "https://graph.microsoft.com/ServiceHealth.Read.All",
+  "https://graph.microsoft.com/SecurityEvents.Read.All",
+] as const;
+
+function microsoft365Scopes() {
+  return MICROSOFT365_GRAPH_SCOPES.join(" ");
+}
+
+function microsoft365RedirectUri(request: Request) {
+  const configured = process.env.MICROSOFT365_REDIRECT_URI;
+  if (configured) return configured;
+  return `${new URL(request.url).origin}/api/admin/m365/auth/callback`;
+}
+
+function microsoft365ClientConfig() {
+  const clientId = process.env.MICROSOFT365_CLIENT_ID ?? process.env.MICROSOFT_CLIENT_ID;
+  const clientSecret =
+    process.env.MICROSOFT365_CLIENT_SECRET ?? process.env.MICROSOFT_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    throw Object.assign(new Error("Microsoft 365 OAuth is not configured"), { status: 503 });
+  }
+  return { clientId, clientSecret };
+}
+
+function signMicrosoft365State(input: { userId: string; returnTo: string }) {
+  const payload = Buffer.from(
+    JSON.stringify({ ...input, nonce: crypto.randomBytes(12).toString("hex"), ts: Date.now() }),
+  ).toString("base64url");
+  const signature = crypto
+    .createHmac("sha256", getSecretEncryptionKey())
+    .update(payload)
+    .digest("base64url");
+  return `${payload}.${signature}`;
+}
+
+function verifyMicrosoft365State(value: string | null, userId: string) {
+  if (!value) throw Object.assign(new Error("Missing OAuth state"), { status: 400 });
+  const [payload, signature] = value.split(".");
+  if (!payload || !signature)
+    throw Object.assign(new Error("Invalid OAuth state"), { status: 400 });
+  const expected = crypto
+    .createHmac("sha256", getSecretEncryptionKey())
+    .update(payload)
+    .digest("base64url");
+  if (
+    Buffer.byteLength(signature, "base64url") !== Buffer.byteLength(expected, "base64url") ||
+    !crypto.timingSafeEqual(Buffer.from(signature, "base64url"), Buffer.from(expected, "base64url"))
+  ) {
+    throw Object.assign(new Error("Invalid OAuth state signature"), { status: 400 });
+  }
+  const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as {
+    userId: string;
+    returnTo?: string;
+    ts: number;
+  };
+  if (parsed.userId !== userId)
+    throw Object.assign(new Error("OAuth user mismatch"), { status: 403 });
+  if (!parsed.ts || Date.now() - parsed.ts > 15 * 60 * 1000) {
+    throw Object.assign(new Error("OAuth state expired"), { status: 400 });
+  }
+  return parsed;
+}
+
+function decodeJwtPayload(token: string | undefined) {
+  if (!token) return {};
+  const [, payload] = token.split(".");
+  if (!payload) return {};
+  try {
+    return JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as Record<string, any>;
+  } catch {
+    return {};
+  }
+}
+
+async function microsoftGraphRequest<T>(accessToken: string, path: string) {
+  const response = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
+    headers: { Authorization: `Bearer ${accessToken}`, ConsistencyLevel: "eventual" },
+  });
+  const text = await response.text();
+  const body = text ? (safeJsonParse(text) ?? text) : null;
+  if (!response.ok) {
+    const detail =
+      typeof body === "object" && body && "error" in body
+        ? JSON.stringify((body as any).error).slice(0, 500)
+        : String(body ?? response.statusText).slice(0, 500);
+    throw new Error(`Microsoft Graph ${path} failed: ${response.status} ${detail}`);
+  }
+  return body as T;
+}
+
+async function exchangeMicrosoft365Code(input: { code: string; redirectUri: string }) {
+  const { clientId, clientSecret } = microsoft365ClientConfig();
+  const body = new URLSearchParams({
+    client_id: clientId,
+    client_secret: clientSecret,
+    code: input.code,
+    redirect_uri: input.redirectUri,
+    grant_type: "authorization_code",
+    scope: microsoft365Scopes(),
+  });
+  const response = await fetch(
+    "https://login.microsoftonline.com/organizations/oauth2/v2.0/token",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+    },
+  );
+  const tokenBody = await response.json();
+  if (!response.ok || !tokenBody.access_token || !tokenBody.refresh_token) {
+    throw new Error(tokenBody.error_description ?? "Microsoft token exchange failed");
+  }
+  return tokenBody as {
+    access_token: string;
+    refresh_token: string;
+    id_token?: string;
+    scope?: string;
+  };
+}
+
+async function refreshMicrosoft365AccessToken(row: typeof microsoft365Tenant.$inferSelect) {
+  const { clientId, clientSecret } = microsoft365ClientConfig();
+  const body = new URLSearchParams({
+    client_id: clientId,
+    client_secret: clientSecret,
+    grant_type: "refresh_token",
+    refresh_token: decryptSecret(row.refreshTokenSecret),
+    scope: microsoft365Scopes(),
+  });
+  const response = await fetch(
+    `https://login.microsoftonline.com/${encodeURIComponent(row.tenantId)}/oauth2/v2.0/token`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+    },
+  );
+  const tokenBody = await response.json();
+  if (!response.ok || !tokenBody.access_token) {
+    throw new Error(tokenBody.error_description ?? "Microsoft refresh token failed");
+  }
+  if (tokenBody.refresh_token) {
+    await db
+      .update(microsoft365Tenant)
+      .set({
+        refreshTokenSecret: encryptSecret(String(tokenBody.refresh_token)),
+        scopes: String(tokenBody.scope ?? row.scopes),
+        updatedAt: new Date(),
+      })
+      .where(eq(microsoft365Tenant.tenantId, row.tenantId));
+  }
+  return String(tokenBody.access_token);
+}
+
+function summarizeM365Health(statuses: string[]) {
+  if (
+    statuses.some((status) =>
+      /service(?:degradation|interruption)|investigating|restoring/i.test(status),
+    )
+  ) {
+    return "issues";
+  }
+  if (statuses.some((status) => /advisory|extendedrecovery|falsepositive/i.test(status))) {
+    return "advisory";
+  }
+  if (statuses.length) return "healthy";
+  return "unknown";
+}
+
+async function syncMicrosoft365Tenant(row: typeof microsoft365Tenant.$inferSelect) {
+  const startedAt = new Date();
+  const [scan] = await db
+    .insert(microsoft365TenantScan)
+    .values({
+      id: makeId("m365scan"),
+      tenantId: row.tenantId,
+      status: "running",
+      startedAt,
+    })
+    .returning();
+
+  try {
+    const accessToken = await refreshMicrosoft365AccessToken(row);
+    const [org, domains, users, secureScores, healthOverviews, issues] = await Promise.all([
+      microsoftGraphRequest<{ value?: any[] }>(accessToken, "/organization"),
+      microsoftGraphRequest<{ value?: any[] }>(accessToken, "/domains"),
+      microsoftGraphRequest<{ "@odata.count"?: number; value?: any[] }>(
+        accessToken,
+        "/users?$select=id&$top=1&$count=true",
+      ),
+      microsoftGraphRequest<{ value?: any[] }>(accessToken, "/security/secureScores?$top=1"),
+      microsoftGraphRequest<{ value?: any[] }>(
+        accessToken,
+        "/admin/serviceAnnouncement/healthOverviews",
+      ),
+      microsoftGraphRequest<{ value?: any[] }>(
+        accessToken,
+        "/admin/serviceAnnouncement/issues?$top=25",
+      ),
+    ]);
+
+    const orgRow = org.value?.[0] ?? {};
+    const defaultDomain =
+      domains.value?.find((domain) => domain.isDefault)?.id ??
+      domains.value?.find((domain) => domain.isInitial)?.id ??
+      row.defaultDomain;
+    const score = secureScores.value?.[0] ?? {};
+    const currentScore = Number(score.currentScore ?? 0);
+    const maxScore = Number(score.maxScore ?? 0);
+    const secureScorePercent = maxScore > 0 ? Math.round((currentScore / maxScore) * 100) : null;
+    const healthStatuses = (healthOverviews.value ?? []).map((item) => String(item.status ?? ""));
+    const serviceHealthStatus = summarizeM365Health(healthStatuses);
+    const serviceIssueCount = issues.value?.length ?? 0;
+    const userCount = users["@odata.count"] ?? null;
+    const summary = [
+      secureScorePercent === null
+        ? "Secure Score unavailable"
+        : `Secure Score ${secureScorePercent}%`,
+      `${serviceIssueCount} service issue${serviceIssueCount === 1 ? "" : "s"}`,
+      userCount === null ? "User count unavailable" : `${userCount} users`,
+    ].join(" · ");
+    const now = new Date();
+
+    const [updated] = await db
+      .update(microsoft365Tenant)
+      .set({
+        displayName: orgRow.displayName ?? row.displayName,
+        defaultDomain,
+        userCount,
+        secureScoreCurrent: Number.isFinite(currentScore) ? String(currentScore) : null,
+        secureScoreMax: Number.isFinite(maxScore) ? String(maxScore) : null,
+        secureScorePercent,
+        serviceHealthStatus,
+        serviceIssueCount,
+        status: "connected",
+        lastSyncAt: now,
+        lastError: null,
+        updatedAt: now,
+      })
+      .where(eq(microsoft365Tenant.tenantId, row.tenantId))
+      .returning();
+
+    await db
+      .update(microsoft365TenantScan)
+      .set({
+        status: "completed",
+        summary,
+        secureScorePercent,
+        serviceHealthStatus,
+        serviceIssueCount,
+        completedAt: now,
+      })
+      .where(eq(microsoft365TenantScan.id, scan.id));
+
+    return updated;
+  } catch (error: any) {
+    const now = new Date();
+    await db
+      .update(microsoft365Tenant)
+      .set({
+        status: "error",
+        lastError: error.message,
+        updatedAt: now,
+      })
+      .where(eq(microsoft365Tenant.tenantId, row.tenantId));
+    await db
+      .update(microsoft365TenantScan)
+      .set({
+        status: "failed",
+        error: error.message,
+        completedAt: now,
+      })
+      .where(eq(microsoft365TenantScan.id, scan.id));
+    throw error;
+  }
 }
 
 function slugifySiteName(value: string) {
@@ -575,12 +797,11 @@ function addDays(date: Date, days: number) {
   return next;
 }
 
-function buildStoreDatabaseRecord(input: {
-  websiteId: string;
-  storeId: string;
-  userId: string;
-}) {
-  const safeSuffix = input.websiteId.replace(/[^a-zA-Z0-9_]/g, "_").slice(-18).toLowerCase();
+function buildStoreDatabaseRecord(input: { websiteId: string; storeId: string; userId: string }) {
+  const safeSuffix = input.websiteId
+    .replace(/[^a-zA-Z0-9_]/g, "_")
+    .slice(-18)
+    .toLowerCase();
   const databaseName = `cm_${safeSuffix}`;
   const username = `cmu_${safeSuffix}`.slice(0, 32);
   const password = crypto.randomBytes(24).toString("base64url");
@@ -621,9 +842,10 @@ function buildWebsiteProvisioningPlan(input: {
     username: string;
   };
 }) {
-  const baseImage = input.siteType === "ecommerce"
-    ? "registry.cloudmonkey.co.za/cloudmonkey-commerce-template:pending"
-    : "registry.cloudmonkey.co.za/cloudmonkey-website-template:pending";
+  const baseImage =
+    input.siteType === "ecommerce"
+      ? "registry.cloudmonkey.co.za/cloudmonkey-commerce-template:pending"
+      : "registry.cloudmonkey.co.za/cloudmonkey-website-template:pending";
 
   return {
     version: 1,
@@ -632,7 +854,10 @@ function buildWebsiteProvisioningPlan(input: {
     websiteId: input.websiteId,
     storeId: input.storeId,
     temporaryDomain: input.temporaryDomain,
-    baseRepo: input.siteType === "ecommerce" ? "cloudmonkey-commerce-template" : "cloudmonkey-website-template",
+    baseRepo:
+      input.siteType === "ecommerce"
+        ? "cloudmonkey-commerce-template"
+        : "cloudmonkey-website-template",
     services: {
       storefront: {
         image: baseImage,
@@ -644,7 +869,9 @@ function buildWebsiteProvisioningPlan(input: {
           STORE_MODE: input.siteType,
           PUBLIC_BASE_URL: `https://${input.temporaryDomain}`,
           CLOUDMONKEY_API_URL: "https://cloudmonkey.co.za",
-          ...(input.siteType === "ecommerce" ? { STORE_DATABASE_URL: "secret:website_store_database.connectionSecret" } : {}),
+          ...(input.siteType === "ecommerce"
+            ? { STORE_DATABASE_URL: "secret:website_store_database.connectionSecret" }
+            : {}),
         },
         labels: {
           "cloudmonkey.website_id": input.websiteId,
@@ -659,38 +886,44 @@ function buildWebsiteProvisioningPlan(input: {
           cpus: input.siteType === "ecommerce" ? "0.75" : "0.50",
         },
       },
-      ...(input.siteType === "ecommerce" ? {
-        medusa: {
-          image: "registry.cloudmonkey.co.za/cloudmonkey-medusa-template:pending",
-          containerName: `cm_medusa_${input.websiteId.replace(/[^a-zA-Z0-9_]/g, "_").toLowerCase()}`,
-          internalPort: 9000,
-          redis: {
-            containerName: "cloudmonkey-runtime-redis",
-            prefix: `cm:${input.websiteId.replace(/[^a-zA-Z0-9_]/g, "_").toLowerCase()}`,
-            mode: "shared",
-          },
-          routes: ["/api/*", "/store/*", "/auth/*", "/webhooks/*"],
-          resources: {
-            memory: "1024m",
-            cpus: "1.00",
-          },
-        },
-      } : {}),
-      ...(input.siteType === "ecommerce" && input.database ? { sql: {
-        image: "postgres:16-alpine",
-        containerName: input.database.containerName,
-        internalOnly: true,
-        environment: {
-          POSTGRES_DB: input.database.databaseName,
-          POSTGRES_USER: input.database.username,
-          POSTGRES_PASSWORD: "secret:website_store_database.passwordSecret",
-        },
-        volumes: [`${input.database.volumeName}:/var/lib/postgresql/data`],
-        resources: {
-          memory: "512m",
-          cpus: "0.50",
-        },
-      } } : {}),
+      ...(input.siteType === "ecommerce"
+        ? {
+            medusa: {
+              image: "registry.cloudmonkey.co.za/cloudmonkey-medusa-template:pending",
+              containerName: `cm_medusa_${input.websiteId.replace(/[^a-zA-Z0-9_]/g, "_").toLowerCase()}`,
+              internalPort: 9000,
+              redis: {
+                containerName: "cloudmonkey-runtime-redis",
+                prefix: `cm:${input.websiteId.replace(/[^a-zA-Z0-9_]/g, "_").toLowerCase()}`,
+                mode: "shared",
+              },
+              routes: ["/api/*", "/store/*", "/auth/*", "/webhooks/*"],
+              resources: {
+                memory: "1024m",
+                cpus: "1.00",
+              },
+            },
+          }
+        : {}),
+      ...(input.siteType === "ecommerce" && input.database
+        ? {
+            sql: {
+              image: "postgres:16-alpine",
+              containerName: input.database.containerName,
+              internalOnly: true,
+              environment: {
+                POSTGRES_DB: input.database.databaseName,
+                POSTGRES_USER: input.database.username,
+                POSTGRES_PASSWORD: "secret:website_store_database.passwordSecret",
+              },
+              volumes: [`${input.database.volumeName}:/var/lib/postgresql/data`],
+              resources: {
+                memory: "512m",
+                cpus: "0.50",
+              },
+            },
+          }
+        : {}),
     },
     networks: ["cm_public", "cm_sites"],
   };
@@ -700,7 +933,8 @@ const DOCKER_API_URL = process.env.DOCKER_API_URL ?? "http://docker-socket-proxy
 const DOCKER_NETWORK_NAME = process.env.DOCKER_NETWORK_NAME ?? "cloudmonkey_cloudmonkey-network";
 const NGINX_SITE_CONF_DIR = process.env.NGINX_SITE_CONF_DIR ?? "/app/nginx/conf.d";
 const NGINX_CONTAINER_NAME = process.env.NGINX_CONTAINER_NAME ?? "cloudmonkey-nginx-1";
-const WEBSITE_BUILDER_ROOT = process.env.WEBSITE_BUILDER_ROOT ?? path.resolve(process.cwd(), "builders");
+const WEBSITE_BUILDER_ROOT =
+  process.env.WEBSITE_BUILDER_ROOT ?? path.resolve(process.cwd(), "builders");
 
 function dockerImageTag(websiteId: string) {
   return `cloudmonkey-storefront:${websiteId.replace(/[^a-z0-9_.-]/gi, "-").toLowerCase()}`;
@@ -708,11 +942,15 @@ function dockerImageTag(websiteId: string) {
 
 function tarHeader(name: string, size: number) {
   const header = Buffer.alloc(512, 0);
-  const write = (value: string, offset: number, length: number) => header.write(value.slice(0, length), offset, "ascii");
+  const write = (value: string, offset: number, length: number) =>
+    header.write(value.slice(0, length), offset, "ascii");
   const mode = "0000644\0";
   const uid = "0000000\0";
   const gid = "0000000\0";
-  const mtime = Math.floor(Date.now() / 1000).toString(8).padStart(11, "0") + "\0";
+  const mtime =
+    Math.floor(Date.now() / 1000)
+      .toString(8)
+      .padStart(11, "0") + "\0";
   write(name, 0, 100);
   write(mode, 100, 8);
   write(uid, 108, 8);
@@ -755,6 +993,431 @@ async function dockerRequest(pathname: string, init: RequestInit = {}) {
   }
 }
 
+function normalizeDockerName(value: string | undefined) {
+  return (value ?? "").replace(/^\//, "");
+}
+
+function dockerContainerRole(name: string, image: string, labels: Record<string, string> = {}) {
+  const service = labels["com.docker.compose.service"];
+  const lowered = `${name} ${image} ${service ?? ""}`.toLowerCase();
+  if (lowered.includes("nginx")) return "Ingress proxy";
+  if (lowered.includes("frontend")) return "CloudMonkey app";
+  if (lowered.includes("n8n")) return "Workflow automation";
+  if (lowered.includes("postgres") || lowered.includes("pgvector") || lowered.includes("db"))
+    return "Database";
+  if (lowered.includes("docker-socket-proxy")) return "Docker API proxy";
+  if (lowered.includes("hermes")) return "AI runtime";
+  if (name.startsWith("cm_site_")) return "Managed website";
+  if (name.startsWith("cm_sql_")) return "Website database";
+  if (name.startsWith("cm_medusa_")) return "Ecommerce API";
+  return service ? `Compose service: ${service}` : "Container";
+}
+
+function parseDockerStats(stats: any) {
+  if (!stats || typeof stats !== "object") return null;
+  const cpuDelta =
+    (stats.cpu_stats?.cpu_usage?.total_usage ?? 0) -
+    (stats.precpu_stats?.cpu_usage?.total_usage ?? 0);
+  const systemDelta =
+    (stats.cpu_stats?.system_cpu_usage ?? 0) - (stats.precpu_stats?.system_cpu_usage ?? 0);
+  const onlineCpus =
+    stats.cpu_stats?.online_cpus ?? stats.cpu_stats?.cpu_usage?.percpu_usage?.length ?? 1;
+  const cpuPercent =
+    systemDelta > 0 && cpuDelta > 0
+      ? Math.round((cpuDelta / systemDelta) * onlineCpus * 10000) / 100
+      : null;
+  const memoryUsage = stats.memory_stats?.usage ?? null;
+  const memoryLimit = stats.memory_stats?.limit ?? null;
+  const memoryCache = stats.memory_stats?.stats?.cache ?? 0;
+  const memoryUsageBytes =
+    typeof memoryUsage === "number" ? Math.max(memoryUsage - memoryCache, 0) : null;
+  const networks =
+    stats.networks && typeof stats.networks === "object" ? Object.values(stats.networks) : [];
+  const networkRxBytes = networks.reduce(
+    (sum: number, item: any) => sum + (item?.rx_bytes ?? 0),
+    0,
+  );
+  const networkTxBytes = networks.reduce(
+    (sum: number, item: any) => sum + (item?.tx_bytes ?? 0),
+    0,
+  );
+  return {
+    cpuPercent,
+    memoryUsageBytes,
+    memoryLimitBytes: typeof memoryLimit === "number" ? memoryLimit : null,
+    networkRxBytes,
+    networkTxBytes,
+  };
+}
+
+async function getDockerContainerStats(containerId: string) {
+  try {
+    return parseDockerStats(
+      await dockerRequest(
+        `/containers/${encodeURIComponent(containerId)}/stats?stream=false&one-shot=true`,
+      ),
+    );
+  } catch {
+    return null;
+  }
+}
+
+function buildWebsiteContainerLinkMaps(input: {
+  sites: Array<typeof website.$inferSelect>;
+  domains: Array<typeof websiteDomain.$inferSelect>;
+  databases: Array<typeof websiteStoreDatabase.$inferSelect>;
+}) {
+  const links = new Map<string, Array<Record<string, unknown>>>();
+  const domainsByWebsite = new Map<string, Array<typeof websiteDomain.$inferSelect>>();
+  for (const domainRow of input.domains) {
+    domainsByWebsite.set(domainRow.websiteId, [
+      ...(domainsByWebsite.get(domainRow.websiteId) ?? []),
+      domainRow,
+    ]);
+  }
+  const add = (containerName: string | null | undefined, link: Record<string, unknown>) => {
+    if (!containerName) return;
+    links.set(containerName, [...(links.get(containerName) ?? []), link]);
+  };
+
+  for (const site of input.sites) {
+    const provisioningPlan = (safeJsonParse(site.provisioningPlan) ?? {}) as Record<string, any>;
+    const siteDomains = [
+      site.primaryDomain,
+      site.temporaryDomain,
+      site.domain,
+      ...(domainsByWebsite.get(site.id) ?? []).map((row) => row.domain),
+    ].filter(Boolean);
+    const baseLink = {
+      type: "website",
+      id: site.id,
+      name: site.businessName || site.name || site.domain,
+      status: site.status,
+      containerStatus: site.containerStatus,
+      domains: [...new Set(siteDomains)],
+      runtimeServerId: site.runtimeServerId,
+      url: site.primaryDomain || site.temporaryDomain || site.domain,
+    };
+    add(buildStorefrontContainerName(site.id), baseLink);
+    add(provisioningPlan.storefrontContainerName, baseLink);
+    add(provisioningPlan.medusaContainerName, { ...baseLink, type: "ecommerce-api" });
+    add(provisioningPlan.databaseContainerName, { ...baseLink, type: "website-database" });
+  }
+
+  for (const database of input.databases) {
+    add(database.containerName, {
+      type: "database",
+      id: database.id,
+      websiteId: database.websiteId,
+      storeId: database.storeId,
+      name: database.databaseName,
+      engine: database.engine,
+      status: database.status,
+      backupStatus: database.backupStatus,
+      volumeName: database.volumeName,
+    });
+  }
+
+  return links;
+}
+
+function platformContainerLinks(name: string, role: string) {
+  if (name === "cloudmonkey-frontend-1" || role === "CloudMonkey app") {
+    return [
+      {
+        type: "app",
+        name: "CloudMonkey dashboard and public site",
+        domains: ["cloudmonkey.co.za"],
+      },
+    ];
+  }
+  if (name === "cloudmonkey-nginx-1" || role === "Ingress proxy") {
+    return [
+      {
+        type: "ingress",
+        name: "Public HTTPS routing",
+        domains: ["cloudmonkey.co.za", "www.cloudmonkey.co.za", "*.cloudmonkey.co.za"],
+      },
+    ];
+  }
+  if (name === "cloudmonkey-db-1" || name === "cm-db-forward" || role === "Database") {
+    return [
+      {
+        type: "database",
+        name: "CloudMonkey application database",
+        dataLocation: "Docker volume pg_data",
+      },
+    ];
+  }
+  if (name === "cloudmonkey-n8n-1" || role === "Workflow automation") {
+    return [
+      {
+        type: "workflow",
+        name: "n8n workflow engine",
+        path: "/n8n",
+        dataLocation: "Docker volume n8n_data",
+      },
+    ];
+  }
+  if (name === "hermes" || role === "AI runtime") {
+    return [
+      { type: "ai-runtime", name: "Hermes AI gateway", dataLocation: "Docker volume hermes_data" },
+    ];
+  }
+  if (name.includes("docker-socket-proxy")) {
+    return [{ type: "ops", name: "Docker API access for CloudMonkey operations" }];
+  }
+  return [];
+}
+
+function buildDataFlow(containers: Array<any>, remoteServers: Array<any>) {
+  const nodes = [
+    { id: "internet", label: "Internet / Customers", type: "external" },
+    { id: "dns", label: "DNS + Domains", type: "edge" },
+    { id: "nginx", label: "Nginx ingress", type: "proxy" },
+    { id: "frontend", label: "CloudMonkey app", type: "app" },
+    { id: "db", label: "CloudMonkey Postgres", type: "database" },
+    { id: "uploads", label: "Uploads volume", type: "storage" },
+    { id: "n8n", label: "n8n workflows", type: "automation" },
+    { id: "docker", label: "Docker runtime hosts", type: "runtime" },
+    { id: "managed-sites", label: "Managed websites/ecommerce", type: "workload" },
+    { id: "customer-db", label: "Customer website DBs", type: "database" },
+    { id: "ai", label: "AI runtimes", type: "ai" },
+  ];
+  for (const server of remoteServers) {
+    nodes.push({
+      id: `server:${server.id}`,
+      label: server.label || server.agent?.hostname || server.id,
+      type: "server",
+    });
+  }
+  const edges = [
+    { from: "internet", to: "dns", label: "domain lookup" },
+    { from: "dns", to: "nginx", label: "HTTPS traffic" },
+    { from: "nginx", to: "frontend", label: "cloudmonkey.co.za" },
+    { from: "frontend", to: "db", label: "users, billing, products, support" },
+    { from: "frontend", to: "uploads", label: "chat and website design assets" },
+    { from: "frontend", to: "n8n", label: "automation/workflows" },
+    { from: "frontend", to: "docker", label: "provisioning and container control" },
+    { from: "docker", to: "managed-sites", label: "site containers" },
+    { from: "managed-sites", to: "customer-db", label: "store/content data" },
+    { from: "frontend", to: "ai", label: "AI agents and runtime calls" },
+  ];
+  for (const server of remoteServers) {
+    edges.push({ from: "docker", to: `server:${server.id}`, label: "agent telemetry" });
+  }
+  return {
+    nodes,
+    edges,
+    summary: {
+      localContainerCount: containers.length,
+      remoteServerCount: remoteServers.length,
+      linkedContainerCount: containers.filter((container) => container.links?.length).length,
+    },
+  };
+}
+
+async function getAdminServerStatus() {
+  const [sites, siteDomains, siteDatabases, runtimeServers, remoteServers] = await Promise.all([
+    db.query.website.findMany(),
+    db.query.websiteDomain.findMany(),
+    db.query.websiteStoreDatabase.findMany(),
+    db.query.websiteRuntimeServer.findMany({
+      orderBy: (websiteRuntimeServer, { desc }) => [desc(websiteRuntimeServer.updatedAt)],
+    }),
+    getServersWithTelemetry("", true),
+  ]);
+  const linkMap = buildWebsiteContainerLinkMaps({
+    sites,
+    domains: siteDomains,
+    databases: siteDatabases,
+  });
+
+  let localContainers: any[] = [];
+  let localDockerError: string | null = null;
+  try {
+    const rows = (await dockerRequest("/containers/json?all=1")) as Array<any>;
+    localContainers = await Promise.all(
+      rows.map(async (row) => {
+        const name = normalizeDockerName(row.Names?.[0]);
+        const labels = row.Labels ?? {};
+        const role = dockerContainerRole(name, row.Image ?? "", labels);
+        const stats = await getDockerContainerStats(row.Id);
+        return {
+          id: row.Id,
+          shortId: String(row.Id).slice(0, 12),
+          name,
+          image: row.Image,
+          command: row.Command,
+          createdAt: row.Created ? new Date(row.Created * 1000).toISOString() : null,
+          state: row.State,
+          status: row.Status,
+          ports: row.Ports ?? [],
+          labels,
+          composeProject: labels["com.docker.compose.project"] ?? null,
+          composeService: labels["com.docker.compose.service"] ?? null,
+          role,
+          stats,
+          links: [...platformContainerLinks(name, role), ...(linkMap.get(name) ?? [])],
+        };
+      }),
+    );
+  } catch (error: any) {
+    localDockerError = error?.message ?? "Docker API unavailable";
+  }
+
+  const remote = remoteServers.map((server: any) => ({
+    id: server.id,
+    label: server.label,
+    provider: "vultr",
+    region: server.region,
+    mainIp: server.mainIp,
+    status: server.status,
+    powerStatus: server.powerStatus,
+    agent: server.agent,
+    latestTelemetry: server.latestTelemetry,
+    containers: (server.containers ?? []).map((container: any) => ({
+      ...container,
+      ports: safeJsonParse(container.ports),
+      labels: safeJsonParse(container.labels),
+      role: dockerContainerRole(
+        container.name,
+        container.image,
+        safeJsonParse(container.labels) ?? {},
+      ),
+      links: linkMap.get(container.name) ?? [],
+    })),
+    websites: server.websites ?? [],
+    databases: server.databases ?? [],
+    aiRuntimes: server.aiRuntimes ?? [],
+    n8nIntegration: server.n8nIntegration ?? null,
+  }));
+
+  return {
+    generatedAt: new Date().toISOString(),
+    local: {
+      id: "local-docker",
+      label: "CloudMonkey primary Docker host",
+      dockerApiUrl: DOCKER_API_URL.replace(/\/\/.*@/, "//***@"),
+      networkName: DOCKER_NETWORK_NAME,
+      status: localDockerError ? "degraded" : "online",
+      error: localDockerError,
+      containers: localContainers.sort((a, b) => a.name.localeCompare(b.name)),
+    },
+    runtimeServers,
+    remoteServers: remote,
+    dataFlow: buildDataFlow(localContainers, remote),
+  };
+}
+
+const runtimeHealthAlertState = globalThis as typeof globalThis & {
+  __cloudmonkeyRuntimeHealthAlertStarted?: boolean;
+};
+const runtimeHealthAlertIntervalMs = Number(
+  process.env.RUNTIME_HEALTH_ALERT_INTERVAL_MS ?? 5 * 60 * 1000,
+);
+const runtimeHealthRequestTimeoutMs = Number(
+  process.env.RUNTIME_HEALTH_REQUEST_TIMEOUT_MS ?? 10 * 1000,
+);
+const runtimeHealthFailureRepeatMs = Number(
+  process.env.RUNTIME_HEALTH_FAILURE_REPEAT_MS ?? 30 * 60 * 1000,
+);
+
+async function runRuntimeHealthAlertSweep() {
+  const settings = await getWorkspaceSettings().catch(() => null);
+  const adminEmail =
+    settings?.adminNotificationEmail ?? process.env.ADMIN_NOTIFICATION_EMAIL ?? null;
+  const result = await runRuntimeHealthSweep({
+    timeoutMs: runtimeHealthRequestTimeoutMs,
+    repeatAlertAfterMs: runtimeHealthFailureRepeatMs,
+    getRuntimes: () =>
+      db.query.websiteRuntimeServer.findMany({
+        orderBy: (runtime, { desc }) => [desc(runtime.updatedAt)],
+      }),
+    checkHealth: async (runtime, timeoutMs) => {
+      const response = await fetchIpv4(`${runtime.provisionerUrl!.replace(/\/+$/, "")}/health`, {
+        timeoutMs,
+      });
+      await response.body?.cancel();
+      return { ok: response.ok, status: response.status };
+    },
+    persist: async (runtime, values) => {
+      await db
+        .update(websiteRuntimeServer)
+        .set(values)
+        .where(eq(websiteRuntimeServer.id, runtime.id));
+    },
+    hasRecentFailureAlert: async (runtime, since) => {
+      const rows = await db.execute(sql`
+        select 1
+        from audit_log
+        where action = 'runtime.health_failed'
+          and "entityType" = 'website_runtime_server'
+          and "entityId" = ${runtime.id}
+          and "createdAt" >= ${since}
+        limit 1
+      `);
+      return rows.length > 0;
+    },
+    sendAlert: async (kind, runtime, message) => {
+      if (adminEmail) {
+        await sendEmail({
+          template: "support_notification",
+          to: adminEmail,
+          subject: `Runtime health ${kind}: ${runtime.label ?? runtime.hostname}`,
+          data: {
+            summary: message,
+            body: [
+              `Runtime: ${runtime.label ?? runtime.hostname}`,
+              `Hostname: ${runtime.hostname}`,
+              `Current status: ${runtime.status}`,
+              `Last successful health check: ${runtime.lastHealthCheckAt?.toISOString() ?? "never"}`,
+            ].join("\n"),
+            primaryCtaText: "Open Server Status",
+            primaryCtaUrl: `${process.env.BETTER_AUTH_URL ?? "https://cloudmonkey.co.za"}/dashboard/server-status`,
+          },
+          idempotencyKey: `runtime-health-${kind}:${runtime.id}:${new Date().toISOString().slice(0, 16)}`,
+        });
+      }
+      await recordAudit({
+        action: kind === "failure" ? "runtime.health_failed" : "runtime.health_recovered",
+        entityType: "website_runtime_server",
+        entityId: runtime.id,
+        message,
+        level: kind === "failure" ? "warning" : "info",
+        metadata: { hostname: runtime.hostname, adminEmail },
+      });
+    },
+    withLock: async (work) =>
+      db.transaction(async (tx) => {
+        const lockRows = await tx.execute(sql`
+          select pg_try_advisory_xact_lock(hashtextextended('cloudmonkey.runtime_health_sweep', 0)) as acquired
+        `);
+        if (!lockRows[0]?.acquired) return { locked: true as const };
+        return work();
+      }),
+  });
+  if ("locked" in result) return;
+  console.info("Runtime health sweep completed", result);
+}
+
+function startRuntimeHealthAlertSweep() {
+  if (runtimeHealthAlertState.__cloudmonkeyRuntimeHealthAlertStarted) return;
+  runtimeHealthAlertState.__cloudmonkeyRuntimeHealthAlertStarted = true;
+  const sweep = () => {
+    void runRuntimeHealthAlertSweep().catch((error) => {
+      console.error("Runtime health alert sweep failed:", error);
+    });
+  };
+  sweep();
+  const timer = setInterval(sweep, runtimeHealthAlertIntervalMs);
+  timer.unref?.();
+}
+
+if (process.env.NODE_ENV !== "test") {
+  startRuntimeHealthAlertSweep();
+}
+
 async function dockerEnsureImage(image: string) {
   const inspect = await fetch(`${DOCKER_API_URL}/images/${encodeURIComponent(image)}/json`);
   if (inspect.ok) return;
@@ -777,7 +1440,9 @@ async function dockerContainerExists(name: string) {
 }
 
 async function dockerStartContainer(name: string) {
-  const response = await fetch(`${DOCKER_API_URL}/containers/${encodeURIComponent(name)}/start`, { method: "POST" });
+  const response = await fetch(`${DOCKER_API_URL}/containers/${encodeURIComponent(name)}/start`, {
+    method: "POST",
+  });
   if (response.ok || response.status === 304) return;
   const text = await response.text();
   throw new Error(`Docker start ${name} failed: ${response.status} ${text.slice(0, 600)}`);
@@ -790,28 +1455,133 @@ async function dockerBuildStorefrontImage(input: {
   domain: string;
   siteType: string;
   designManifest: unknown;
+  githubRepo?: string | null;
   store?: typeof websiteStore.$inferSelect;
   database?: typeof websiteStoreDatabase.$inferSelect;
 }) {
   const image = dockerImageTag(input.websiteId);
+
+  if (input.githubRepo) {
+    let remoteUrl = input.githubRepo.endsWith(".git")
+      ? input.githubRepo
+      : `${input.githubRepo}.git`;
+    let hasDockerfile = false;
+    let defaultBranch = "main";
+    try {
+      const match = input.githubRepo.match(/github\.com\/([^/]+)\/([^/]+)/);
+      if (match) {
+        const owner = match[1];
+        const repo = match[2].replace(/\.git$/, "");
+        const res = await fetch(`https://api.github.com/repos/${owner}/${repo}`);
+        if (res.ok) {
+          const data = (await res.json()) as { default_branch?: string };
+          if (data.default_branch) {
+            defaultBranch = data.default_branch;
+          }
+        }
+        const dfRes = await fetch(
+          `https://api.github.com/repos/${owner}/${repo}/contents/Dockerfile`,
+        );
+        if (dfRes.ok) {
+          hasDockerfile = true;
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to check Github repo", remoteUrl, e);
+    }
+
+    if (hasDockerfile) {
+      remoteUrl = `${remoteUrl}#${defaultBranch}`;
+      await dockerRequest(
+        `/build?t=${encodeURIComponent(image)}&remote=${encodeURIComponent(remoteUrl)}`,
+        {
+          method: "POST",
+        },
+      );
+      return image;
+    } else {
+      const files: Record<string, string> = {};
+      files["nginx.conf"] = `server {
+  listen 3000;
+  server_name _;
+  root /usr/share/nginx/html;
+  index index.html;
+  location = /health {
+    add_header Content-Type text/plain;
+    return 200 "ok";
+  }
+  location / {
+    try_files $uri /index.html;
+  }
+}`;
+      files["Dockerfile"] = `FROM node:22-alpine AS build
+RUN apk add --no-cache git
+WORKDIR /app
+RUN git clone -b ${defaultBranch} ${remoteUrl} .
+RUN npm install
+RUN npm run build && \\
+    if [ ! -d "dist" ]; then \\
+      if [ -d "build" ]; then mv build dist; \\
+      elif [ -d "out" ]; then mv out dist; \\
+      else mkdir dist; \\
+      fi; \\
+    fi
+
+FROM nginx:alpine
+COPY --from=build /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD wget -qO- http://127.0.0.1:3000/health || exit 1
+`;
+      const tar = buildTar(files);
+      const result = await dockerRequest(`/build?t=${encodeURIComponent(image)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-tar" },
+        body: tar,
+      });
+      if (
+        typeof result === "string" &&
+        (result.includes('"errorDetail"') || result.includes('"error"'))
+      ) {
+        throw new Error(`Docker build failed for ${image}: ${result}`);
+      }
+      return image;
+    }
+  }
+
   const isEcommerce = input.siteType === "ecommerce";
-  const builderDir = path.join(WEBSITE_BUILDER_ROOT, isEcommerce ? "base-ecommerce" : "base-website");
-  const configPath = isEcommerce ? "public/config/store.config.json" : "public/config/site.config.json";
+  const builderDir = path.join(
+    WEBSITE_BUILDER_ROOT,
+    isEcommerce ? "base-ecommerce" : "base-website",
+  );
+  const configPath = isEcommerce
+    ? "public/config/store.config.json"
+    : "public/config/site.config.json";
   const generatedConfig = isEcommerce
     ? buildEcommerceStoreConfig(input)
     : buildBusinessWebsiteConfig(input);
   const files = await readDirectoryAsTarFiles(builderDir);
   files[configPath] = `${JSON.stringify(generatedConfig, null, 2)}\n`;
   const tar = buildTar(files);
-  await dockerRequest(`/build?t=${encodeURIComponent(image)}`, {
+  const result = await dockerRequest(`/build?t=${encodeURIComponent(image)}`, {
     method: "POST",
     headers: { "Content-Type": "application/x-tar" },
     body: tar,
   });
+  console.log(`DOCKER BUILD RESULT FOR ${image}:`, result);
+  if (
+    typeof result === "string" &&
+    (result.includes('"errorDetail"') || result.includes('"error"'))
+  ) {
+    throw new Error(`Docker build failed for ${image}: ${result}`);
+  }
   return image;
 }
 
-async function readDirectoryAsTarFiles(rootDir: string, relativeDir = ""): Promise<Record<string, Buffer>> {
+async function readDirectoryAsTarFiles(
+  rootDir: string,
+  relativeDir = "",
+): Promise<Record<string, Buffer>> {
   const entries = await readdir(path.join(rootDir, relativeDir), { withFileTypes: true });
   const files: Record<string, Buffer> = {};
   for (const entry of entries) {
@@ -828,7 +1598,13 @@ async function readDirectoryAsTarFiles(rootDir: string, relativeDir = ""): Promi
 }
 
 function shouldSkipBuilderPath(name: string) {
-  return name === "node_modules" || name === "dist" || name === ".git" || name === "tsconfig.tsbuildinfo" || name.endsWith(".log");
+  return (
+    name === "node_modules" ||
+    name === "dist" ||
+    name === ".git" ||
+    name === "tsconfig.tsbuildinfo" ||
+    name.endsWith(".log")
+  );
 }
 
 function buildBusinessWebsiteConfig(input: {
@@ -842,7 +1618,10 @@ function buildBusinessWebsiteConfig(input: {
   const theme = normaliseTheme(manifest);
   const businessName = input.businessName || "CloudMonkey Website";
   const industry = stringValue(manifest.industry, "business services");
-  const summary = stringValue(manifest.subheadline, `A professional ${industry} website generated by CloudMonkey.`);
+  const summary = stringValue(
+    manifest.subheadline,
+    `A professional ${industry} website generated by CloudMonkey.`,
+  );
   const serviceItems = listValues(manifest.pageSections, ["Services", "Process", "Testimonials"]);
 
   return {
@@ -859,7 +1638,9 @@ function buildBusinessWebsiteConfig(input: {
       tone: stringValue(manifest.tone, "Professional, helpful and trustworthy"),
       logoText: businessName,
       tagline: stringValue(manifest.headline, summary),
-      imagePrompts: [stringValue(manifest.imagePrompt, `Premium website photography for ${businessName}`)],
+      imagePrompts: [
+        stringValue(manifest.imagePrompt, `Premium website photography for ${businessName}`),
+      ],
     },
     themeTokens: theme,
     navigation: [
@@ -880,28 +1661,146 @@ function buildBusinessWebsiteConfig(input: {
       {
         slug: "/",
         title: "Home",
-        seo: { title: `${businessName} | ${industry}`, description: summary, schemaType: "LocalBusiness" },
+        seo: {
+          title: `${businessName} | ${industry}`,
+          description: summary,
+          schemaType: "LocalBusiness",
+        },
         sections: [
-          { type: "hero", eyebrow: industry, title: stringValue(manifest.headline, businessName), subtitle: summary, cta: { label: "Request a quote", href: "/contact" } },
-          { type: "services", title: "What we offer", items: serviceItems.map((title) => ({ title, body: `A focused ${title.toLowerCase()} experience for your customers.` })) },
-          { type: "why", title: "Why choose us", items: ["Clear communication", "Reliable delivery", "Local support"].map((title) => ({ title, body: "Built for trust, speed and measurable business outcomes." })) },
-          { type: "testimonials", title: "Customer confidence", items: [{ quote: "Professional service and a clear experience from first enquiry.", author: "CloudMonkey customer" }] },
-          { type: "contactCta", title: "Ready to get started?", subtitle: "Send an enquiry and the team will respond." },
+          {
+            type: "hero",
+            eyebrow: industry,
+            title: stringValue(manifest.headline, businessName),
+            subtitle: summary,
+            cta: { label: "Request a quote", href: "/contact" },
+          },
+          {
+            type: "services",
+            title: "What we offer",
+            items: serviceItems.map((title) => ({
+              title,
+              body: `A focused ${title.toLowerCase()} experience for your customers.`,
+            })),
+          },
+          {
+            type: "why",
+            title: "Why choose us",
+            items: ["Clear communication", "Reliable delivery", "Local support"].map((title) => ({
+              title,
+              body: "Built for trust, speed and measurable business outcomes.",
+            })),
+          },
+          {
+            type: "testimonials",
+            title: "Customer confidence",
+            items: [
+              {
+                quote: "Professional service and a clear experience from first enquiry.",
+                author: "CloudMonkey customer",
+              },
+            ],
+          },
+          {
+            type: "contactCta",
+            title: "Ready to get started?",
+            subtitle: "Send an enquiry and the team will respond.",
+          },
         ],
       },
-      { slug: "/about", title: "About", seo: { title: `About ${businessName}`, description: summary }, sections: [{ type: "content", title: `About ${businessName}`, body: summary }] },
-      { slug: "/services", title: "Services", seo: { title: `${businessName} Services`, description: summary }, sections: [{ type: "services", title: "Services", items: serviceItems.map((title) => ({ title, body: `Professional ${title.toLowerCase()} support.` })) }] },
-      { slug: "/gallery", title: "Gallery", seo: { title: `${businessName} Gallery`, description: "Recent work and highlights." }, sections: [{ type: "gallery", title: "Gallery", items: serviceItems.map((title) => ({ title })) }] },
-      { slug: "/faq", title: "FAQ", seo: { title: `${businessName} FAQ`, description: "Common questions." }, sections: [{ type: "faq", title: "Common questions", items: [{ title: "How do I get started?", body: "Send an enquiry and we will confirm the next steps." }] }] },
-      { slug: "/contact", title: "Contact", seo: { title: `Contact ${businessName}`, description: "Contact the team." }, sections: [{ type: "contact", title: "Contact us", subtitle: "Tell us what you need." }] },
-      { slug: "/privacy", title: "Privacy Policy", seo: { title: "Privacy Policy", description: "Privacy policy." }, sections: [{ type: "content", title: "Privacy Policy", body: "We use submitted information to respond to enquiries and provide requested services." }] },
-      { slug: "/terms", title: "Terms", seo: { title: "Terms", description: "Terms and conditions." }, sections: [{ type: "content", title: "Terms", body: "Services are provided subject to written confirmation." }] },
+      {
+        slug: "/about",
+        title: "About",
+        seo: { title: `About ${businessName}`, description: summary },
+        sections: [{ type: "content", title: `About ${businessName}`, body: summary }],
+      },
+      {
+        slug: "/services",
+        title: "Services",
+        seo: { title: `${businessName} Services`, description: summary },
+        sections: [
+          {
+            type: "services",
+            title: "Services",
+            items: serviceItems.map((title) => ({
+              title,
+              body: `Professional ${title.toLowerCase()} support.`,
+            })),
+          },
+        ],
+      },
+      {
+        slug: "/gallery",
+        title: "Gallery",
+        seo: { title: `${businessName} Gallery`, description: "Recent work and highlights." },
+        sections: [
+          { type: "gallery", title: "Gallery", items: serviceItems.map((title) => ({ title })) },
+        ],
+      },
+      {
+        slug: "/faq",
+        title: "FAQ",
+        seo: { title: `${businessName} FAQ`, description: "Common questions." },
+        sections: [
+          {
+            type: "faq",
+            title: "Common questions",
+            items: [
+              {
+                title: "How do I get started?",
+                body: "Send an enquiry and we will confirm the next steps.",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        slug: "/contact",
+        title: "Contact",
+        seo: { title: `Contact ${businessName}`, description: "Contact the team." },
+        sections: [{ type: "contact", title: "Contact us", subtitle: "Tell us what you need." }],
+      },
+      {
+        slug: "/privacy",
+        title: "Privacy Policy",
+        seo: { title: "Privacy Policy", description: "Privacy policy." },
+        sections: [
+          {
+            type: "content",
+            title: "Privacy Policy",
+            body: "We use submitted information to respond to enquiries and provide requested services.",
+          },
+        ],
+      },
+      {
+        slug: "/terms",
+        title: "Terms",
+        seo: { title: "Terms", description: "Terms and conditions." },
+        sections: [
+          {
+            type: "content",
+            title: "Terms",
+            body: "Services are provided subject to written confirmation.",
+          },
+        ],
+      },
     ],
     footer: {
       legalText: `© ${businessName}. Built by CloudMonkey.`,
       columns: [
-        { title: "Company", links: [{ label: "About", href: "/about" }, { label: "Contact", href: "/contact" }] },
-        { title: "Legal", links: [{ label: "Privacy", href: "/privacy" }, { label: "Terms", href: "/terms" }] },
+        {
+          title: "Company",
+          links: [
+            { label: "About", href: "/about" },
+            { label: "Contact", href: "/contact" },
+          ],
+        },
+        {
+          title: "Legal",
+          links: [
+            { label: "Privacy", href: "/privacy" },
+            { label: "Terms", href: "/terms" },
+          ],
+        },
       ],
     },
   };
@@ -920,15 +1819,22 @@ function buildEcommerceStoreConfig(input: {
   const theme = normaliseTheme(manifest);
   const businessName = input.businessName || input.store?.name || "CloudMonkey Store";
   const industry = stringValue(manifest.industry, "online retail");
-  const summary = stringValue(manifest.subheadline, `A modern ${industry} ecommerce store generated by CloudMonkey.`);
-  const templateKey = stringValue(manifest.templateKey || manifest.layoutPreset || manifest.theme, "standard-commerce") === "fashion-retail-editorial"
-    ? "fashion-retail-editorial"
-    : "standard-commerce";
+  const summary = stringValue(
+    manifest.subheadline,
+    `A modern ${industry} ecommerce store generated by CloudMonkey.`,
+  );
+  const templateKey =
+    stringValue(
+      manifest.templateKey || manifest.layoutPreset || manifest.theme,
+      "standard-commerce",
+    ) === "fashion-retail-editorial"
+      ? "fashion-retail-editorial"
+      : "standard-commerce";
   const categories = listValues(
     manifest.categories,
     templateKey === "fashion-retail-editorial"
       ? ["New Arrivals", "Women", "Men", "Bags", "Accessories", "Footwear"]
-      : ["Featured", "New Arrivals", "Best Sellers"]
+      : ["Featured", "New Arrivals", "Best Sellers"],
   );
   const starterProducts = categories.slice(0, 3).map((category, index) => ({
     title: `${category} Product ${index + 1}`,
@@ -977,7 +1883,11 @@ function buildEcommerceStoreConfig(input: {
     commerce: {
       categories: categories.map((name) => ({ name, slug: slugifySiteName(name) })),
       starterProducts,
-      payment: { providers: ["paystack", "manual_eft"], cloudMonkeyFeePercent: 0, manualEftEnabled: true },
+      payment: {
+        providers: ["paystack", "manual_eft"],
+        cloudMonkeyFeePercent: 0,
+        manualEftEnabled: true,
+      },
       shipping: {
         collectionEnabled: true,
         zones: [{ name: "South Africa courier", price: 99, regions: ["South Africa"] }],
@@ -999,7 +1909,11 @@ function buildEcommerceStoreConfig(input: {
 function normaliseManifest(value: unknown): Record<string, any> {
   if (value && typeof value === "object" && !Array.isArray(value)) {
     const objectValue = value as Record<string, any>;
-    if (objectValue.designManifest && typeof objectValue.designManifest === "object" && !Array.isArray(objectValue.designManifest)) {
+    if (
+      objectValue.designManifest &&
+      typeof objectValue.designManifest === "object" &&
+      !Array.isArray(objectValue.designManifest)
+    ) {
       return { ...(objectValue.designManifest as Record<string, any>), ...objectValue };
     }
     return objectValue;
@@ -1034,7 +1948,17 @@ function stringValue(value: unknown, fallback: string) {
 
 function listValues(value: unknown, fallback: string[]) {
   if (Array.isArray(value)) {
-    const values = value.map((item) => typeof item === "string" ? item : typeof item?.title === "string" ? item.title : typeof item?.name === "string" ? item.name : "").filter(Boolean);
+    const values = value
+      .map((item) =>
+        typeof item === "string"
+          ? item
+          : typeof item?.title === "string"
+            ? item.title
+            : typeof item?.name === "string"
+              ? item.name
+              : "",
+      )
+      .filter(Boolean);
     if (values.length) return values.slice(0, 8);
   }
   return fallback;
@@ -1064,7 +1988,8 @@ function ecommercePages(businessName: string, summary: string) {
     slug: page.slug,
     title: page.title,
     seo: {
-      title: page.slug === "/" ? `${businessName} | Online Store` : `${page.title} | ${businessName}`,
+      title:
+        page.slug === "/" ? `${businessName} | Online Store` : `${page.title} | ${businessName}`,
       description: page.slug === "/" || page.slug === "/shop" ? summary : page.description,
     },
   }));
@@ -1073,14 +1998,27 @@ function ecommercePages(businessName: string, summary: string) {
 function ecommerceHomepageSections(templateKey: string, summary: string) {
   if (templateKey !== "fashion-retail-editorial") {
     return [
-      { type: "hero", title: "Shop the latest", subtitle: summary, ctaLabel: "Shop now", ctaHref: "/shop" },
+      {
+        type: "hero",
+        title: "Shop the latest",
+        subtitle: summary,
+        ctaLabel: "Shop now",
+        ctaHref: "/shop",
+      },
       { type: "featuredProducts", title: "Featured products" },
       { type: "trust", title: "Secure checkout and reliable delivery" },
     ];
   }
   return [
     { type: "promoBar", title: "New season offers, secure checkout and nationwide delivery" },
-    { type: "hero", eyebrow: "New arrivals", title: "Summer Flash Sale", subtitle: summary, ctaLabel: "Shop now", ctaHref: "/shop" },
+    {
+      type: "hero",
+      eyebrow: "New arrivals",
+      title: "Summer Flash Sale",
+      subtitle: summary,
+      ctaLabel: "Shop now",
+      ctaHref: "/shop",
+    },
     { type: "offerStrip", title: "Black Friday and Cyber Monday Sale" },
     { type: "categoryMosaic", title: "Shop categories" },
     { type: "newProducts", title: "New In Products" },
@@ -1096,16 +2034,20 @@ function ecommerceHomepageSections(templateKey: string, summary: string) {
 }
 
 type RuntimeDeployPayload = {
+  domain?: string | null;
   website: {
     id: string;
     userId: string;
     siteType: string;
     businessName: string;
+    domain?: string | null;
     temporaryDomain: string | null;
     primaryDomain: string | null;
   };
   store: {
     id: string;
+    storeId?: string;
+    websiteId?: string;
     name: string;
     status: string;
   };
@@ -1137,6 +2079,7 @@ type RuntimeDeployPayload = {
   storefront: {
     image: string;
     containerName: string;
+    name?: string;
     port: number;
     configPath: string;
     config: unknown;
@@ -1180,7 +2123,8 @@ async function selectWebsiteRuntimeServer() {
       provisionerUrl: configuredUrl,
       provisionerSecret: configuredSecret,
       ingressHostname: process.env.WEBSITE_RUNTIME_INGRESS_HOSTNAME ?? "geek247.co.za",
-      ingressIp: process.env.WEBSITE_RUNTIME_INGRESS_IP ?? process.env.WEBSITE_RUNTIME_PUBLIC_IP ?? null,
+      ingressIp:
+        process.env.WEBSITE_RUNTIME_INGRESS_IP ?? process.env.WEBSITE_RUNTIME_PUBLIC_IP ?? null,
       dockerNetworkName: process.env.WEBSITE_RUNTIME_DOCKER_NETWORK ?? "cm_runtime",
       proxyMode: process.env.WEBSITE_RUNTIME_PROXY_MODE ?? "caddy",
       lastError: null,
@@ -1200,19 +2144,28 @@ async function selectWebsiteRuntimeServer() {
   const candidates = await db.query.websiteRuntimeServer.findMany({
     orderBy: (websiteRuntimeServer, { asc }) => [asc(websiteRuntimeServer.activeSiteCount)],
   });
-  return candidates.find((server) => server.status === "active" && server.provisionerUrl && server.provisionerSecret) ?? null;
+  return (
+    candidates.find(
+      (server) => server.status === "active" && server.provisionerUrl && server.provisionerSecret,
+    ) ?? null
+  );
 }
 
 function signRuntimeRequest(secret: string, method: string, pathname: string, bodyText: string) {
   const timestamp = Date.now().toString();
   const nonce = crypto.randomBytes(12).toString("hex");
-  const signature = crypto.createHmac("sha256", secret)
+  const signature = crypto
+    .createHmac("sha256", secret)
     .update(`${timestamp}.${nonce}.${method}.${pathname}.${bodyText}`)
     .digest("hex");
   return { timestamp, nonce, signature };
 }
 
-async function callRuntimeProvisioner<T>(runtime: typeof websiteRuntimeServer.$inferSelect, pathname: string, body: unknown): Promise<T> {
+async function callRuntimeProvisioner<T>(
+  runtime: typeof websiteRuntimeServer.$inferSelect,
+  pathname: string,
+  body: unknown,
+): Promise<T> {
   if (!runtime.provisionerUrl || !runtime.provisionerSecret) {
     throw new Error("Runtime server does not have a provisioner URL and secret configured");
   }
@@ -1220,7 +2173,7 @@ async function callRuntimeProvisioner<T>(runtime: typeof websiteRuntimeServer.$i
   const baseUrl = runtime.provisionerUrl.replace(/\/+$/, "");
   const bodyText = JSON.stringify(body ?? {});
   const signed = signRuntimeRequest(provisionerSecret, "POST", pathname, bodyText);
-  const response = await fetch(`${baseUrl}${pathname}`, {
+  const response = await fetchIpv4(`${baseUrl}${pathname}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -1233,9 +2186,11 @@ async function callRuntimeProvisioner<T>(runtime: typeof websiteRuntimeServer.$i
   });
   const text = await response.text();
   if (!response.ok) {
-    throw new Error(`Runtime provisioner ${pathname} failed: ${response.status} ${text.slice(0, 800)}`);
+    throw new Error(
+      `Runtime provisioner ${pathname} failed: ${response.status} ${text.slice(0, 800)}`,
+    );
   }
-  return text ? JSON.parse(text) as T : {} as T;
+  return text ? (JSON.parse(text) as T) : ({} as T);
 }
 
 async function provisionRemoteWebsiteRuntime(input: {
@@ -1275,67 +2230,81 @@ async function provisionRemoteWebsiteRuntime(input: {
     ? `postgres://${encodeURIComponent(input.database.username)}:${encodeURIComponent(decryptSecret(input.database.passwordSecret))}@${input.database.containerName}:5432/${encodeURIComponent(input.database.databaseName)}`
     : "";
   const publicBaseUrl = input.site.temporaryDomain ? `https://${input.site.temporaryDomain}` : "";
+  const domain =
+    input.site.temporaryDomain || input.site.primaryDomain || input.site.domain || null;
   const payload: RuntimeDeployPayload = {
+    domain,
     website: {
       id: input.site.id,
       userId: input.site.userId,
       siteType: input.site.siteType,
       businessName: input.site.businessName || input.site.name || input.store.name,
+      domain,
       temporaryDomain: input.site.temporaryDomain,
       primaryDomain: input.site.primaryDomain,
     },
     store: {
       id: input.store.id,
+      storeId: input.store.id,
+      websiteId: input.site.id,
       name: input.store.name,
       status: input.store.status,
     },
-    database: input.database ? {
-      id: input.database.id,
-      engine: input.database.engine,
-      version: input.database.version,
-      databaseName: input.database.databaseName,
-      username: input.database.username,
-      password: decryptSecret(input.database.passwordSecret),
-      containerName: input.database.containerName,
-      volumeName: input.database.volumeName,
-    } : undefined,
+    database: input.database
+      ? {
+          id: input.database.id,
+          engine: input.database.engine,
+          version: input.database.version,
+          databaseName: input.database.databaseName,
+          username: input.database.username,
+          password: decryptSecret(input.database.passwordSecret),
+          containerName: input.database.containerName,
+          volumeName: input.database.volumeName,
+        }
+      : undefined,
     runtime: {
       networkName: input.runtime.dockerNetworkName || "cm_runtime",
       proxyMode: input.runtime.proxyMode || "caddy",
       redisContainerName: "cloudmonkey-runtime-redis",
     },
-    medusa: isEcommerce ? {
-      enabled: true,
-      image: medusaImage,
-      containerName: medusaContainerName,
-      port: 9000,
-      configPath: "config/store.config.json",
-      config: generatedConfig,
-      redisPrefix,
-      env: {
-        PORT: "9000",
-        CLOUDMONKEY_WEBSITE_ID: input.site.id,
-        CLOUDMONKEY_OWNER_USER_ID: input.site.userId,
-        CLOUDMONKEY_STORE_ID: input.store.id,
-        CLOUDMONKEY_STORE_CONFIG_PATH: "/app/config/store.config.json",
-        DATABASE_URL: databaseUrl,
-        REDIS_URL: "redis://cloudmonkey-runtime-redis:6379/0",
-        REDIS_PREFIX: redisPrefix,
-        STORE_CORS: publicBaseUrl,
-        ADMIN_CORS: process.env.PUBLIC_APP_URL ?? "https://cloudmonkey.co.za",
-        AUTH_CORS: process.env.PUBLIC_APP_URL ?? "https://cloudmonkey.co.za",
-        JWT_SECRET: runtimeSafeSecret(),
-        COOKIE_SECRET: runtimeSafeSecret(),
-        PAYSTACK_PUBLIC_KEY: process.env.PAYSTACK_PUBLIC_KEY ?? "",
-        PAYSTACK_SECRET_KEY: process.env.PAYSTACK_SECRET_KEY ?? "",
-        CLOUDMONKEY_PLATFORM_FEE_PERCENT: process.env.CLOUDMONKEY_WEBSITE_PLATFORM_FEE_PERCENT ?? "0",
-      },
-    } : undefined,
+    medusa: isEcommerce
+      ? {
+          enabled: true,
+          image: medusaImage,
+          containerName: medusaContainerName,
+          port: 9000,
+          configPath: "config/store.config.json",
+          config: generatedConfig,
+          redisPrefix,
+          env: {
+            PORT: "9000",
+            CLOUDMONKEY_WEBSITE_ID: input.site.id,
+            CLOUDMONKEY_OWNER_USER_ID: input.site.userId,
+            CLOUDMONKEY_STORE_ID: input.store.id,
+            CLOUDMONKEY_STORE_CONFIG_PATH: "/app/config/store.config.json",
+            DATABASE_URL: databaseUrl,
+            REDIS_URL: "redis://cloudmonkey-runtime-redis:6379/0",
+            REDIS_PREFIX: redisPrefix,
+            STORE_CORS: publicBaseUrl,
+            ADMIN_CORS: process.env.PUBLIC_APP_URL ?? "https://cloudmonkey.co.za",
+            AUTH_CORS: process.env.PUBLIC_APP_URL ?? "https://cloudmonkey.co.za",
+            JWT_SECRET: runtimeSafeSecret(),
+            COOKIE_SECRET: runtimeSafeSecret(),
+            PAYSTACK_PUBLIC_KEY: process.env.PAYSTACK_PUBLIC_KEY ?? "",
+            PAYSTACK_SECRET_KEY: process.env.PAYSTACK_SECRET_KEY ?? "",
+            CLOUDMONKEY_PLATFORM_FEE_PERCENT:
+              process.env.CLOUDMONKEY_WEBSITE_PLATFORM_FEE_PERCENT ?? "0",
+          },
+        }
+      : undefined,
     storefront: {
       image,
       containerName,
+      name: containerName,
       port: 3000,
-      configPath: isEcommerce ? "public/config/store.config.json" : "public/config/site.config.json",
+      configPath: isEcommerce
+        ? "public/config/store.config.json"
+        : "public/config/site.config.json",
       config: generatedConfig,
       env: {
         PORT: "3000",
@@ -1349,10 +2318,21 @@ async function provisionRemoteWebsiteRuntime(input: {
         ...(isEcommerce ? { DATABASE_URL: databaseUrl } : {}),
         PAYSTACK_PUBLIC_KEY: process.env.PAYSTACK_PUBLIC_KEY ?? "",
         PAYSTACK_SECRET_KEY: process.env.PAYSTACK_SECRET_KEY ?? "",
-        CLOUDMONKEY_PLATFORM_FEE_PERCENT: process.env.CLOUDMONKEY_WEBSITE_PLATFORM_FEE_PERCENT ?? "0",
+        CLOUDMONKEY_PLATFORM_FEE_PERCENT:
+          process.env.CLOUDMONKEY_WEBSITE_PLATFORM_FEE_PERCENT ?? "0",
       },
     },
   };
+  console.info("Runtime deploy payload summary:", {
+    websiteId: payload.website.id,
+    siteType: payload.website.siteType,
+    domain: payload.website.domain,
+    storeId: payload.store.id,
+    storefrontContainerName: payload.storefront.containerName,
+    hasDatabase: Boolean(payload.database?.containerName),
+    hasMedusa: Boolean(payload.medusa?.containerName),
+    runtimeId: input.runtime.id,
+  });
   return callRuntimeProvisioner<{
     image: string;
     storefrontContainerName: string;
@@ -1366,7 +2346,7 @@ async function provisionRemoteWebsiteRuntime(input: {
 async function dockerCreateSqlContainer(database: typeof websiteStoreDatabase.$inferSelect) {
   await dockerEnsureImage("postgres:16-alpine");
   await dockerEnsureVolume(database.volumeName);
-  if (!await dockerContainerExists(database.containerName)) {
+  if (!(await dockerContainerExists(database.containerName))) {
     await dockerRequest(`/containers/create?name=${encodeURIComponent(database.containerName)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1398,7 +2378,13 @@ async function dockerCreateSqlContainer(database: typeof websiteStoreDatabase.$i
 
 async function runDedicatedStoreMigrations(database: typeof websiteStoreDatabase.$inferSelect) {
   const connectionString = decryptSecret(database.connectionSecret);
-  const migrationPath = path.join(WEBSITE_BUILDER_ROOT, "base-ecommerce", "db", "migrations", "001_init.sql");
+  const migrationPath = path.join(
+    WEBSITE_BUILDER_ROOT,
+    "base-ecommerce",
+    "db",
+    "migrations",
+    "001_init.sql",
+  );
   const migrationSql = await readFile(migrationPath, "utf8");
   let lastError: unknown;
 
@@ -1416,7 +2402,9 @@ async function runDedicatedStoreMigrations(database: typeof websiteStoreDatabase
     }
   }
 
-  throw new Error(`Dedicated store database migration failed: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
+  throw new Error(
+    `Dedicated store database migration failed: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+  );
 }
 
 async function dockerCreateStorefrontContainer(input: {
@@ -1426,7 +2414,7 @@ async function dockerCreateStorefrontContainer(input: {
   image: string;
 }) {
   const containerName = buildStorefrontContainerName(input.site.id);
-  if (!await dockerContainerExists(containerName)) {
+  if (!(await dockerContainerExists(containerName))) {
     await dockerRequest(`/containers/create?name=${encodeURIComponent(containerName)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1440,7 +2428,9 @@ async function dockerCreateStorefrontContainer(input: {
           `STORE_MODE=${input.site.siteType}`,
           `VITE_PUBLIC_BASE_URL=http://${input.site.temporaryDomain}`,
           "CLOUDMONKEY_API_URL=https://cloudmonkey.co.za",
-          ...(input.site.siteType === "ecommerce" && input.database ? [`DATABASE_URL=${decryptSecret(input.database.connectionSecret)}`] : []),
+          ...(input.site.siteType === "ecommerce" && input.database
+            ? [`DATABASE_URL=${decryptSecret(input.database.connectionSecret)}`]
+            : []),
           `PAYSTACK_PUBLIC_KEY=${process.env.PAYSTACK_PUBLIC_KEY ?? ""}`,
           `PAYSTACK_SECRET_KEY=${process.env.PAYSTACK_SECRET_KEY ?? ""}`,
           `CLOUDMONKEY_PLATFORM_FEE_PERCENT=${process.env.CLOUDMONKEY_WEBSITE_PLATFORM_FEE_PERCENT ?? "0"}`,
@@ -1470,9 +2460,26 @@ async function writeNginxWebsiteRoute(input: { domain: string; containerName: st
   await mkdir(NGINX_SITE_CONF_DIR, { recursive: true });
   const safeName = input.domain.replace(/[^a-z0-9.-]/gi, "_").toLowerCase();
   const confPath = path.join(NGINX_SITE_CONF_DIR, `website-${safeName}.conf`);
+  const existingConf = await readFile(confPath, "utf8").catch(() => null);
+  if (existingConf?.includes("ssl_certificate")) {
+    const updatedConf = existingConf.replace(
+      /proxy_pass http:\/\/[^;\n]+:3000;/g,
+      `proxy_pass http://${input.containerName}:3000;`,
+    );
+    await writeFile(confPath, updatedConf, "utf8");
+    await dockerRequest(`/containers/${encodeURIComponent(NGINX_CONTAINER_NAME)}/restart`, {
+      method: "POST",
+    });
+    return;
+  }
+
   const conf = `server {
     listen 80;
     server_name ${input.domain};
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
 
     location / {
         resolver 127.0.0.11 valid=10s ipv6=off;
@@ -1489,7 +2496,9 @@ async function writeNginxWebsiteRoute(input: { domain: string; containerName: st
 }
 `;
   await writeFile(confPath, conf, "utf8");
-  await dockerRequest(`/containers/${encodeURIComponent(NGINX_CONTAINER_NAME)}/restart`, { method: "POST" });
+  await dockerRequest(`/containers/${encodeURIComponent(NGINX_CONTAINER_NAME)}/restart`, {
+    method: "POST",
+  });
 }
 
 async function provisionLocalWebsiteRuntime(input: {
@@ -1499,7 +2508,8 @@ async function provisionLocalWebsiteRuntime(input: {
   buildManifest: unknown;
 }) {
   if (input.site.siteType === "ecommerce") {
-    if (!input.database) throw new Error("Ecommerce stores require a dedicated database before provisioning");
+    if (!input.database)
+      throw new Error("Ecommerce stores require a dedicated database before provisioning");
     await dockerCreateSqlContainer(input.database);
     await runDedicatedStoreMigrations(input.database);
   }
@@ -1510,6 +2520,7 @@ async function provisionLocalWebsiteRuntime(input: {
     domain: input.site.temporaryDomain || input.site.primaryDomain || "",
     siteType: input.site.siteType,
     designManifest: input.buildManifest,
+    githubRepo: input.site.githubRepo,
     store: input.store,
     database: input.database ?? undefined,
   });
@@ -1520,7 +2531,10 @@ async function provisionLocalWebsiteRuntime(input: {
     image,
   });
   if (input.site.temporaryDomain) {
-    await writeNginxWebsiteRoute({ domain: input.site.temporaryDomain, containerName: storefrontContainerName });
+    await writeNginxWebsiteRoute({
+      domain: input.site.temporaryDomain,
+      containerName: storefrontContainerName,
+    });
   }
   return {
     image,
@@ -1543,35 +2557,90 @@ function publicDesignImageUrl(id: string) {
 
 async function createWebsiteProjectFromOnboarding(input: {
   userId: string;
-  subscription: typeof subscription.$inferSelect & { plan?: typeof servicePlan.$inferSelect | null };
+  subscription: typeof subscription.$inferSelect & {
+    plan?: typeof servicePlan.$inferSelect | null;
+  };
   invoiceId?: string | null;
   answers: Record<string, unknown>;
+  actorUserId?: string;
 }) {
   const existing = await db.query.website.findFirst({
     where: eq(website.subscriptionId, input.subscription.id),
   });
-  if (existing) return existing;
 
   const now = new Date();
   const siteType = input.subscription.planId?.startsWith("ecom-") ? "ecommerce" : "website";
-  const businessName = String(input.answers.businessName || input.answers.companyName || input.subscription.name || "CloudMonkey Website").slice(0, 120);
-  const industry = String(input.answers.industry || input.answers.businessCategory || "").slice(0, 120);
-  const businessDescription = String(input.answers.businessDescription || input.answers.aboutBusiness || input.answers.goals || "").slice(0, 1000);
-  const preferredSlug = String(input.answers.preferredSlug || input.answers.businessName || businessName);
+  const businessName = String(
+    input.answers.businessName ||
+      input.answers.companyName ||
+      input.subscription.name ||
+      "CloudMonkey Website",
+  ).slice(0, 120);
+  const industry = String(input.answers.industry || input.answers.businessCategory || "").slice(
+    0,
+    120,
+  );
+  const businessDescription = String(
+    input.answers.businessDescription || input.answers.aboutBusiness || input.answers.goals || "",
+  ).slice(0, 1000);
+  if (existing) {
+    const provisioningPlan =
+      safeJsonParse(existing.provisioningPlan) ??
+      buildWebsiteProvisioningPlan({
+        websiteId: existing.id,
+        storeId:
+          (
+            await db.query.websiteStore.findFirst({
+              where: eq(websiteStore.websiteId, existing.id),
+            })
+          )?.id ?? makeId("store"),
+        temporaryDomain: existing.temporaryDomain ?? existing.domain,
+        siteType,
+      });
+    const [updated] = await db
+      .update(website)
+      .set({
+        invoiceId: input.invoiceId ?? existing.invoiceId,
+        status: existing.status === "onboarding_shell" ? "onboarding" : existing.status,
+        name: businessName || existing.name,
+        businessName: businessName || existing.businessName,
+        businessDescription: businessDescription || existing.businessDescription,
+        industry: industry || existing.industry,
+        onboardingAnswers: JSON.stringify(input.answers),
+        requirementManifest: JSON.stringify({
+          source: "website-wizard",
+          siteType,
+          answers: input.answers,
+          subscriptionId: input.subscription.id,
+          createdAt: now.toISOString(),
+        }),
+        provisioningPlan: JSON.stringify(provisioningPlan),
+        updatedAt: now,
+      })
+      .where(eq(website.id, existing.id))
+      .returning();
+    return updated;
+  }
+
+  const preferredSlug = String(
+    input.answers.preferredSlug || input.answers.businessName || businessName,
+  );
   const baseSlug = slugifySiteName(preferredSlug);
   const slug = `${baseSlug}-${crypto.randomBytes(2).toString("hex")}`;
   const temporaryDomain = `${slug}.cloudmonkey.co.za`;
   const websiteId = makeId("web");
   const storeId = makeId("store");
-  const trialEndsAt = input.subscription.status === "trialing" ? input.subscription.currentPeriodEnd : null;
+  const trialEndsAt =
+    input.subscription.status === "trialing" ? input.subscription.currentPeriodEnd : null;
   const graceEndsAt = trialEndsAt ? addDays(trialEndsAt, 30) : null;
-  const databaseRecord = siteType === "ecommerce"
-    ? buildStoreDatabaseRecord({
-        websiteId,
-        storeId,
-        userId: input.userId,
-      })
-    : null;
+  const databaseRecord =
+    siteType === "ecommerce"
+      ? buildStoreDatabaseRecord({
+          websiteId,
+          storeId,
+          userId: input.userId,
+        })
+      : null;
   const provisioningPlan = buildWebsiteProvisioningPlan({
     websiteId,
     storeId,
@@ -1579,42 +2648,47 @@ async function createWebsiteProjectFromOnboarding(input: {
     siteType,
     database: databaseRecord ?? undefined,
   });
-  const baseRepo = siteType === "ecommerce" ? "cloudmonkey-commerce-template" : "cloudmonkey-website-template";
+  const baseRepo =
+    siteType === "ecommerce" ? "cloudmonkey-commerce-template" : "cloudmonkey-website-template";
 
   let createdWebsite: typeof website.$inferSelect;
   await db.transaction(async (tx) => {
-    [createdWebsite] = await tx.insert(website).values({
-      id: websiteId,
-      userId: input.userId,
-      subscriptionId: input.subscription.id,
-      invoiceId: input.invoiceId ?? null,
-      domain: temporaryDomain,
-      plan: input.subscription.planId ?? input.subscription.name,
-      status: "onboarding",
-      siteType,
-      name: businessName,
-      businessName,
-      businessDescription,
-      industry,
-      temporaryDomain,
-      primaryDomain: temporaryDomain,
-      onboardingAnswers: JSON.stringify(input.answers),
-      requirementManifest: JSON.stringify({
-        source: "website-wizard",
-        siteType,
-        answers: input.answers,
+    [createdWebsite] = await tx
+      .insert(website)
+      .values({
+        id: websiteId,
+        userId: input.userId,
         subscriptionId: input.subscription.id,
-        createdAt: now.toISOString(),
-      }),
-      provisioningPlan: JSON.stringify(provisioningPlan),
-      aiGenerationStatus: "manual_design_pending",
-      containerStatus: "not_provisioned",
-      baseRepo,
-      trialStartedAt: input.subscription.status === "trialing" ? input.subscription.currentPeriodStart : null,
-      trialEndsAt,
-      graceEndsAt,
-      terminationScheduledAt: graceEndsAt,
-    }).returning();
+        invoiceId: input.invoiceId ?? null,
+        domain: temporaryDomain,
+        plan: input.subscription.planId ?? input.subscription.name,
+        status: "onboarding",
+        siteType,
+        name: businessName,
+        businessName,
+        businessDescription,
+        industry,
+        temporaryDomain,
+        primaryDomain: temporaryDomain,
+        onboardingAnswers: JSON.stringify(input.answers),
+        requirementManifest: JSON.stringify({
+          source: "website-wizard",
+          siteType,
+          answers: input.answers,
+          subscriptionId: input.subscription.id,
+          createdAt: now.toISOString(),
+        }),
+        provisioningPlan: JSON.stringify(provisioningPlan),
+        aiGenerationStatus: "manual_design_pending",
+        containerStatus: "not_provisioned",
+        baseRepo,
+        trialStartedAt:
+          input.subscription.status === "trialing" ? input.subscription.currentPeriodStart : null,
+        trialEndsAt,
+        graceEndsAt,
+        terminationScheduledAt: graceEndsAt,
+      })
+      .returning();
 
     await tx.insert(websiteStore).values({
       id: storeId,
@@ -1624,7 +2698,8 @@ async function createWebsiteProjectFromOnboarding(input: {
       siteType,
       status: input.subscription.status === "trialing" ? "trial" : "planned",
       paymentMode: "cloudmonkey_gateway",
-      trialStartedAt: input.subscription.status === "trialing" ? input.subscription.currentPeriodStart : null,
+      trialStartedAt:
+        input.subscription.status === "trialing" ? input.subscription.currentPeriodStart : null,
       trialEndsAt,
       terminationScheduledAt: graceEndsAt,
     });
@@ -1668,7 +2743,7 @@ async function createWebsiteProjectFromOnboarding(input: {
   });
 
   await recordAudit({
-    actorUserId: input.userId,
+    actorUserId: input.actorUserId ?? input.userId,
     action: "website_project.onboarding_created",
     entityType: "website",
     entityId: createdWebsite!.id,
@@ -1684,7 +2759,11 @@ async function createWebsiteProjectFromOnboarding(input: {
   return createdWebsite!;
 }
 
-async function provisionWebsiteRuntime(userId: string, websiteId: string) {
+async function provisionWebsiteRuntime(
+  userId: string,
+  websiteId: string,
+  options?: { skipAgreementCheck?: boolean },
+) {
   const detail = await getUserWebsiteDetail(userId, websiteId);
   if (!detail?.store) {
     const error: any = new Error("Website store must exist before provisioning");
@@ -1692,91 +2771,156 @@ async function provisionWebsiteRuntime(userId: string, websiteId: string) {
     throw error;
   }
   if (detail.siteType === "ecommerce" && !detail.store.database) {
-    const error: any = new Error("Website store and dedicated database must exist before provisioning");
+    const error: any = new Error(
+      "Website store and dedicated database must exist before provisioning",
+    );
     error.status = 404;
     throw error;
   }
-  if (!detail.selectedDesignOptionId || !detail.buildManifest) {
-    const error: any = new Error("Select a design before provisioning");
+  if (!detail.buildManifest && !detail.githubRepo) {
+    const error: any = new Error(
+      "Create a build manifest or link a GitHub repo before provisioning",
+    );
     error.status = 400;
     throw error;
   }
 
-  await db.update(website).set({
-    containerStatus: "provisioning",
-    status: "provisioning",
-    updatedAt: new Date(),
-  }).where(eq(website.id, websiteId));
-  if (detail.store.database) {
-    await db.update(websiteStoreDatabase).set({
+  await db
+    .update(website)
+    .set({
+      containerStatus: "provisioning",
       status: "provisioning",
       updatedAt: new Date(),
-    }).where(eq(websiteStoreDatabase.id, detail.store.database.id));
+    })
+    .where(eq(website.id, websiteId));
+  if (detail.store.database) {
+    await db
+      .update(websiteStoreDatabase)
+      .set({
+        status: "provisioning",
+        updatedAt: new Date(),
+      })
+      .where(eq(websiteStoreDatabase.id, detail.store.database.id));
   }
 
   const siteRow = await db.query.website.findFirst({ where: eq(website.id, websiteId) });
-  const storeRow = await db.query.websiteStore.findFirst({ where: eq(websiteStore.websiteId, websiteId) });
+  const storeRow = await db.query.websiteStore.findFirst({
+    where: eq(websiteStore.websiteId, websiteId),
+  });
   const databaseRow = storeRow
-    ? await db.query.websiteStoreDatabase.findFirst({ where: eq(websiteStoreDatabase.storeId, storeRow.id) })
+    ? await db.query.websiteStoreDatabase.findFirst({
+        where: eq(websiteStoreDatabase.storeId, storeRow.id),
+      })
     : null;
-  if (!siteRow || !storeRow) throw new Error("Website runtime records disappeared during provisioning");
-  if (siteRow.siteType === "ecommerce" && !databaseRow) throw new Error("Ecommerce database record disappeared during provisioning");
+  if (!siteRow || !storeRow)
+    throw new Error("Website runtime records disappeared during provisioning");
+  if (siteRow.siteType === "ecommerce" && !databaseRow)
+    throw new Error("Ecommerce database record disappeared during provisioning");
 
   const buildManifest = safeJsonParse(siteRow.buildManifest) ?? {};
+  const subscriptionRow = siteRow.subscriptionId
+    ? await db.query.subscription.findFirst({ where: eq(subscription.id, siteRow.subscriptionId) })
+    : null;
+  if (subscriptionRow && !options?.skipAgreementCheck) {
+    await requireSignedAgreementForSubscription(subscriptionRow);
+  }
+  const provisionedWebsiteStatus =
+    subscriptionRow?.status === "trialing" || (!subscriptionRow && siteRow.status === "live_trial")
+      ? "live_trial"
+      : "active";
+  const provisionedStoreStatus = provisionedWebsiteStatus === "live_trial" ? "trial" : "active";
   const runtimeServer = await selectWebsiteRuntimeServer();
-  const runtimeResult = runtimeServer
-    ? await provisionRemoteWebsiteRuntime({
+  let runtimeResult: Awaited<ReturnType<typeof provisionLocalWebsiteRuntime>>;
+  let resolvedRuntimeServer = runtimeServer;
+  if (runtimeServer) {
+    try {
+      runtimeResult = await provisionRemoteWebsiteRuntime({
         runtime: runtimeServer,
         site: siteRow,
         store: storeRow,
         database: databaseRow,
         buildManifest,
-      })
-    : await provisionLocalWebsiteRuntime({
+      });
+    } catch (error: any) {
+      if (
+        siteRow.siteType !== "website" ||
+        !String(error?.message ?? "").includes("Invalid deploy payload")
+      ) {
+        throw error;
+      }
+      console.warn("Remote website runtime rejected static deploy payload; falling back locally", {
+        websiteId,
+        runtimeServerId: runtimeServer.id,
+        message: error.message,
+      });
+      resolvedRuntimeServer = null;
+      runtimeResult = await provisionLocalWebsiteRuntime({
         site: siteRow,
         store: storeRow,
         database: databaseRow,
         buildManifest,
       });
+    }
+  } else {
+    runtimeResult = await provisionLocalWebsiteRuntime({
+      site: siteRow,
+      store: storeRow,
+      database: databaseRow,
+      buildManifest,
+    });
+  }
 
   const now = new Date();
-  const [updatedSite] = await db.update(website).set({
-    containerStatus: "running",
-    status: "live_trial",
-    runtimeServerId: runtimeServer?.id ?? siteRow.runtimeServerId,
-    provisioningPlan: JSON.stringify({
-      ...(safeJsonParse(siteRow.provisioningPlan) ?? {}),
-      status: "running",
-      dockerImage: runtimeResult.image,
-      storefrontContainerName: runtimeResult.storefrontContainerName,
-      medusaContainerName: runtimeResult.medusaContainerName ?? null,
-      commerceEngine: siteRow.siteType === "ecommerce" ? "medusa" : "static",
-      sqlContainerName: runtimeResult.sqlContainerName,
-      runtimeServerId: runtimeServer?.id ?? "local",
-      runtimeHost: runtimeServer?.hostname ?? "local",
-      routeProvider: runtimeResult.routeProvider,
-      provisionedAt: now.toISOString(),
-      publicUrl: runtimeResult.publicUrl,
-    }),
-    updatedAt: now,
-  }).where(eq(website.id, websiteId)).returning();
-  await db.update(websiteStore).set({
-    status: "trial",
-    updatedAt: now,
-  }).where(eq(websiteStore.id, storeRow.id));
+  const [updatedSite] = await db
+    .update(website)
+    .set({
+      containerStatus: "running",
+      status: provisionedWebsiteStatus,
+      runtimeServerId: resolvedRuntimeServer?.id ?? null,
+      provisioningPlan: JSON.stringify({
+        ...(safeJsonParse(siteRow.provisioningPlan) ?? {}),
+        status: "running",
+        dockerImage: runtimeResult.image,
+        storefrontContainerName: runtimeResult.storefrontContainerName,
+        medusaContainerName: runtimeResult.medusaContainerName ?? null,
+        commerceEngine: siteRow.siteType === "ecommerce" ? "medusa" : "static",
+        sqlContainerName: runtimeResult.sqlContainerName,
+        runtimeServerId: resolvedRuntimeServer?.id ?? "local",
+        runtimeHost: resolvedRuntimeServer?.hostname ?? "local",
+        routeProvider: runtimeResult.routeProvider,
+        provisionedAt: now.toISOString(),
+        publicUrl: runtimeResult.publicUrl,
+      }),
+      updatedAt: now,
+    })
+    .where(eq(website.id, websiteId))
+    .returning();
+  await db
+    .update(websiteStore)
+    .set({
+      status: provisionedStoreStatus,
+      updatedAt: now,
+    })
+    .where(eq(websiteStore.id, storeRow.id));
   if (databaseRow) {
-    await db.update(websiteStoreDatabase).set({
-      status: "running",
-      host: runtimeServer ? databaseRow.containerName : databaseRow.host,
-      updatedAt: now,
-    }).where(eq(websiteStoreDatabase.id, databaseRow.id));
+    await db
+      .update(websiteStoreDatabase)
+      .set({
+        status: "running",
+        host: resolvedRuntimeServer ? databaseRow.containerName : databaseRow.host,
+        updatedAt: now,
+      })
+      .where(eq(websiteStoreDatabase.id, databaseRow.id));
   }
-  if (runtimeServer && !runtimeServer.id.startsWith("runtime_env_")) {
-    await db.update(websiteRuntimeServer).set({
-      activeSiteCount: sql`${websiteRuntimeServer.activeSiteCount} + 1`,
-      lastError: null,
-      updatedAt: now,
-    }).where(eq(websiteRuntimeServer.id, runtimeServer.id));
+  if (resolvedRuntimeServer && !resolvedRuntimeServer.id.startsWith("runtime_env_")) {
+    await db
+      .update(websiteRuntimeServer)
+      .set({
+        activeSiteCount: sql`${websiteRuntimeServer.activeSiteCount} + 1`,
+        lastError: null,
+        updatedAt: now,
+      })
+      .where(eq(websiteRuntimeServer.id, resolvedRuntimeServer.id));
   }
 
   await recordAudit({
@@ -1790,7 +2934,7 @@ async function provisionWebsiteRuntime(userId: string, websiteId: string) {
       containerName: runtimeResult.storefrontContainerName,
       sqlContainerName: runtimeResult.sqlContainerName ?? null,
       domain: siteRow.temporaryDomain,
-      runtimeServerId: runtimeServer?.id ?? "local",
+      runtimeServerId: resolvedRuntimeServer?.id ?? "local",
     },
   });
 
@@ -1829,7 +2973,7 @@ async function getUserWebsiteDashboardRows(userId: string) {
 
   return sites.map((site) => {
     const store = stores.find((row) => row.websiteId === site.id) ?? null;
-    const database = store ? databases.find((row) => row.storeId === store.id) ?? null : null;
+    const database = store ? (databases.find((row) => row.storeId === store.id) ?? null) : null;
     const publicDatabase = database
       ? {
           id: database.id,
@@ -1877,7 +3021,9 @@ async function getUserWebsiteDetail(userId: string, websiteId: string) {
 
   const [database, products, orders, payments] = store
     ? await Promise.all([
-        db.query.websiteStoreDatabase.findFirst({ where: eq(websiteStoreDatabase.storeId, store.id) }),
+        db.query.websiteStoreDatabase.findFirst({
+          where: eq(websiteStoreDatabase.storeId, store.id),
+        }),
         db.query.storeProduct.findMany({
           where: eq(storeProduct.storeId, store.id),
           orderBy: (storeProduct, { desc }) => [desc(storeProduct.createdAt)],
@@ -1894,16 +3040,21 @@ async function getUserWebsiteDetail(userId: string, websiteId: string) {
     : [null, [], [], []];
 
   const productVariants = store
-    ? await db.query.storeProductVariant.findMany({ where: eq(storeProductVariant.storeId, store.id) })
+    ? await db.query.storeProductVariant.findMany({
+        where: eq(storeProductVariant.storeId, store.id),
+      })
     : [];
   const provisioningPlan = safeJsonParse(site.provisioningPlan);
-  const medusaProducts = site.siteType === "ecommerce" && site.containerStatus === "running"
-    ? await fetchMedusaProductsForWebsite(site).catch(() => null)
-    : null;
-  const resolvedProducts = medusaProducts ?? products.map((product) => ({
-    ...product,
-    variants: productVariants.filter((variant) => variant.productId === product.id),
-  }));
+  const medusaProducts =
+    site.siteType === "ecommerce" && site.containerStatus === "running"
+      ? await fetchMedusaProductsForWebsite(site).catch(() => null)
+      : null;
+  const resolvedProducts =
+    medusaProducts ??
+    products.map((product) => ({
+      ...product,
+      variants: productVariants.filter((variant) => variant.productId === product.id),
+    }));
 
   const publicDatabase = database
     ? {
@@ -1940,7 +3091,9 @@ async function getUserWebsiteDetail(userId: string, websiteId: string) {
     metrics: {
       productCount: resolvedProducts.length,
       orderCount: orders.length,
-      paidRevenue: payments.filter((payment) => payment.status === "paid").reduce((sum, payment) => sum + payment.amount, 0),
+      paidRevenue: payments
+        .filter((payment) => payment.status === "paid")
+        .reduce((sum, payment) => sum + payment.amount, 0),
       pluginCount: plugins.length,
     },
   };
@@ -1950,10 +3103,10 @@ async function fetchMedusaProductsForWebsite(site: typeof website.$inferSelect) 
   const baseUrl = site.temporaryDomain || site.primaryDomain;
   if (!baseUrl) return [];
   const response = await fetch(`https://${baseUrl}/api/cloudmonkey/admin/products`, {
-    headers: { "Accept": "application/json" },
+    headers: { Accept: "application/json" },
   });
   if (!response.ok) throw new Error(`Medusa product fetch failed: ${response.status}`);
-  const data = await response.json() as any;
+  const data = (await response.json()) as any;
   const products = Array.isArray(data.products) ? data.products : [];
   return products.map((product: any) => ({
     id: product.id,
@@ -1987,12 +3140,15 @@ async function fetchMedusaProductsForWebsite(site: typeof website.$inferSelect) 
   }));
 }
 
-async function createMedusaProductForWebsite(site: typeof website.$inferSelect, body: z.infer<typeof storeProductCreateSchema>) {
+async function createMedusaProductForWebsite(
+  site: typeof website.$inferSelect,
+  body: z.infer<typeof storeProductCreateSchema>,
+) {
   const baseUrl = site.temporaryDomain || site.primaryDomain;
   if (!baseUrl) throw new Error("Website has no domain for Medusa API");
   const response = await fetch(`https://${baseUrl}/api/cloudmonkey/admin/products`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({
       title: body.title,
       description: body.description,
@@ -2003,66 +3159,9 @@ async function createMedusaProductForWebsite(site: typeof website.$inferSelect, 
     }),
   });
   const text = await response.text();
-  if (!response.ok) throw new Error(`Medusa product create failed: ${response.status} ${text.slice(0, 800)}`);
+  if (!response.ok)
+    throw new Error(`Medusa product create failed: ${response.status} ${text.slice(0, 800)}`);
   return text ? JSON.parse(text) : {};
-}
-
-function safeEqual(a: string, b: string) {
-  const left = Buffer.from(a);
-  const right = Buffer.from(b);
-  return left.length === right.length && crypto.timingSafeEqual(left, right);
-}
-
-function signAgentPayload(input: {
-  secret: string;
-  timestamp: string;
-  nonce: string;
-  method: string;
-  pathname: string;
-  body: string;
-}) {
-  return crypto
-    .createHmac("sha256", input.secret)
-    .update(`${input.timestamp}.${input.nonce}.${input.method.toUpperCase()}.${input.pathname}.${input.body}`)
-    .digest("hex");
-}
-
-async function readSignedAgentRequest(request: Request, url: URL) {
-  const agentId = request.headers.get("x-cm-agent-id");
-  const timestamp = request.headers.get("x-cm-timestamp");
-  const nonce = request.headers.get("x-cm-nonce");
-  const signature = request.headers.get("x-cm-signature");
-  const bodyText = await request.text();
-
-  if (!agentId || !timestamp || !nonce || !signature) {
-    return { response: json({ error: "Missing agent signature headers" }, 401) };
-  }
-
-  const timestampNumber = Number(timestamp);
-  if (!Number.isFinite(timestampNumber) || Math.abs(Date.now() - timestampNumber) > 5 * 60 * 1000) {
-    return { response: json({ error: "Stale agent signature" }, 401) };
-  }
-
-  const agent = await db.query.serverAgent.findFirst({
-    where: eq(serverAgent.id, agentId),
-  });
-  if (!agent?.secretHash) {
-    return { response: json({ error: "Unknown agent" }, 401) };
-  }
-
-  const expected = signAgentPayload({
-    secret: decryptSecret(agent.secretHash),
-    timestamp,
-    nonce,
-    method: request.method,
-    pathname: url.pathname,
-    body: bodyText,
-  });
-  if (!safeEqual(expected, signature)) {
-    return { response: json({ error: "Invalid agent signature" }, 401) };
-  }
-
-  return { agent, bodyText };
 }
 
 async function parseBody<T extends z.ZodTypeAny>(request: Request, schema: T): Promise<z.infer<T>> {
@@ -2107,23 +3206,36 @@ async function getWorkspaceSettings() {
   });
   if (existing) return existing;
 
-  const [created] = await db.insert(workspaceSettings).values({
-    id: "default",
-    workspaceName: "CloudMonkey Workspace",
-  }).onConflictDoNothing().returning();
+  const [created] = await db
+    .insert(workspaceSettings)
+    .values({
+      id: "default",
+      workspaceName: "CloudMonkey Workspace",
+    })
+    .onConflictDoNothing()
+    .returning();
 
-  return created ?? await db.query.workspaceSettings.findFirst({
-    where: eq(workspaceSettings.id, "default"),
-  });
+  return (
+    created ??
+    (await db.query.workspaceSettings.findFirst({
+      where: eq(workspaceSettings.id, "default"),
+    }))
+  );
 }
 
 function formatEmailMoney(cents: number, currency = "ZAR") {
-  return new Intl.NumberFormat("en-ZA", { style: "currency", currency }).format(cents / 100).replace("ZAR", "ZAR ");
+  return new Intl.NumberFormat("en-ZA", { style: "currency", currency })
+    .format(cents / 100)
+    .replace("ZAR", "ZAR ");
 }
 
 function formatEmailDate(value: string | Date | null | undefined) {
   if (!value) return "";
-  return new Intl.DateTimeFormat("en-ZA", { year: "numeric", month: "short", day: "2-digit" }).format(new Date(value));
+  return new Intl.DateTimeFormat("en-ZA", {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+  }).format(new Date(value));
 }
 
 function normalizeCouponCode(value: string | null | undefined) {
@@ -2147,7 +3259,203 @@ function applyPercentDiscount(amountCents: number, percentOff: number) {
   return Math.max(0, amountCents - Math.round((amountCents * percentOff) / 100));
 }
 
-async function getInvoiceDocumentPayload(invoiceId: string, activeSession: NonNullable<Awaited<ReturnType<typeof auth.api.getSession>>>, origin: string) {
+function clientIp(request: Request) {
+  return (
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    request.headers.get("x-real-ip") ||
+    null
+  );
+}
+
+function safeServiceDefinition(value: string | null | undefined) {
+  if (!value) return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function renderAgreementSnapshot(input: {
+  template: typeof agreementTemplate.$inferSelect;
+  productName: string;
+  productType: string;
+  productId: string;
+  serviceDefinition: unknown;
+}) {
+  return JSON.stringify(
+    {
+      templateId: input.template.id,
+      templateVersion: input.template.version,
+      title: input.template.title,
+      productType: input.productType,
+      productId: input.productId,
+      productName: input.productName,
+      serviceDefinition: input.serviceDefinition,
+      body: input.template.body,
+      renderedAt: new Date().toISOString(),
+    },
+    null,
+    2,
+  );
+}
+
+async function agreementRequirementForProduct(input: {
+  productType: "plan" | "bundle";
+  productId: string;
+  productName: string;
+  serviceDefinition: unknown;
+}) {
+  const mapping = await db.query.agreementTemplateSku.findFirst({
+    where: and(
+      eq(agreementTemplateSku.productType, input.productType),
+      eq(agreementTemplateSku.productId, input.productId),
+      eq(agreementTemplateSku.required, true),
+    ),
+    with: { template: true },
+  });
+  const template = mapping?.template;
+  if (!mapping || !template || template.status !== "active") return null;
+  const documentSnapshot = renderAgreementSnapshot({
+    template,
+    productName: input.productName,
+    productType: input.productType,
+    productId: input.productId,
+    serviceDefinition: input.serviceDefinition,
+  });
+  const documentHash = sha256(documentSnapshot);
+  return {
+    mapping,
+    template,
+    documentSnapshot,
+    documentHash,
+    consentText: `I accept ${template.title} version ${template.version} for ${input.productName}.`,
+  };
+}
+
+async function signedAgreementExists(input: {
+  userId: string;
+  subscriptionId?: string | null;
+  templateId: string;
+  documentHash: string;
+  productType: string;
+  productId: string;
+}) {
+  const row = await db.query.signedAgreement.findFirst({
+    where: and(
+      eq(signedAgreement.userId, input.userId),
+      eq(signedAgreement.templateId, input.templateId),
+      eq(signedAgreement.documentHash, input.documentHash),
+      eq(signedAgreement.productType, input.productType),
+      eq(signedAgreement.productId, input.productId),
+    ),
+  });
+  if (!row) return false;
+  if (!input.subscriptionId || row.subscriptionId === input.subscriptionId) return true;
+  return true;
+}
+
+async function signAgreementForSubscription(input: {
+  request: Request;
+  userId: string;
+  subscriptionId: string;
+  productType: "plan" | "bundle";
+  productId: string;
+  productName: string;
+  serviceDefinition: unknown;
+  consentText?: string | null;
+}) {
+  const requirement = await agreementRequirementForProduct(input);
+  if (!requirement) return null;
+  const alreadySigned = await signedAgreementExists({
+    userId: input.userId,
+    subscriptionId: input.subscriptionId,
+    templateId: requirement.template.id,
+    documentHash: requirement.documentHash,
+    productType: input.productType,
+    productId: input.productId,
+  });
+  if (!alreadySigned) {
+    await db.insert(signedAgreement).values({
+      id: makeId("agr"),
+      userId: input.userId,
+      subscriptionId: input.subscriptionId,
+      templateId: requirement.template.id,
+      templateVersion: requirement.template.version,
+      productType: input.productType,
+      productId: input.productId,
+      documentHash: requirement.documentHash,
+      consentText: input.consentText || requirement.consentText,
+      documentSnapshot: requirement.documentSnapshot,
+      ipAddress: clientIp(input.request),
+      userAgent: input.request.headers.get("user-agent"),
+      signedAt: new Date(),
+    });
+  }
+  await db
+    .update(subscription)
+    .set({
+      agreementSigned: true,
+      agreementSignedAt: new Date(),
+      requiredAgreementTemplateId: requirement.template.id,
+      updatedAt: new Date(),
+    })
+    .where(eq(subscription.id, input.subscriptionId));
+  return requirement;
+}
+
+async function requireSignedAgreementForSubscription(row: typeof subscription.$inferSelect) {
+  const productType = row.planId ? "plan" : row.bundleId ? "bundle" : null;
+  const productId = row.planId ?? row.bundleId;
+  if (!productType || !productId) return;
+  const product =
+    productType === "plan"
+      ? await db.query.servicePlan.findFirst({
+          where: eq(servicePlan.id, productId),
+          with: { service: true },
+        })
+      : await db.query.bundle.findFirst({ where: eq(bundle.id, productId) });
+  if (!product) return;
+  const productName =
+    productType === "plan"
+      ? `${"service" in product ? (product.service?.name ?? "Service") : "Service"} - ${product.name}`
+      : product.name;
+  const requirement = await agreementRequirementForProduct({
+    productType,
+    productId,
+    productName,
+    serviceDefinition: safeServiceDefinition(product.serviceDefinition),
+  });
+  if (!requirement) return;
+  const hasSigned =
+    row.agreementSigned ||
+    (await signedAgreementExists({
+      userId: row.userId,
+      subscriptionId: row.id,
+      templateId: requirement.template.id,
+      documentHash: requirement.documentHash,
+      productType,
+      productId,
+    }));
+  if (!hasSigned) {
+    const error: any = new Error("Required service agreement must be signed before provisioning");
+    error.status = 428;
+    error.agreementRequired = {
+      templateId: requirement.template.id,
+      version: requirement.template.version,
+      title: requirement.template.title,
+      productType,
+      productId,
+    };
+    throw error;
+  }
+}
+
+async function getInvoiceDocumentPayload(
+  invoiceId: string,
+  activeSession: NonNullable<Awaited<ReturnType<typeof auth.api.getSession>>>,
+  origin: string,
+) {
   const row = await db.query.invoice.findFirst({
     where: eq(invoice.id, invoiceId),
   });
@@ -2159,12 +3467,22 @@ async function getInvoiceDocumentPayload(invoiceId: string, activeSession: NonNu
     return null;
   }
 
-  const [items, customer, settings] = await Promise.all([
+  const [items, payments, customer, settings] = await Promise.all([
     db.query.invoiceItem.findMany({ where: eq(invoiceItem.invoiceId, row.id) }),
+    db.query.invoicePayment.findMany({
+      where: eq(invoicePayment.invoiceId, row.id),
+      orderBy: (invoicePayment, { desc }) => [desc(invoicePayment.createdAt)],
+    }),
     db.query.user.findFirst({ where: eq(user.id, row.userId) }),
     getWorkspaceSettings(),
   ]);
-  const document = buildInvoiceDocumentData({ invoice: row, items, customer, workspaceSettings: settings });
+  const document = buildInvoiceDocumentData({
+    invoice: row,
+    items,
+    payments,
+    customer,
+    workspaceSettings: settings,
+  });
 
   return {
     invoice: row,
@@ -2190,30 +3508,16 @@ async function renderInvoicePdf(document: ReturnType<typeof buildInvoiceDocument
   });
   try {
     const page = await browser.newPage({ viewport: { width: 1100, height: 1400 } });
-    await page.setContent(renderInvoiceHtml(document, { document: true, pdf: true }), { waitUntil: "networkidle" });
+    await page.setContent(renderInvoiceHtml(document, { document: true, pdf: true }), {
+      waitUntil: "networkidle",
+    });
     await page.emulateMedia({ media: "print" });
     return await page.pdf({
       format: "A4",
       printBackground: true,
       preferCSSPageSize: true,
-      displayHeaderFooter: true,
-      headerTemplate: `
-        <div style="width:100%; box-sizing:border-box; padding:0 14mm; font-family:Arial,sans-serif; font-size:9px; color:#11182f;">
-          <div style="display:flex; align-items:center; justify-content:space-between; width:100%;">
-            <div style="font-weight:800; letter-spacing:.02em;">CloudMonkey Invoice</div>
-            <div style="color:#5b2ee7; font-weight:700;">${String(document.invoice.invoiceNumber).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")}</div>
-          </div>
-        </div>
-      `,
-      footerTemplate: `
-        <div style="width:100%; box-sizing:border-box; padding:0 14mm; font-family:Arial,sans-serif; font-size:8px; color:#5d647a;">
-          <div style="display:flex; align-items:center; justify-content:space-between; width:100%; border-top:1px solid #e0e4ee; padding-top:4mm;">
-            <div>Cloud made simple. Support that cares.</div>
-            <div>Page <span class="pageNumber"></span> of <span class="totalPages"></span></div>
-          </div>
-        </div>
-      `,
-      margin: { top: "22mm", right: "14mm", bottom: "18mm", left: "14mm" },
+      displayHeaderFooter: false,
+      margin: { top: "0", right: "0", bottom: "0", left: "0" },
     });
   } finally {
     await browser.close();
@@ -2299,7 +3603,9 @@ async function sendN8nAgentProvisioning(input: {
   }
 }
 
-async function hasIntelligenceAccess(activeSession: NonNullable<Awaited<ReturnType<typeof auth.api.getSession>>>) {
+async function hasIntelligenceAccess(
+  activeSession: NonNullable<Awaited<ReturnType<typeof auth.api.getSession>>>,
+) {
   if (isAdmin(activeSession)) return true;
   const rows = await db.query.subscription.findMany({
     where: eq(subscription.userId, activeSession.user.id),
@@ -2318,10 +3624,13 @@ async function requireIntelligenceAccess(request: Request) {
   if (!hasAccess) {
     return {
       session,
-      response: json({
-        error: "An active CloudMonkey subscription is required to use Competitor Intelligence",
-        code: "subscription_required",
-      }, 402),
+      response: json(
+        {
+          error: "An active CloudMonkey subscription is required to use Competitor Intelligence",
+          code: "subscription_required",
+        },
+        402,
+      ),
     };
   }
   return { session };
@@ -2359,7 +3668,10 @@ function normalizeSearchConsoleProperty(urlString: string) {
       hostname: parsed.hostname.replace(/^www\./, ""),
     };
   } catch {
-    const fallback = urlString.replace(/^https?:\/\//i, "").replace(/\/+$/, "").replace(/^www\./, "");
+    const fallback = urlString
+      .replace(/^https?:\/\//i, "")
+      .replace(/\/+$/, "")
+      .replace(/^www\./, "");
     return {
       urlPrefix: `https://${fallback}/`,
       domainProperty: `sc-domain:${fallback}`,
@@ -2379,22 +3691,29 @@ async function getGoogleSearchConsoleAccount(userId: string) {
     .split(/[,\s]+/)
     .map((scope) => scope.trim())
     .filter(Boolean);
-  const hasSearchConsoleScope = scopes.some((scope) =>
-    scope === "https://www.googleapis.com/auth/webmasters" ||
-    scope === "https://www.googleapis.com/auth/webmasters.readonly",
+  const hasSearchConsoleScope = scopes.some(
+    (scope) =>
+      scope === "https://www.googleapis.com/auth/webmasters" ||
+      scope === "https://www.googleapis.com/auth/webmasters.readonly",
   );
   if (!hasSearchConsoleScope) return null;
 
   const now = new Date();
   const accessTokenFresh =
     accountRow.accessToken &&
-    (!accountRow.accessTokenExpiresAt || accountRow.accessTokenExpiresAt.getTime() > now.getTime() + 60_000);
+    (!accountRow.accessTokenExpiresAt ||
+      accountRow.accessTokenExpiresAt.getTime() > now.getTime() + 60_000);
   if (accessTokenFresh) {
     return { account: accountRow, accessToken: accountRow.accessToken!, scopes };
   }
 
   if (!accountRow.refreshToken) {
-    return { account: accountRow, accessToken: accountRow.accessToken ?? null, scopes, needsReconnect: true };
+    return {
+      account: accountRow,
+      accessToken: accountRow.accessToken ?? null,
+      scopes,
+      needsReconnect: true,
+    };
   }
 
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -2413,18 +3732,26 @@ async function getGoogleSearchConsoleAccount(userId: string) {
   });
   const tokenBody = await tokenResponse.json().catch(() => ({}));
   if (!tokenResponse.ok || !tokenBody.access_token) {
-    return { account: accountRow, accessToken: accountRow.accessToken ?? null, scopes, needsReconnect: true };
+    return {
+      account: accountRow,
+      accessToken: accountRow.accessToken ?? null,
+      scopes,
+      needsReconnect: true,
+    };
   }
 
   const expiresIn = Number(tokenBody.expires_in ?? 3600);
   const refreshedAt = new Date();
-  await db.update(account).set({
-    accessToken: tokenBody.access_token,
-    accessTokenExpiresAt: new Date(refreshedAt.getTime() + expiresIn * 1000),
-    refreshToken: tokenBody.refresh_token ?? accountRow.refreshToken,
-    scope: tokenBody.scope ? String(tokenBody.scope) : accountRow.scope,
-    updatedAt: refreshedAt,
-  }).where(eq(account.id, accountRow.id));
+  await db
+    .update(account)
+    .set({
+      accessToken: tokenBody.access_token,
+      accessTokenExpiresAt: new Date(refreshedAt.getTime() + expiresIn * 1000),
+      refreshToken: tokenBody.refresh_token ?? accountRow.refreshToken,
+      scope: tokenBody.scope ? String(tokenBody.scope) : accountRow.scope,
+      updatedAt: refreshedAt,
+    })
+    .where(eq(account.id, accountRow.id));
 
   return {
     account: accountRow,
@@ -2436,7 +3763,10 @@ async function getGoogleSearchConsoleAccount(userId: string) {
 async function fetchGoogleSearchConsoleSnapshot(userId: string, websiteUrl: string) {
   const googleAccount = await getGoogleSearchConsoleAccount(userId);
   if (!googleAccount?.accessToken) {
-    return { connected: false as const, reason: googleAccount?.needsReconnect ? "reconnect_required" : "not_connected" };
+    return {
+      connected: false as const,
+      reason: googleAccount?.needsReconnect ? "reconnect_required" : "not_connected",
+    };
   }
 
   const property = normalizeSearchConsoleProperty(websiteUrl);
@@ -2498,22 +3828,39 @@ async function fetchGoogleSearchConsoleSnapshot(userId: string, websiteUrl: stri
 function detectTechnologyHints(html: string, headers: Record<string, string>, url: string) {
   const lowerHtml = html.toLowerCase();
   const lowerHeaders = Object.fromEntries(
-    Object.entries(headers).map(([key, value]) => [key.toLowerCase(), String(value ?? "").toLowerCase()]),
+    Object.entries(headers).map(([key, value]) => [
+      key.toLowerCase(),
+      String(value ?? "").toLowerCase(),
+    ]),
   );
 
   const signals: string[] = [];
   const checks: Array<[string, boolean]> = [
-    ["WordPress", lowerHtml.includes("wp-content") || lowerHtml.includes("wordpress") || lowerHtml.includes("elementor")],
+    [
+      "WordPress",
+      lowerHtml.includes("wp-content") ||
+        lowerHtml.includes("wordpress") ||
+        lowerHtml.includes("elementor"),
+    ],
     ["Shopify", lowerHtml.includes("cdn.shopify.com") || lowerHtml.includes("shopify")],
     ["Webflow", lowerHtml.includes("webflow") || lowerHtml.includes("w-webflow")],
     ["Wix", lowerHtml.includes("wix.com") || lowerHtml.includes("_wix")],
     ["Squarespace", lowerHtml.includes("squarespace")],
     ["Next.js", lowerHtml.includes("__next") || lowerHtml.includes("/_next/")],
     ["Vite", lowerHtml.includes("vite") || lowerHtml.includes("/@vite/")],
-    ["React", lowerHtml.includes("react") && (lowerHtml.includes("root") || lowerHtml.includes("hydrate"))],
-    ["Google Tag Manager", lowerHtml.includes("gtm.js") || lowerHtml.includes("googletagmanager.com")],
+    [
+      "React",
+      lowerHtml.includes("react") && (lowerHtml.includes("root") || lowerHtml.includes("hydrate")),
+    ],
+    [
+      "Google Tag Manager",
+      lowerHtml.includes("gtm.js") || lowerHtml.includes("googletagmanager.com"),
+    ],
     ["Meta Pixel", lowerHtml.includes("connect.facebook.net") || lowerHtml.includes("fbq(")],
-    ["Cloudflare", lowerHeaders["server"]?.includes("cloudflare") || Boolean(lowerHeaders["cf-ray"])],
+    [
+      "Cloudflare",
+      lowerHeaders["server"]?.includes("cloudflare") || Boolean(lowerHeaders["cf-ray"]),
+    ],
     ["Vercel", Boolean(lowerHeaders["x-vercel-id"]) || lowerHtml.includes("vercel")],
     ["WordPress CDN", lowerHtml.includes("wp-content") && lowerHtml.includes("cdn")],
   ];
@@ -2522,7 +3869,9 @@ function detectTechnologyHints(html: string, headers: Record<string, string>, ur
     if (matched) signals.push(label);
   }
 
-  const generatorMatch = html.match(/<meta[^>]+name=["']generator["'][^>]+content=["']([^"']+)["']/i);
+  const generatorMatch = html.match(
+    /<meta[^>]+name=["']generator["'][^>]+content=["']([^"']+)["']/i,
+  );
   const generator = generatorMatch?.[1] ?? null;
   if (generator) signals.unshift(`Generator: ${generator}`);
 
@@ -2553,20 +3902,39 @@ async function crawlSiteFingerprint(websiteUrl: string, target: "primary" | "com
     const headers = response?.headers() ?? {};
     const title = await page.title().catch(() => null);
     const url = page.url();
-    const h1 = await page.locator("h1").first().textContent().catch(() => null);
-    const h2Count = await page.locator("h2").count().catch(() => 0);
-    const internalLinkCount = await page.locator('a[href^="/"], a[href^="./"], a[href^="../"], a[href^="#"]').count().catch(() => 0);
-    const externalLinkCount = await page.locator('a[href^="http"]').count().catch(() => 0);
-    const imageMissingAltCount = await page.locator("img:not([alt]), img[alt='']").count().catch(() => 0);
+    const h1 = await page
+      .locator("h1")
+      .first()
+      .textContent()
+      .catch(() => null);
+    const h2Count = await page
+      .locator("h2")
+      .count()
+      .catch(() => 0);
+    const internalLinkCount = await page
+      .locator('a[href^="/"], a[href^="./"], a[href^="../"], a[href^="#"]')
+      .count()
+      .catch(() => 0);
+    const externalLinkCount = await page
+      .locator('a[href^="http"]')
+      .count()
+      .catch(() => 0);
+    const imageMissingAltCount = await page
+      .locator("img:not([alt]), img[alt='']")
+      .count()
+      .catch(() => 0);
     const metaDescription =
-      html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i)?.[1]
-      ?? html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i)?.[1]
-      ?? null;
+      html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i)?.[1] ??
+      html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i)?.[1] ??
+      null;
     const canonical =
-      html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i)?.[1]
-      ?? null;
-    const schemaMatches = html.match(/<script[^>]+type=["']application\/ld\+json["'][^>]*>/gi) ?? [];
-    const bodyText = await page.locator("body").innerText().catch(() => "");
+      html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i)?.[1] ?? null;
+    const schemaMatches =
+      html.match(/<script[^>]+type=["']application\/ld\+json["'][^>]*>/gi) ?? [];
+    const bodyText = await page
+      .locator("body")
+      .innerText()
+      .catch(() => "");
     const wordCount = bodyText.trim() ? bodyText.trim().split(/\s+/).length : 0;
     const tech = detectTechnologyHints(html, headers, url);
     const loadTimeMs = Date.now() - startedAt;
@@ -2643,7 +4011,9 @@ async function buildIntelligenceOverview(project: typeof intelligenceProject.$in
     }),
     db.query.intelligenceKeywordRanking.findMany({
       where: eq(intelligenceKeywordRanking.projectId, project.id),
-      orderBy: (intelligenceKeywordRanking, { desc }) => [desc(intelligenceKeywordRanking.observedAt)],
+      orderBy: (intelligenceKeywordRanking, { desc }) => [
+        desc(intelligenceKeywordRanking.observedAt),
+      ],
     }),
     db.query.intelligenceJob.findMany({
       where: eq(intelligenceJob.projectId, project.id),
@@ -2677,7 +4047,9 @@ async function buildIntelligenceOverview(project: typeof intelligenceProject.$in
     }),
     db.query.intelligenceRecommendation.findMany({
       where: eq(intelligenceRecommendation.projectId, project.id),
-      orderBy: (intelligenceRecommendation, { desc }) => [desc(intelligenceRecommendation.createdAt)],
+      orderBy: (intelligenceRecommendation, { desc }) => [
+        desc(intelligenceRecommendation.createdAt),
+      ],
       limit: 25,
     }),
     db.query.intelligenceReport.findMany({
@@ -2691,8 +4063,16 @@ async function buildIntelligenceOverview(project: typeof intelligenceProject.$in
     project: publicProjectDto(project),
     competitors: competitors.map((row) => ({ ...row, metadata: safeJsonParse(row.metadata) })),
     keywords,
-    rankings: rankings.map((row) => ({ ...row, serpFeatures: safeJsonParse(row.serpFeatures), raw: safeJsonParse(row.raw) })),
-    jobs: jobs.map((row) => ({ ...row, input: safeJsonParse(row.input), output: safeJsonParse(row.output) })),
+    rankings: rankings.map((row) => ({
+      ...row,
+      serpFeatures: safeJsonParse(row.serpFeatures),
+      raw: safeJsonParse(row.raw),
+    })),
+    jobs: jobs.map((row) => ({
+      ...row,
+      input: safeJsonParse(row.input),
+      output: safeJsonParse(row.output),
+    })),
     crawlPages: crawlPages.map((row) => ({ ...row, raw: safeJsonParse(row.raw) })),
     audits: audits.map((row) => ({ ...row, raw: safeJsonParse(row.raw) })),
     issues,
@@ -2734,7 +4114,9 @@ async function sendN8nCompetitorIntelligence(input: {
     body: JSON.stringify({
       event: "intelligence.scan.requested",
       callbackUrl: `${input.origin}/api/webhooks/intelligence/results`,
-      dataForSeoConfigured: Boolean(process.env.DATAFORSEO_LOGIN && process.env.DATAFORSEO_PASSWORD),
+      dataForSeoConfigured: Boolean(
+        process.env.DATAFORSEO_LOGIN && process.env.DATAFORSEO_PASSWORD,
+      ),
       geminiConfigured: Boolean(process.env.GEMINI_API_KEY),
       pageSpeedConfigured: Boolean(process.env.PAGESPEED_API_KEY),
       freeCrawlPages: input.freeCrawlPages ?? [],
@@ -2747,7 +4129,9 @@ async function sendN8nCompetitorIntelligence(input: {
 
   const responseText = await response.text();
   if (!response.ok) {
-    throw new Error(`n8n competitor intelligence webhook failed: ${response.status} ${responseText}`);
+    throw new Error(
+      `n8n competitor intelligence webhook failed: ${response.status} ${responseText}`,
+    );
   }
 
   try {
@@ -2760,26 +4144,28 @@ async function sendN8nCompetitorIntelligence(input: {
 function verifyIntelligenceWebhook(request: Request) {
   const expected = process.env.N8N_COMPETITOR_INTELLIGENCE_WEBHOOK_SECRET;
   if (!expected) return false;
-  const provided = request.headers.get("x-cloudmonkey-webhook-secret") ?? request.headers.get("x-cloudmonkey-secret");
+  const provided =
+    request.headers.get("x-cloudmonkey-webhook-secret") ??
+    request.headers.get("x-cloudmonkey-secret");
   return provided === expected;
 }
 
-async function sendN8nSupportChat(input: {
+async function sendN8nAdminChat(input: {
   sessionId: string;
   message: string;
+  contextType?: string | null;
+  contextId?: string | null;
+  conversationHistory: Array<Record<string, unknown>>;
   user: Record<string, unknown>;
-  context: Record<string, unknown>;
-  ragContext?: Record<string, unknown>;
-  attachments?: unknown[];
-  toolResults?: unknown[];
-  clientCapabilities?: Record<string, unknown>;
-  event?: string;
   idempotencyKey: string;
 }) {
-  const webhookUrl = process.env.N8N_SUPPORT_AGENT_WEBHOOK_URL;
-  const webhookSecret = process.env.N8N_SUPPORT_AGENT_WEBHOOK_SECRET ?? process.env.N8N_EMAIL_WEBHOOK_SECRET;
+  const webhookUrl = process.env.N8N_ADMIN_AGENT_WEBHOOK_URL;
+  const webhookSecret =
+    process.env.N8N_ADMIN_AGENT_WEBHOOK_SECRET ?? process.env.N8N_EMAIL_WEBHOOK_SECRET;
+  const cloudMonkeyApiToken =
+    process.env.CLOUDMONKEY_API_TOKEN ?? process.env.N8N_ADMIN_AGENT_WEBHOOK_SECRET;
   if (!webhookUrl || !webhookSecret) {
-    throw new Error("Support agent workflow is not configured");
+    throw new Error("Admin agent workflow is not configured");
   }
 
   const response = await fetch(webhookUrl, {
@@ -2787,29 +4173,81 @@ async function sendN8nSupportChat(input: {
     headers: {
       "Content-Type": "application/json",
       "X-CloudMonkey-Webhook-Secret": webhookSecret,
+      ...(cloudMonkeyApiToken ? { "X-CloudMonkey-API-Token": cloudMonkeyApiToken } : {}),
       "X-CloudMonkey-Idempotency-Key": input.idempotencyKey,
     },
     body: JSON.stringify({
-      event: input.event ?? "support.chat.message",
+      event: "admin.chat.message",
       ...input,
     }),
   });
 
   const responseText = await response.text();
+  console.log("n8n admin agent response status:", response.status, "body:", responseText);
   if (!response.ok) {
-    throw new Error(`n8n support agent webhook failed: ${response.status} ${responseText}`);
+    throw new Error(`n8n admin agent webhook failed: ${response.status} ${responseText}`);
   }
 
   try {
-    return normalizeSupportAgentResponse(responseText ? JSON.parse(responseText) : {});
+    return responseText ? JSON.parse(responseText) : {};
   } catch {
-    return normalizeSupportAgentResponse({
-      reply: responseText || "I could not parse the support assistant response. Please send one more detail and I will try again.",
-      createTicket: false,
-      intent: "general",
-      internalNote: "n8n support assistant returned non-JSON output",
-    });
+    return {
+      reply: responseText || "I could not parse the admin assistant response.",
+    };
   }
+}
+
+const ADMIN_CHAT_HISTORY_LIMIT = 30;
+
+async function resolveAdminChatSession(userId: string, requestedSessionId?: string | null) {
+  if (requestedSessionId) {
+    const requestedSession = await db.query.adminChatSession.findFirst({
+      where: eq(adminChatSession.id, requestedSessionId),
+    });
+    if (requestedSession) {
+      if (requestedSession.userId !== userId) {
+        return null;
+      }
+      return requestedSession;
+    }
+  }
+
+  const latestOpenSession = await db.query.adminChatSession.findFirst({
+    where: and(eq(adminChatSession.userId, userId), eq(adminChatSession.status, "open")),
+    orderBy: (adminChatSession, { desc }) => [desc(adminChatSession.updatedAt)],
+  });
+  if (latestOpenSession) {
+    return latestOpenSession;
+  }
+
+  const [createdSession] = await db
+    .insert(adminChatSession)
+    .values({
+      id: makeId("adminchat"),
+      userId,
+      status: "open",
+    })
+    .returning();
+  return createdSession;
+}
+
+async function loadAdminChatHistory(sessionId: string, limit = ADMIN_CHAT_HISTORY_LIMIT) {
+  const rows = await db.query.adminChatMessage.findMany({
+    where: eq(adminChatMessage.sessionId, sessionId),
+    orderBy: (adminChatMessage, { desc }) => [
+      desc(adminChatMessage.createdAt),
+      desc(adminChatMessage.id),
+    ],
+    limit,
+  });
+
+  return rows.reverse().map((row) => ({
+    id: row.id,
+    role: row.role,
+    body: row.body,
+    createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
+    metadata: safeJsonParse(row.metadata),
+  }));
 }
 
 type WebsiteDesignPreviewInput = {
@@ -2835,13 +4273,17 @@ type WebsiteDesignConcept = {
 };
 
 function escapeHtml(value: unknown) {
-  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    "\"": "&quot;",
-    "'": "&#39;",
-  }[char] ?? char));
+  return String(value ?? "").replace(
+    /[&<>"']/g,
+    (char) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      })[char] ?? char,
+  );
 }
 
 function sanitizeCssColor(value: unknown, fallback: string) {
@@ -2853,33 +4295,73 @@ function buildWebsitePreviewHtml(concept: WebsiteDesignConcept, input: WebsiteDe
   const businessName = input.website.businessName || input.website.name || "CloudMonkey Store";
   const siteType = input.website.siteType === "website" ? "website" : "ecommerce";
   const industry = input.website.industry || input.onboardingAnswers?.industry || "online business";
-  const domain = input.website.temporaryDomain || input.website.domain || `${String(businessName).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "store"}.cloudmonkey.co.za`;
+  const domain =
+    input.website.temporaryDomain ||
+    input.website.domain ||
+    `${
+      String(businessName)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "") || "store"
+    }.cloudmonkey.co.za`;
   const styleLabel = concept.styleLabel || "Website Concept";
-  const headline = concept.headline || (siteType === "ecommerce" ? `${businessName} online store` : `${businessName} website`);
-  const subheadline = concept.subheadline || `A complete ${industry} experience designed for discovery, trust, and conversion.`;
+  const headline =
+    concept.headline ||
+    (siteType === "ecommerce" ? `${businessName} online store` : `${businessName} website`);
+  const subheadline =
+    concept.subheadline ||
+    `A complete ${industry} experience designed for discovery, trust, and conversion.`;
   const primary = sanitizeCssColor(concept.primaryColor, "#1369e8");
   const secondary = sanitizeCssColor(concept.secondaryColor, "#10b981");
   const accent = sanitizeCssColor(concept.accentColor, "#f59e0b");
   const background = sanitizeCssColor(concept.backgroundColor, "#f6f8fc");
-  const sections = concept.sections?.length ? concept.sections.slice(0, 4) : ["Hero", "Products", "Trust", "Contact"];
+  const sections = concept.sections?.length
+    ? concept.sections.slice(0, 4)
+    : ["Hero", "Products", "Trust", "Contact"];
   const pageSections = Array.isArray(concept.designManifest?.pageSections)
     ? concept.designManifest.pageSections
     : sections;
   const productMode = siteType === "ecommerce";
-  if (productMode && (concept.designManifest?.templateKey === "fashion-retail-editorial" || concept.designManifest?.layoutPreset === "fashion-retail-editorial")) {
-    return buildFashionRetailPreviewHtml({ businessName, industry, domain, concept, headline, subheadline, primary, secondary, accent, background });
+  if (
+    productMode &&
+    (concept.designManifest?.templateKey === "fashion-retail-editorial" ||
+      concept.designManifest?.layoutPreset === "fashion-retail-editorial")
+  ) {
+    return buildFashionRetailPreviewHtml({
+      businessName,
+      industry,
+      domain,
+      concept,
+      headline,
+      subheadline,
+      primary,
+      secondary,
+      accent,
+      background,
+    });
   }
   const sampleProducts = productMode
     ? ["Signature Product", "Customer Favourite", "New Arrival"]
     : ["Strategy", "Implementation", "Support"];
-  const sectionCards = pageSections.slice(0, 4).map((section: string, index: number) => `
+  const sectionCards = pageSections
+    .slice(0, 4)
+    .map(
+      (section: string, index: number) => `
     <article class="section-card">
       <div class="section-number">0${index + 1}</div>
-      <h3>${escapeHtml(String(section).replace(/([A-Z])/g, " $1").trim())}</h3>
+      <h3>${escapeHtml(
+        String(section)
+          .replace(/([A-Z])/g, " $1")
+          .trim(),
+      )}</h3>
       <p>${productMode ? "Configured for product discovery, basket growth, and easy checkout." : "Built to explain the offer clearly and turn visitors into leads."}</p>
     </article>
-  `).join("");
-  const catalogueCards = sampleProducts.map((item, index) => `
+  `,
+    )
+    .join("");
+  const catalogueCards = sampleProducts
+    .map(
+      (item, index) => `
     <article class="product-card">
       <div class="product-image product-${index + 1}">
         <span>${productMode ? "Product" : "Service"}</span>
@@ -2893,7 +4375,9 @@ function buildWebsitePreviewHtml(concept: WebsiteDesignConcept, input: WebsiteDe
         </div>
       </div>
     </article>
-  `).join("");
+  `,
+    )
+    .join("");
 
   return `<!doctype html>
 <html>
@@ -3046,11 +4530,45 @@ function buildFashionRetailPreviewHtml(input: {
   accent: string;
   background: string;
 }) {
-  const categories = ["New Arrivals", "Women", "Men", "Trendings", "Bags", "Accessories", "Lookbook", "Footwear"];
-  const products = ["Linen Shirt", "Classic Dress", "Summer Top", "Mini Dress", "Utility Jacket", "Beach Tote", "Denim Shorts", "Fitted Top"];
-  const categoryCards = categories.map((category, index) => `<a class="cat cat-${index + 1}"><span>Shop</span><strong>${escapeHtml(category)}</strong></a>`).join("");
-  const productCards = products.map((product, index) => `<article class="product"><div class="pimg pimg-${index + 1}"></div><small>${index % 3 === 0 ? "On sale" : "New"}</small><strong>${escapeHtml(product)}</strong><span>R${[399, 549, 299, 699, 899, 459, 349, 279][index]}</span></article>`).join("");
-  const railProductCards = products.slice(0, 6).map((product, index) => `<article class="product"><div class="pimg pimg-${index + 1}"></div><small>${index % 3 === 0 ? "On sale" : "New"}</small><strong>${escapeHtml(product)}</strong><span>R${[399, 549, 299, 699, 899, 459][index]}</span></article>`).join("");
+  const categories = [
+    "New Arrivals",
+    "Women",
+    "Men",
+    "Trendings",
+    "Bags",
+    "Accessories",
+    "Lookbook",
+    "Footwear",
+  ];
+  const products = [
+    "Linen Shirt",
+    "Classic Dress",
+    "Summer Top",
+    "Mini Dress",
+    "Utility Jacket",
+    "Beach Tote",
+    "Denim Shorts",
+    "Fitted Top",
+  ];
+  const categoryCards = categories
+    .map(
+      (category, index) =>
+        `<a class="cat cat-${index + 1}"><span>Shop</span><strong>${escapeHtml(category)}</strong></a>`,
+    )
+    .join("");
+  const productCards = products
+    .map(
+      (product, index) =>
+        `<article class="product"><div class="pimg pimg-${index + 1}"></div><small>${index % 3 === 0 ? "On sale" : "New"}</small><strong>${escapeHtml(product)}</strong><span>R${[399, 549, 299, 699, 899, 459, 349, 279][index]}</span></article>`,
+    )
+    .join("");
+  const railProductCards = products
+    .slice(0, 6)
+    .map(
+      (product, index) =>
+        `<article class="product"><div class="pimg pimg-${index + 1}"></div><small>${index % 3 === 0 ? "On sale" : "New"}</small><strong>${escapeHtml(product)}</strong><span>R${[399, 549, 299, 699, 899, 459][index]}</span></article>`,
+    )
+    .join("");
   return `<!doctype html>
 <html>
 <head>
@@ -3146,7 +4664,11 @@ function buildWebsiteDesignConcepts(input: WebsiteDesignPreviewInput): WebsiteDe
       accentColor: "#f59e0b",
       backgroundColor: "#f6f8fc",
       sections: ["Hero", "Featured products", "Trust", "Contact"],
-      designManifest: { theme: "modern-premium", pageSections: ["hero", "featuredProducts", "trust", "contact"], plugins: ["cloudmonkey-paystack-gateway", "basic-seo"] },
+      designManifest: {
+        theme: "modern-premium",
+        pageSections: ["hero", "featuredProducts", "trust", "contact"],
+        plugins: ["cloudmonkey-paystack-gateway", "basic-seo"],
+      },
     },
     {
       styleLabel: "Bold Commerce",
@@ -3157,7 +4679,11 @@ function buildWebsiteDesignConcepts(input: WebsiteDesignPreviewInput): WebsiteDe
       accentColor: "#22c55e",
       backgroundColor: "#ffffff",
       sections: ["Categories", "Best sellers", "Offers", "Checkout"],
-      designManifest: { theme: "bold-commerce", pageSections: ["categories", "bestSellers", "offers", "checkout"], plugins: ["cloudmonkey-paystack-gateway"] },
+      designManifest: {
+        theme: "bold-commerce",
+        pageSections: ["categories", "bestSellers", "offers", "checkout"],
+        plugins: ["cloudmonkey-paystack-gateway"],
+      },
     },
     {
       styleLabel: "Editorial Service",
@@ -3168,7 +4694,11 @@ function buildWebsiteDesignConcepts(input: WebsiteDesignPreviewInput): WebsiteDe
       accentColor: "#f97316",
       backgroundColor: "#f8fafc",
       sections: ["Story", "Services", "Shop", "Reviews"],
-      designManifest: { theme: "editorial-service", pageSections: ["storyHero", "services", "shop", "reviews"], plugins: ["basic-seo", "whatsapp-chat"] },
+      designManifest: {
+        theme: "editorial-service",
+        pageSections: ["storyHero", "services", "shop", "reviews"],
+        plugins: ["basic-seo", "whatsapp-chat"],
+      },
     },
     {
       styleLabel: "Compact Conversion",
@@ -3179,7 +4709,11 @@ function buildWebsiteDesignConcepts(input: WebsiteDesignPreviewInput): WebsiteDe
       accentColor: "#eab308",
       backgroundColor: "#ffffff",
       sections: ["Hero", "Products", "Offers", "FAQ"],
-      designManifest: { theme: "compact-conversion", pageSections: ["hero", "products", "offers", "faq"], plugins: ["cloudmonkey-paystack-gateway", "basic-seo"] },
+      designManifest: {
+        theme: "compact-conversion",
+        pageSections: ["hero", "products", "offers", "faq"],
+        plugins: ["cloudmonkey-paystack-gateway", "basic-seo"],
+      },
     },
   ];
   if (input.website.siteType !== "website") {
@@ -3192,7 +4726,15 @@ function buildWebsiteDesignConcepts(input: WebsiteDesignPreviewInput): WebsiteDe
         secondaryColor: "#d97706",
         accentColor: "#ef4444",
         backgroundColor: "#ffffff",
-        sections: ["Hero sale", "Category mosaic", "New products", "Collections", "Hot products", "Lookbook", "Instagram"],
+        sections: [
+          "Hero sale",
+          "Category mosaic",
+          "New products",
+          "Collections",
+          "Hot products",
+          "Lookbook",
+          "Instagram",
+        ],
         designManifest: {
           templateKey: "fashion-retail-editorial",
           layoutPreset: "fashion-retail-editorial",
@@ -3201,7 +4743,21 @@ function buildWebsiteDesignConcepts(input: WebsiteDesignPreviewInput): WebsiteDe
           headline: "Summer Flash Sale",
           subheadline: `A full ecommerce homepage for ${industry} with premium product discovery and secure checkout.`,
           categories: ["New Arrivals", "Women", "Men", "Bags", "Accessories", "Footwear"],
-          pageSections: ["promoBar", "hero", "offerStrip", "categoryMosaic", "newProducts", "collections", "saleTicker", "hotProducts", "videoShoppable", "lookbook", "testimonials", "instagram", "benefits"],
+          pageSections: [
+            "promoBar",
+            "hero",
+            "offerStrip",
+            "categoryMosaic",
+            "newProducts",
+            "collections",
+            "saleTicker",
+            "hotProducts",
+            "videoShoppable",
+            "lookbook",
+            "testimonials",
+            "instagram",
+            "benefits",
+          ],
           requiredPages: REQUIRED_ECOMMERCE_PAGES.map((page) => page.slug),
           plugins: ["cloudmonkey-paystack-gateway", "basic-seo", "whatsapp-chat"],
         },
@@ -3212,7 +4768,10 @@ function buildWebsiteDesignConcepts(input: WebsiteDesignPreviewInput): WebsiteDe
   return concepts;
 }
 
-async function renderWebsiteDesignOptionsAsPng(concepts: WebsiteDesignConcept[], input: WebsiteDesignPreviewInput) {
+async function renderWebsiteDesignOptionsAsPng(
+  concepts: WebsiteDesignConcept[],
+  input: WebsiteDesignPreviewInput,
+) {
   const { chromium } = await import("playwright-core");
   const browser = await chromium.launch({
     executablePath: process.env.CHROMIUM_EXECUTABLE_PATH ?? "/usr/bin/chromium-browser",
@@ -3221,9 +4780,14 @@ async function renderWebsiteDesignOptionsAsPng(concepts: WebsiteDesignConcept[],
   try {
     const rendered = [];
     for (const [index, concept] of concepts.slice(0, 4).entries()) {
-      const page = await browser.newPage({ viewport: { width: 1200, height: 1500 }, deviceScaleFactor: 1 });
+      const page = await browser.newPage({
+        viewport: { width: 1200, height: 1500 },
+        deviceScaleFactor: 1,
+      });
       try {
-        await page.setContent(buildWebsitePreviewHtml(concept, input), { waitUntil: "networkidle" });
+        await page.setContent(buildWebsitePreviewHtml(concept, input), {
+          waitUntil: "networkidle",
+        });
         const png = await page.screenshot({ type: "png", fullPage: true });
         const imageUrl = `data:image/png;base64,${Buffer.from(png).toString("base64")}`;
         rendered.push({
@@ -3231,7 +4795,9 @@ async function renderWebsiteDesignOptionsAsPng(concepts: WebsiteDesignConcept[],
           styleLabel: concept.styleLabel || `Concept ${index + 1}`,
           imageUrl,
           thumbnailUrl: imageUrl,
-          imagePrompt: concept.imagePrompt || `${concept.styleLabel || `Concept ${index + 1}`} full website PNG preview`,
+          imagePrompt:
+            concept.imagePrompt ||
+            `${concept.styleLabel || `Concept ${index + 1}`} full website PNG preview`,
           tokenCost: Number(concept.tokenCost || 0),
           imageCost: Number(concept.imageCost || 0),
           source: concept.source || "cloudmonkey-preview-renderer",
@@ -3251,18 +4817,25 @@ async function buildFallbackWebsiteDesignOptions(input: WebsiteDesignPreviewInpu
   return renderWebsiteDesignOptionsAsPng(buildWebsiteDesignConcepts(input), input);
 }
 
-async function normalizeWebsiteDesignOptionsAsPng(options: WebsiteDesignConcept[], input: WebsiteDesignPreviewInput) {
+async function normalizeWebsiteDesignOptionsAsPng(
+  options: WebsiteDesignConcept[],
+  input: WebsiteDesignPreviewInput,
+) {
   const fallbackConcepts = buildWebsiteDesignConcepts(input);
   const concepts = options.slice(0, 4).map((option, index) => {
     const fallback = fallbackConcepts[index] ?? fallbackConcepts[0];
-    const manifest = typeof option.designManifest === "object" && option.designManifest ? option.designManifest : fallback.designManifest;
+    const manifest =
+      typeof option.designManifest === "object" && option.designManifest
+        ? option.designManifest
+        : fallback.designManifest;
     return {
       ...fallback,
       ...option,
       designManifest: manifest,
       styleLabel: option.styleLabel || fallback.styleLabel || `Concept ${index + 1}`,
       headline: option.headline || manifest?.headline || fallback.headline,
-      subheadline: option.subheadline || manifest?.subheadline || option.imagePrompt || fallback.subheadline,
+      subheadline:
+        option.subheadline || manifest?.subheadline || option.imagePrompt || fallback.subheadline,
       sections: Array.isArray(option.sections) ? option.sections : fallback.sections,
     };
   });
@@ -3290,7 +4863,11 @@ async function legacyBuildFallbackWebsiteDesignOptionsUnused(input: {
       accentColor: "#f59e0b",
       backgroundColor: "#f6f8fc",
       sections: ["Hero", "Featured products", "Trust", "Contact"],
-      designManifest: { theme: "modern-premium", pageSections: ["hero", "featuredProducts", "trust", "contact"], plugins: ["cloudmonkey-paystack-gateway", "basic-seo"] },
+      designManifest: {
+        theme: "modern-premium",
+        pageSections: ["hero", "featuredProducts", "trust", "contact"],
+        plugins: ["cloudmonkey-paystack-gateway", "basic-seo"],
+      },
     },
     {
       styleLabel: "Bold Commerce",
@@ -3301,7 +4878,11 @@ async function legacyBuildFallbackWebsiteDesignOptionsUnused(input: {
       accentColor: "#22c55e",
       backgroundColor: "#ffffff",
       sections: ["Categories", "Best sellers", "Offers", "Checkout"],
-      designManifest: { theme: "bold-commerce", pageSections: ["categories", "bestSellers", "offers", "checkout"], plugins: ["cloudmonkey-paystack-gateway"] },
+      designManifest: {
+        theme: "bold-commerce",
+        pageSections: ["categories", "bestSellers", "offers", "checkout"],
+        plugins: ["cloudmonkey-paystack-gateway"],
+      },
     },
     {
       styleLabel: "Editorial Service",
@@ -3312,7 +4893,11 @@ async function legacyBuildFallbackWebsiteDesignOptionsUnused(input: {
       accentColor: "#f97316",
       backgroundColor: "#f8fafc",
       sections: ["Story", "Services", "Shop", "Reviews"],
-      designManifest: { theme: "editorial-service", pageSections: ["storyHero", "services", "shop", "reviews"], plugins: ["basic-seo", "whatsapp-chat"] },
+      designManifest: {
+        theme: "editorial-service",
+        pageSections: ["storyHero", "services", "shop", "reviews"],
+        plugins: ["basic-seo", "whatsapp-chat"],
+      },
     },
     {
       styleLabel: "Compact Conversion",
@@ -3323,16 +4908,28 @@ async function legacyBuildFallbackWebsiteDesignOptionsUnused(input: {
       accentColor: "#eab308",
       backgroundColor: "#ffffff",
       sections: ["Hero", "Products", "Offers", "FAQ"],
-      designManifest: { theme: "compact-conversion", pageSections: ["hero", "products", "offers", "faq"], plugins: ["cloudmonkey-paystack-gateway", "basic-seo"] },
+      designManifest: {
+        theme: "compact-conversion",
+        pageSections: ["hero", "products", "offers", "faq"],
+        plugins: ["cloudmonkey-paystack-gateway", "basic-seo"],
+      },
     },
   ];
 
-  const escapeXml = (value: string) => value.replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[char] ?? char));
+  const escapeXml = (value: string) =>
+    value.replace(
+      /[&<>"]/g,
+      (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[char] ?? char,
+    );
   return concepts.map((concept, index) => {
-    const sectionCards = concept.sections.map((section, sectionIndex) => `
+    const sectionCards = concept.sections
+      .map(
+        (section, sectionIndex) => `
       <rect x="${72 + sectionIndex * 146}" y="330" width="118" height="74" rx="10" fill="white" opacity="0.92"/>
       <text x="${92 + sectionIndex * 146}" y="371" font-size="14" font-family="Inter,Arial" font-weight="700" fill="#111827">${escapeXml(section)}</text>
-    `).join("");
+    `,
+      )
+      .join("");
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760">
       <rect width="1200" height="760" fill="${concept.backgroundColor}"/>
       <rect x="56" y="48" width="1088" height="664" rx="28" fill="white" stroke="#dfe4ef"/>
@@ -3378,7 +4975,8 @@ async function sendN8nWebsiteDesignPreviews(input: {
   idempotencyKey: string;
 }) {
   const webhookUrl = process.env.N8N_WEBSITE_DESIGN_WEBHOOK_URL;
-  const webhookSecret = process.env.N8N_WEBSITE_DESIGN_WEBHOOK_SECRET ?? process.env.N8N_EMAIL_WEBHOOK_SECRET;
+  const webhookSecret =
+    process.env.N8N_WEBSITE_DESIGN_WEBHOOK_SECRET ?? process.env.N8N_EMAIL_WEBHOOK_SECRET;
   if (!webhookUrl || !webhookSecret) {
     return {
       ok: true,
@@ -3419,12 +5017,13 @@ async function sendN8nWebsiteDesignPreviews(input: {
 
   try {
     const parsed = responseText ? JSON.parse(responseText) : {};
-    const rawOptions = Array.isArray(parsed.options) && parsed.options.length
-      ? parsed.options
-      : await buildFallbackWebsiteDesignOptions({
-          website: input.website as Record<string, any>,
-          onboardingAnswers: input.onboardingAnswers as Record<string, any> | null,
-        });
+    const rawOptions =
+      Array.isArray(parsed.options) && parsed.options.length
+        ? parsed.options
+        : await buildFallbackWebsiteDesignOptions({
+            website: input.website as Record<string, any>,
+            onboardingAnswers: input.onboardingAnswers as Record<string, any> | null,
+          });
     const options = await normalizeWebsiteDesignOptionsAsPng(rawOptions, {
       website: input.website as Record<string, any>,
       onboardingAnswers: input.onboardingAnswers as Record<string, any> | null,
@@ -3448,14 +5047,24 @@ function getWebsiteDesignGenerationContext(siteType: string | null | undefined) 
     costPolicy: {
       mode: "manifest_first",
       rule: "Use Gemini for structured concepts and manifests only. CloudMonkey renders PNG screenshots from approved components with Playwright.",
-      avoid: ["full repository prompts", "raw source dumps", "per-customer app generation", "paid image generation unless explicitly requested"],
+      avoid: [
+        "full repository prompts",
+        "raw source dumps",
+        "per-customer app generation",
+        "paid image generation unless explicitly requested",
+      ],
       maxConcepts: 4,
       maxOutputTokens: 3600,
     },
     modelPolicy: {
       defaultModel: process.env.GEMINI_WEBSITE_DESIGN_MODEL ?? "gemini-2.5-pro",
       fallbackModel: process.env.GEMINI_WEBSITE_DESIGN_FALLBACK_MODEL ?? "gemini-2.5-flash",
-      useAdvancedModelFor: ["requirements synthesis", "theme direction", "component selection", "final build manifest"],
+      useAdvancedModelFor: [
+        "requirements synthesis",
+        "theme direction",
+        "component selection",
+        "final build manifest",
+      ],
       useRendererFor: ["PNG previews", "layout screenshots", "repeatable visual output"],
     },
     repositories: [
@@ -3463,18 +5072,55 @@ function getWebsiteDesignGenerationContext(siteType: string | null | undefined) 
         key: "cloudmonkey-website-template",
         type: "website",
         useWhen: "Brochure, service, booking, lead generation, portfolio, contact-heavy sites.",
-        components: ["site-header", "hero-split", "hero-centered", "service-grid", "gallery-grid", "lead-form", "reviews", "faq", "footer"],
+        components: [
+          "site-header",
+          "hero-split",
+          "hero-centered",
+          "service-grid",
+          "gallery-grid",
+          "lead-form",
+          "reviews",
+          "faq",
+          "footer",
+        ],
       },
       {
         key: "cloudmonkey-commerce-template",
         type: "ecommerce",
-        useWhen: "Stores needing products, inventory, orders, customers, checkout, POS, delivery, and payments.",
-        components: ["commerce-header", "commerce-hero", "category-grid", "product-grid", "featured-products", "cart-summary", "checkout-panel", "inventory-alerts", "reviews", "footer"],
+        useWhen:
+          "Stores needing products, inventory, orders, customers, checkout, POS, delivery, and payments.",
+        components: [
+          "commerce-header",
+          "commerce-hero",
+          "category-grid",
+          "product-grid",
+          "featured-products",
+          "cart-summary",
+          "checkout-panel",
+          "inventory-alerts",
+          "reviews",
+          "footer",
+        ],
         layoutPresets: [
           {
             key: "fashion-retail-editorial",
-            useWhen: "Fashion, apparel, accessories, beauty, lifestyle retail, boutiques, and image-led ecommerce.",
-            sections: ["promoBar", "hero", "offerStrip", "categoryMosaic", "newProducts", "collections", "saleTicker", "hotProducts", "videoShoppable", "lookbook", "testimonials", "instagram", "benefits"],
+            useWhen:
+              "Fashion, apparel, accessories, beauty, lifestyle retail, boutiques, and image-led ecommerce.",
+            sections: [
+              "promoBar",
+              "hero",
+              "offerStrip",
+              "categoryMosaic",
+              "newProducts",
+              "collections",
+              "saleTicker",
+              "hotProducts",
+              "videoShoppable",
+              "lookbook",
+              "testimonials",
+              "instagram",
+              "benefits",
+            ],
           },
         ],
       },
@@ -3482,18 +5128,171 @@ function getWebsiteDesignGenerationContext(siteType: string | null | undefined) 
         key: "cloudmonkey-plugin-registry",
         type: "plugins",
         useWhen: "Only select approved plugins from this registry.",
-        components: ["cloudmonkey-paystack-gateway", "customer-paystack-gateway", "local-delivery", "store-pickup", "whatsapp-chat", "seo-basic", "google-analytics", "facebook-pixel", "pos-basic"],
+        components: [
+          "cloudmonkey-paystack-gateway",
+          "customer-paystack-gateway",
+          "local-delivery",
+          "store-pickup",
+          "whatsapp-chat",
+          "seo-basic",
+          "google-analytics",
+          "facebook-pixel",
+          "pos-basic",
+        ],
       },
     ],
     requiredManifestShape: {
       siteType: isEcommerce ? "ecommerce" : "website",
-      templateKey: isEcommerce ? "Use approved layout preset keys such as fashion-retail-editorial when appropriate." : "Use approved website template keys.",
-      theme: ["style", "primaryColor", "secondaryColor", "accentColor", "backgroundColor", "fontPairing", "density"],
-      pages: isEcommerce ? REQUIRED_ECOMMERCE_PAGES.map((page) => page.slug) : ["slug", "template", "sections"],
+      templateKey: isEcommerce
+        ? "Use approved layout preset keys such as fashion-retail-editorial when appropriate."
+        : "Use approved website template keys.",
+      theme: [
+        "style",
+        "primaryColor",
+        "secondaryColor",
+        "accentColor",
+        "backgroundColor",
+        "fontPairing",
+        "density",
+      ],
+      pages: isEcommerce
+        ? REQUIRED_ECOMMERCE_PAGES.map((page) => page.slug)
+        : ["slug", "template", "sections"],
       plugins: "approved plugin keys only",
       notes: "short implementation notes for CloudMonkey provisioner",
     },
   };
+}
+
+function readWebsiteDesignInputs(site: typeof website.$inferSelect) {
+  const requirementManifest = safeJsonParse(site.requirementManifest);
+  if (
+    requirementManifest &&
+    typeof requirementManifest === "object" &&
+    !Array.isArray(requirementManifest)
+  ) {
+    const designInputs = (requirementManifest as Record<string, any>).designInputs;
+    if (designInputs && typeof designInputs === "object" && !Array.isArray(designInputs)) {
+      return designInputs as Record<string, any>;
+    }
+  }
+  return {};
+}
+
+function buildBasicWebsiteManifest(site: typeof website.$inferSelect) {
+  const onboardingAnswers = safeJsonParse(site.onboardingAnswers);
+  const requirementManifest = safeJsonParse(site.requirementManifest);
+  const designInputs = readWebsiteDesignInputs(site);
+  const businessName = site.businessName || site.name || "CloudMonkey Website";
+  const industry =
+    site.industry || stringValue((onboardingAnswers as any)?.industry, "business services");
+  const contentNotes = stringValue(
+    designInputs.contentNotes || (onboardingAnswers as any)?.goals || site.businessDescription,
+    `A professional ${industry} website for ${businessName}.`,
+  );
+  const mustHaveSections = listValues(
+    String(designInputs.mustHaveSections || "")
+      .split(/[,\n]/)
+      .map((item) => item.trim())
+      .filter(Boolean),
+    ["Services", "Process", "Testimonials"],
+  );
+  const uploadedAssets = Array.isArray(designInputs.assets) ? designInputs.assets : [];
+
+  return {
+    source: "admin_basic_runtime",
+    generatedAt: new Date().toISOString(),
+    templateKey: site.siteType === "ecommerce" ? "standard-commerce" : "managed-service-website",
+    theme: "cloudmonkey-basic",
+    headline: businessName,
+    subheadline: contentNotes,
+    industry,
+    targetAudience: stringValue(
+      (onboardingAnswers as any)?.targetCustomers,
+      "South African customers",
+    ),
+    tone: stringValue(designInputs.preferredStyle, "Professional, helpful and trustworthy"),
+    pageSections: mustHaveSections,
+    imagePrompt: uploadedAssets.length
+      ? `Use uploaded reference images and content to design ${businessName}`
+      : `Professional website photography for ${businessName}`,
+    uploadedAssets,
+    adminDesignInputs: designInputs,
+    requirementManifest,
+    onboardingAnswers,
+  };
+}
+
+async function sendN8nBasicWebsiteBuild(input: {
+  site: typeof website.$inferSelect;
+  store: typeof websiteStore.$inferSelect;
+  database?: typeof websiteStoreDatabase.$inferSelect | null;
+  buildManifest: Record<string, unknown>;
+  idempotencyKey: string;
+}) {
+  const webhookUrl =
+    process.env.N8N_WEBSITE_BASIC_BUILD_WEBHOOK_URL ?? process.env.N8N_WEBSITE_DEPLOY_WEBHOOK_URL;
+  const webhookSecret =
+    process.env.N8N_WEBSITE_BASIC_BUILD_WEBHOOK_SECRET ??
+    process.env.N8N_WEBSITE_DESIGN_WEBHOOK_SECRET ??
+    process.env.N8N_EMAIL_WEBHOOK_SECRET;
+  if (!webhookUrl || !webhookSecret) {
+    return { ok: true, workflow: "local-basic-manifest", buildManifest: input.buildManifest };
+  }
+
+  const response = await fetch(webhookUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CloudMonkey-Webhook-Secret": webhookSecret,
+      "X-CloudMonkey-Idempotency-Key": input.idempotencyKey,
+    },
+    body: JSON.stringify({
+      event: "website.basic_runtime.requested",
+      website: input.site,
+      store: input.store,
+      database: input.database
+        ? {
+            id: input.database.id,
+            engine: input.database.engine,
+            databaseName: input.database.databaseName,
+            containerName: input.database.containerName,
+          }
+        : null,
+      buildManifest: input.buildManifest,
+    }),
+  });
+
+  const responseText = await response.text();
+  if (!response.ok) {
+    console.error(`n8n website basic runtime webhook failed: ${response.status} ${responseText}`);
+    return {
+      ok: true,
+      workflow: "local-basic-manifest",
+      warning: `n8n website basic runtime webhook failed: ${response.status}`,
+      buildManifest: input.buildManifest,
+    };
+  }
+
+  try {
+    const parsed = responseText ? JSON.parse(responseText) : {};
+    const manifest = parsed.buildManifest || parsed.designManifest || parsed.manifest || parsed;
+    return {
+      ok: true,
+      workflow: parsed.workflow || "n8n-basic-runtime",
+      buildManifest:
+        manifest && typeof manifest === "object" && !Array.isArray(manifest)
+          ? { ...input.buildManifest, ...(manifest as Record<string, unknown>) }
+          : input.buildManifest,
+    };
+  } catch (error) {
+    return {
+      ok: true,
+      workflow: "local-basic-manifest",
+      warning: "n8n website basic runtime response was not valid JSON",
+      buildManifest: input.buildManifest,
+    };
+  }
 }
 
 const SUPPORT_RAG_DIMENSIONS = Number(process.env.SUPPORT_RAG_DIMENSIONS ?? 768);
@@ -3508,7 +5307,7 @@ function redactSupportKnowledge(value: string) {
   return value
     .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[email]")
     .replace(/\b(?:\+?\d[\d\s().-]{7,}\d)\b/g, "[phone]")
-    .replace(/\b(?:sk|pk|api|key|token|secret|password)[_\-:=\s]+[A-Za-z0-9_.\-]{8,}/gi, "[secret]")
+    .replace(/\b(?:sk|pk|api|key|token|secret|password)[_:=\s-]+[A-Za-z0-9_.-]{8,}/gi, "[secret]")
     .slice(0, 6000);
 }
 
@@ -3526,325 +5325,100 @@ async function embedSupportText(text: string, taskType: "RETRIEVAL_QUERY" | "RET
   const model = GEMINI_EMBEDDING_MODEL.startsWith("models/")
     ? GEMINI_EMBEDDING_MODEL
     : `models/${GEMINI_EMBEDDING_MODEL}`;
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/${model}:embedContent?key=${apiKey}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model,
-      content: { parts: [{ text: redactSupportKnowledge(text) }] },
-      taskType,
-      outputDimensionality: SUPPORT_RAG_DIMENSIONS,
-    }),
-  });
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/${model}:embedContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model,
+        content: { parts: [{ text: redactSupportKnowledge(text) }] },
+        taskType,
+        outputDimensionality: SUPPORT_RAG_DIMENSIONS,
+      }),
+    },
+  );
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(`Gemini embedding failed: ${response.status} ${body.error?.message ?? ""}`.trim());
+    throw new Error(
+      `Gemini embedding failed: ${response.status} ${body.error?.message ?? ""}`.trim(),
+    );
   }
   const values = body.embedding?.values ?? body.embeddings?.[0]?.values;
   return Array.isArray(values) ? values.map((value: unknown) => Number(value)) : null;
 }
 
-function summarizeDynamicSupportContext(context: Record<string, unknown>) {
-  const domains = Array.isArray(context.domains) ? context.domains : [];
-  const servers = Array.isArray(context.servers) ? context.servers : [];
-  const websites = Array.isArray(context.websites) ? context.websites : [];
-  const tickets = Array.isArray(context.tickets) ? context.tickets : [];
-  const subscriptions = Array.isArray(context.subscriptions) ? context.subscriptions : [];
-  const invoices = Array.isArray(context.invoices) ? context.invoices : [];
-  return {
-    customerAssets: {
-      domains: domains.slice(0, 8).map((row: any) => ({ id: row.id, status: row.status, expiryDate: row.expiryDate })),
-      servers: servers.slice(0, 8).map((row: any) => ({ id: row.id, label: row.label, status: row.status, region: row.region })),
-      websites: websites.slice(0, 8).map((row: any) => ({ id: row.id, domain: row.domain, status: row.status })),
-      subscriptions: subscriptions.slice(0, 8).map((row: any) => ({ id: row.id, name: row.name, status: row.status, interval: row.interval })),
-    },
-    recentSupport: tickets.slice(0, 5).map((row: any) => ({
-      id: row.id,
-      subject: row.subject,
-      status: row.status,
-      priority: row.priority,
-      category: row.category,
-      resolutionSummary: row.resolutionSummary,
-    })),
-    billing: invoices.slice(0, 5).map((row: any) => ({
-      id: row.id,
-      invoiceNumber: row.invoiceNumber,
-      status: row.status,
-      amount: row.amount,
-      currency: row.currency,
-      dueDate: row.dueDate,
-    })),
-  };
-}
+async function generateGeminiText(prompt: string, systemInstruction?: string): Promise<string> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error("Gemini API key is not configured");
 
-async function retrieveSupportKnowledge(input: {
-  userId: string;
-  message: string;
-  context: Record<string, unknown>;
-}) {
-  const dynamicContext = summarizeDynamicSupportContext(input.context);
-  const fallbackContext = {
-    memoryEnabled: Boolean(process.env.GEMINI_API_KEY),
-    retrievedKnowledge: [],
-    dynamicContext,
-    instructions: [
-      "Use retrievedKnowledge only when it matches the user's request.",
-      "Use dynamicContext for customer-specific account, billing, domain, server, website, and subscription facts.",
-      "Ask a clarifying question when confidence is low.",
-      "Do not create a support ticket for normal guidance, FAQs, product selection, read-only domain checks, or DNS explanations.",
-    ],
-  };
-
-  try {
-    const embedding = await embedSupportText(input.message, "RETRIEVAL_QUERY");
-    if (!embedding) return fallbackContext;
-    const literal = vectorLiteral(embedding);
-    const rows = await db.execute(sql`
-      SELECT
-        c."id",
-        c."chunkText",
-        c."confidence",
-        c."metadata",
-        s."title",
-        s."sourceType",
-        s."visibility",
-        1 - (c."embedding" <=> ${literal}::vector) AS "score"
-      FROM "support_knowledge_chunk" c
-      JOIN "support_knowledge_source" s ON s."id" = c."sourceId"
-      WHERE c."status" = 'active'
-        AND s."status" = 'active'
-        AND (c."userId" IS NULL OR c."userId" = ${input.userId})
-        AND (s."userId" IS NULL OR s."userId" = ${input.userId})
-      ORDER BY c."embedding" <=> ${literal}::vector
-      LIMIT ${SUPPORT_RAG_TOP_K}
-    `);
-    return {
-      ...fallbackContext,
-      retrievedKnowledge: rows.map((row: any) => ({
-        id: row.id,
-        title: row.title,
-        sourceType: row.sourceType,
-        visibility: row.visibility,
-        score: Number(row.score ?? 0),
-        confidence: row.confidence,
-        text: row.chunkText,
-        metadata: safeJsonParse(row.metadata),
-      })).filter((row: any) => row.score >= 0.45),
-    };
-  } catch (error) {
-    console.error("Support RAG retrieval failed:", error);
-    return fallbackContext;
-  }
-}
-
-function shouldCreateEmergencyFallbackTicket(message: string) {
-  const haystack = message.toLowerCase();
-  return [
-    "human",
-    "support ticket",
-    "agent",
-    "site down",
-    "website down",
-    "cannot access",
-    "can't access",
-    "payment taken",
-    "charged",
-    "security breach",
-    "hacked",
-  ].some((phrase) => haystack.includes(phrase));
-}
-
-async function storeSupportLearning(input: {
-  userId: string;
-  sessionId: string;
-  ticketId?: string | null;
-  message: string;
-  reply: string;
-  intent?: string;
-  summary?: string;
-  createTicket: boolean;
-}) {
-  if (input.createTicket || !process.env.GEMINI_API_KEY) return;
-  const reusableIntents = new Set(["billing", "signup_guidance", "domain_check", "dns_query", "onboarding", "general"]);
-  if (input.intent && !reusableIntents.has(input.intent)) return;
-
-  const summary = redactSupportKnowledge(input.summary || `Customer asked: ${input.message}\nAssistant answered: ${input.reply}`);
-  if (summary.length < 80) return;
-
-  try {
-    const embedding = await embedSupportText(summary, "RETRIEVAL_DOCUMENT");
-    if (!embedding) return;
-    const now = new Date();
-    const sourceId = makeId("ksrc");
-    const chunkId = makeId("kchunk");
-    const eventId = makeId("klearn");
-    await db.insert(supportKnowledgeSource).values({
-      id: sourceId,
-      userId: input.userId,
-      sourceType: "support_chat_summary",
-      title: `AI chat summary ${input.sessionId}`,
-      visibility: "customer",
-      status: "active",
-      metadata: JSON.stringify({ sessionId: input.sessionId, intent: input.intent ?? null }),
-      createdAt: now,
-      updatedAt: now,
-    });
-    await db.execute(sql`
-      INSERT INTO "support_knowledge_chunk"
-        ("id", "sourceId", "userId", "chunkText", "embedding", "tokenEstimate", "confidence", "status", "metadata", "createdAt", "updatedAt")
-      VALUES
-        (${chunkId}, ${sourceId}, ${input.userId}, ${summary}, ${vectorLiteral(embedding)}::vector, ${estimateTokens(summary)}, 70, 'active', ${JSON.stringify({ sessionId: input.sessionId, intent: input.intent ?? null })}, ${now}, ${now})
-    `);
-    await db.insert(supportLearningEvent).values({
-      id: eventId,
-      userId: input.userId,
-      sessionId: input.sessionId,
-      ticketId: input.ticketId ?? null,
-      sourceId,
-      eventType: "support_chat_summary",
-      summary,
-      status: "stored",
-      metadata: JSON.stringify({ intent: input.intent ?? null }),
-    });
-  } catch (error) {
-    console.error("Support learning storage failed:", error);
-  }
-}
-
-function normalizeSupportAgentResponse(input: unknown) {
-  const parsed = supportAgentResponseSchema.safeParse(input);
-  if (!parsed.success) {
-    return {
-      reply: "I could not process the support assistant response. Please send one more detail and I will try again.",
-      intent: "general" as const,
-      createTicket: false,
-      toolCalls: [],
-      suggestedActions: [],
-      internalNote: JSON.stringify(parsed.error.flatten()),
-    };
-  }
-
-  const data = parsed.data;
-  return {
-    ...data,
-    reply: data.reply ?? data.message ?? "I can help with that. Please send one more detail so I can give you the right next step.",
-    createTicket: data.createTicket ?? false,
-    toolCalls: data.toolCalls ?? [],
-    suggestedActions: data.suggestedActions ?? [],
-  };
-}
-
-async function executeSupportToolCalls(userId: string, toolCalls: z.infer<typeof supportAgentToolCallSchema>[]) {
-  const results = [];
-  for (const toolCall of toolCalls.slice(0, 4)) {
-    try {
-      if (toolCall.type === "domain_availability") {
-        results.push({ toolCall, ok: true, data: await checkDomainAvailability(toolCall.domain) });
-      } else if (toolCall.type === "owned_domains") {
-        const domains = await db.query.registeredDomain.findMany({ where: eq(registeredDomain.userId, userId) });
-        results.push({ toolCall, ok: true, data: domains });
-      } else if (toolCall.type === "domain_dns") {
-        results.push({ toolCall, ok: true, data: await fetchOwnedDomainDns(userId, toolCall.domain) });
-      } else if (toolCall.type === "domain_info") {
-        results.push({ toolCall, ok: true, data: await fetchOwnedDomainInfo(userId, toolCall.domain) });
-      }
-    } catch (error) {
-      results.push({
-        toolCall,
-        ok: false,
-        error: error instanceof Error ? error.message : "Tool execution failed",
-      });
-    }
-  }
-  return results;
-}
-
-async function getSupportCrmContext(userId: string) {
-  const [domains, servers, sites, tickets, subs, invoices] = await Promise.all([
-    db.query.registeredDomain.findMany({ where: eq(registeredDomain.userId, userId) }),
-    db.query.vultrInstance.findMany({ where: eq(vultrInstance.userId, userId) }),
-    db.query.website.findMany({ where: eq(website.userId, userId) }),
-    db.query.supportTicket.findMany({ where: eq(supportTicket.userId, userId), orderBy: (supportTicket, { desc }) => [desc(supportTicket.updatedAt)] }),
-    db.query.subscription.findMany({ where: eq(subscription.userId, userId), orderBy: (subscription, { desc }) => [desc(subscription.updatedAt)] }),
-    db.query.invoice.findMany({ where: eq(invoice.userId, userId), orderBy: (invoice, { desc }) => [desc(invoice.createdAt)] }),
-  ]);
-  return {
-    domains,
-    servers,
-    websites: sites,
-    tickets: tickets.slice(0, 10),
-    subscriptions: subs,
-    invoices: invoices.filter((row) => row.status !== "void").slice(0, 10),
-  };
-}
-
-async function tryRegisterPaidDomainOrder(order: typeof domainOrder.$inferSelect, requestUrl: string) {
-  const domainName = order.domainName.toLowerCase();
-  const apiKey = process.env.DOMAINS_CO_ZA_API_KEY;
-  const registerUrl = process.env.DOMAINS_CO_ZA_REGISTER_URL;
-
-  if (!apiKey || !registerUrl) {
-    await createDomainRegistrationTicket(order, "Domains API registration endpoint is not configured", requestUrl);
-    return;
-  }
-
-  try {
-    const response = await fetch(registerUrl, {
+  const model = "gemini-2.5-flash";
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ key: apiKey, domain: domainName, orderId: order.id }),
-    });
-    const text = await response.text();
-    if (!response.ok) throw new Error(`Domains API returned ${response.status}: ${text}`);
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        ...(systemInstruction
+          ? { systemInstruction: { parts: [{ text: systemInstruction }] } }
+          : {}),
+      }),
+    },
+  );
 
-    await db.transaction(async (tx) => {
-      await tx.insert(registeredDomain).values({
-        id: domainName,
-        userId: order.userId,
-        status: "active",
-        expiryDate: null,
-      }).onConflictDoUpdate({
-        target: registeredDomain.id,
-        set: {
-          userId: order.userId,
-          status: "active",
-          updatedAt: new Date(),
-        },
-      });
-      await tx.update(domainOrder).set({
-        status: "registered",
-        providerResponse: text,
-        registeredAt: new Date(),
-        updatedAt: new Date(),
-      }).where(eq(domainOrder.id, order.id));
-    });
-  } catch (error: any) {
-    await db.update(domainOrder).set({
-      status: "registration_failed",
-      providerError: error.message,
-      updatedAt: new Date(),
-    }).where(eq(domainOrder.id, order.id));
-    await createDomainRegistrationTicket(order, error.message, requestUrl);
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(`Gemini generation failed: ${response.status} ${body.error?.message ?? ""}`);
   }
+
+  const text = body.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error("No text returned from Gemini");
+  return text;
 }
 
-async function createDomainRegistrationTicket(order: typeof domainOrder.$inferSelect, errorMessage: string, requestUrl: string) {
+async function tryRegisterPaidDomainOrder(
+  order: typeof domainOrder.$inferSelect,
+  requestUrl: string,
+) {
+  return registerPaidDomainOrder(
+    {
+      db,
+      makeId,
+      recordAudit,
+      registeredDomain,
+      domainOrder,
+      supportTicket,
+    },
+    order,
+    requestUrl,
+  );
+}
+
+async function createDomainRegistrationTicket(
+  order: typeof domainOrder.$inferSelect,
+  errorMessage: string,
+  requestUrl: string,
+) {
   const existing = await db.query.supportTicket.findFirst({
     where: eq(supportTicket.aiSessionId, `domain-order:${order.id}`),
   });
   if (existing) return existing;
 
-  const [created] = await db.insert(supportTicket).values({
-    id: makeId("ticket"),
-    userId: order.userId,
-    subject: `Domain registration follow-up: ${order.domainName}`,
-    description: `Domain order ${order.id} was paid but needs manual registration follow-up.\n\n${errorMessage}`,
-    priority: "high",
-    status: "open",
-    category: "domains",
-    source: "system",
-    aiSessionId: `domain-order:${order.id}`,
-  }).returning();
+  const [created] = await db
+    .insert(supportTicket)
+    .values({
+      id: makeId("ticket"),
+      userId: order.userId,
+      subject: `Domain registration follow-up: ${order.domainName}`,
+      description: `Domain order ${order.id} was paid but needs manual registration follow-up.\n\n${errorMessage}`,
+      priority: "high",
+      status: "open",
+      category: "domains",
+      source: "system",
+      aiSessionId: `domain-order:${order.id}`,
+    })
+    .returning();
 
   await recordAudit({
     action: "domain.registration_followup.created",
@@ -3864,204 +5438,6 @@ async function getServerEntry(): Promise<ServerEntry> {
     );
   }
   return serverEntryPromise;
-}
-
-async function handlePaystackWebhook(request: Request): Promise<Response> {
-  if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
-
-  const signature = request.headers.get("x-paystack-signature");
-  if (!signature) return new Response("Missing signature", { status: 400 });
-
-  const secret = process.env.PAYSTACK_SECRET_KEY;
-  if (!secret) return new Response("Paystack is not configured", { status: 503 });
-
-  const bodyText = await request.text();
-  const hash = crypto.createHmac("sha512", secret).update(bodyText).digest("hex");
-
-  if (hash !== signature) {
-    console.error("Invalid Paystack signature");
-    return new Response("Invalid signature", { status: 400 });
-  }
-
-  try {
-    const event = JSON.parse(bodyText);
-    console.log("Paystack Event Received:", event.event);
-
-    if (event.event === "charge.success") {
-      const data = event.data;
-      const invoiceId = data.metadata?.invoice_id
-        ?? data.metadata?.custom_fields?.find((f: any) => f.variable_name === "invoice_id")?.value;
-
-      if (invoiceId) {
-        const existingInvoice = await db.query.invoice.findFirst({
-          where: eq(invoice.id, invoiceId),
-        });
-
-        if (existingInvoice) {
-          if (existingInvoice.status !== "paid") {
-            await db.update(invoice).set({
-              status: "paid",
-              paidAt: new Date(),
-              updatedAt: new Date(),
-            }).where(eq(invoice.id, invoiceId));
-          }
-
-          const existingSubscription = await db.query.subscription.findFirst({
-            where: eq(subscription.id, invoiceId),
-          });
-
-          if (existingSubscription) {
-            await db.update(subscription).set({
-              status: "active",
-              updatedAt: new Date(),
-              currentPeriodStart: new Date(),
-            }).where(eq(subscription.id, invoiceId));
-          }
-
-          await createAffiliateCommissionForPayment({
-            invoiceId,
-            customerId: existingInvoice.userId,
-            amount: existingInvoice.amount,
-            subscriptionId: existingSubscription?.id ?? invoiceId,
-            paymentId: data.reference ?? invoiceId,
-          });
-
-          await recordAudit({
-            action: "subscription.activated",
-            entityType: "subscription",
-            entityId: invoiceId,
-            message: `Subscription activated after Paystack payment for invoice ${invoiceId}`,
-            metadata: { reference: data.reference, invoiceId },
-          });
-          const existingUser = await db.query.user.findFirst({ where: eq(user.id, existingInvoice.userId) });
-          if (existingUser?.email && existingSubscription) {
-            sendEmail({
-              template: "payment_received",
-              to: existingUser.email,
-              subject: `Payment received for ${existingSubscription.name}`,
-              data: {
-                firstName: existingUser.name,
-                productName: existingSubscription.name,
-                subscriptionName: existingSubscription.name,
-                totalDue: formatEmailMoney(existingInvoice.amount, existingInvoice.currency ?? "ZAR"),
-                primaryCtaText: "Open dashboard",
-                primaryCtaUrl: `${new URL(request.url).origin}/dashboard`,
-              },
-              idempotencyKey: `payment:${invoiceId}:received`,
-            }).catch((error) => console.error("Payment receipt email failed:", error));
-          }
-          const paidDomainOrder = await db.query.domainOrder.findFirst({
-            where: eq(domainOrder.invoiceId, invoiceId),
-          });
-          if (paidDomainOrder && !["registered", "registration_failed"].includes(paidDomainOrder.status)) {
-            await db.update(domainOrder).set({
-              status: "paid",
-              updatedAt: new Date(),
-            }).where(eq(domainOrder.id, paidDomainOrder.id));
-            tryRegisterPaidDomainOrder(paidDomainOrder, request.url).catch((error) => {
-              console.error("Domain registration follow-up failed:", error);
-            });
-          }
-          console.log(`Invoice ${invoiceId} marked as paid and subscription activated.`);
-        }
-      }
-    }
-
-    return new Response("Webhook received", { status: 200 });
-  } catch (error) {
-    console.error("Webhook processing error:", error);
-    return new Response("Internal error", { status: 500 });
-  }
-}
-
-async function handleDomainsCheck(request: Request): Promise<Response> {
-  const url = new URL(request.url);
-  const domain = url.searchParams.get("domain");
-
-  if (!domain) {
-    return new Response(JSON.stringify({ error: "Domain parameter is required" }), { status: 400, headers: { "Content-Type": "application/json" } });
-  }
-
-  const parts = domain.split(".");
-  if (parts.length < 2) {
-    return new Response(JSON.stringify({ error: "Invalid domain format" }), { status: 400, headers: { "Content-Type": "application/json" } });
-  }
-
-  const sld = parts[0];
-  const tld = parts.slice(1).join(".");
-
-  const apiKey = process.env.DOMAINS_CO_ZA_API_KEY;
-  if (!apiKey || apiKey === "your_domains_co_za_key") {
-    return json({ error: "Domain availability is not configured" }, 503);
-  }
-
-  try {
-    const response = await fetch(`https://api.domains.co.za/api/domain/check?sld=${sld}&tld=${tld}&key=${apiKey}`);
-
-    if (!response.ok) {
-      throw new Error(`Domains API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return new Response(JSON.stringify(data), { headers: { "Content-Type": "application/json" } });
-  } catch (error) {
-    console.error("Domains API error:", error);
-    return new Response(JSON.stringify({ error: "Failed to check domain" }), { status: 500, headers: { "Content-Type": "application/json" } });
-  }
-}
-
-function splitDomainName(domain: string) {
-  const value = domain.trim().toLowerCase();
-  const parts = value.split(".").filter(Boolean);
-  if (parts.length < 2) {
-    throw Object.assign(new Error("Invalid domain format"), { status: 400 });
-  }
-  return { domain: value, sld: parts[0], tld: parts.slice(1).join(".") };
-}
-
-async function checkDomainAvailability(domain: string) {
-  const { domain: normalizedDomain, sld, tld } = splitDomainName(domain);
-  const apiKey = process.env.DOMAINS_CO_ZA_API_KEY;
-  if (!apiKey || apiKey === "your_domains_co_za_key") {
-    throw Object.assign(new Error("Domain availability is not configured"), { status: 503 });
-  }
-
-  const response = await fetch(`https://api.domains.co.za/api/domain/check?sld=${encodeURIComponent(sld)}&tld=${encodeURIComponent(tld)}&key=${apiKey}`);
-  if (!response.ok) throw new Error(`Domains API error: ${response.status}`);
-  const data = await response.json();
-  return { domain: normalizedDomain, result: data };
-}
-
-async function fetchOwnedDomainDns(userId: string, domain: string) {
-  const { domain: normalizedDomain, sld, tld } = splitDomainName(domain);
-  const ownership = await db.query.registeredDomain.findFirst({
-    where: eq(registeredDomain.id, normalizedDomain),
-  });
-  if (!ownership || ownership.userId !== userId) {
-    throw Object.assign(new Error("Domain is not assigned to this account"), { status: 403 });
-  }
-
-  const apiKey = process.env.DOMAINS_CO_ZA_API_KEY;
-  if (!apiKey) throw Object.assign(new Error("Domains API is not configured"), { status: 503 });
-  const response = await fetch(`https://api.domains.co.za/api/domain/dns?sld=${encodeURIComponent(sld)}&tld=${encodeURIComponent(tld)}&key=${apiKey}`);
-  if (!response.ok) throw new Error(`Domains DNS API error: ${response.status}`);
-  return { domain: normalizedDomain, result: await response.json() };
-}
-
-async function fetchOwnedDomainInfo(userId: string, domain: string) {
-  const { domain: normalizedDomain, sld, tld } = splitDomainName(domain);
-  const ownership = await db.query.registeredDomain.findFirst({
-    where: eq(registeredDomain.id, normalizedDomain),
-  });
-  if (!ownership || ownership.userId !== userId) {
-    throw Object.assign(new Error("Domain is not assigned to this account"), { status: 403 });
-  }
-
-  const apiKey = process.env.DOMAINS_CO_ZA_API_KEY;
-  if (!apiKey) throw Object.assign(new Error("Domains API is not configured"), { status: 503 });
-  const response = await fetch(`https://api.domains.co.za/api/domain/info?sld=${encodeURIComponent(sld)}&tld=${encodeURIComponent(tld)}&key=${apiKey}`);
-  if (!response.ok) throw new Error(`Domains info API error: ${response.status}`);
-  return { domain: normalizedDomain, result: await response.json() };
 }
 
 type ProviderDomain = {
@@ -4118,13 +5494,14 @@ function getDomainNameFromProvider(item: any) {
 }
 
 function normalizeProviderDomains(payload: any): ProviderDomain[] {
-  const candidates = [
-    payload?.arrDomains,
-    payload?.domains,
-    payload?.data,
-    payload?.items,
-    Array.isArray(payload) ? payload : null,
-  ].find(Array.isArray) ?? [];
+  const candidates =
+    [
+      payload?.arrDomains,
+      payload?.domains,
+      payload?.data,
+      payload?.items,
+      Array.isArray(payload) ? payload : null,
+    ].find(Array.isArray) ?? [];
 
   return candidates
     .map((item: any) => {
@@ -4134,31 +5511,32 @@ function normalizeProviderDomains(payload: any): ProviderDomain[] {
       return {
         domainName,
         status: firstString(item?.status, item?.strStatus, item?.domainStatus),
-        expiryDate: parseProviderDate(item?.expiryDate ?? item?.expiresAt ?? item?.intExDate ?? item?.expiry ?? item?.renewalDate),
+        expiryDate: parseProviderDate(
+          item?.expiryDate ??
+            item?.expiresAt ??
+            item?.intExDate ??
+            item?.expiry ??
+            item?.renewalDate,
+        ),
         raw: item,
       };
     })
     .filter((item): item is ProviderDomain => !!item);
 }
 
-function getAssignedUserMap<T extends { id: string; userId: string }>(rows: T[], key: (row: T) => string) {
+function getAssignedUserMap<T extends { id: string; userId: string }>(
+  rows: T[],
+  key: (row: T) => string,
+) {
   return new Map(rows.map((row) => [key(row), row]));
 }
 
-function getAgentConfig() {
-  return {
-    heartbeatIntervalSeconds: 60,
-    snapshotIntervalSeconds: 300,
-    dockerEnabled: true,
-    websiteDiscoveryEnabled: true,
-    securityScanEnabled: true,
-  };
-}
-
 function getRemoteIp(request: Request) {
-  return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
-    ?? request.headers.get("x-real-ip")
-    ?? null;
+  return (
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    request.headers.get("x-real-ip") ??
+    null
+  );
 }
 
 function toJsonText(value: unknown) {
@@ -4171,7 +5549,9 @@ function toDateOrNull(value: string | null | undefined) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-async function persistIntelligenceWebhookResult(body: z.infer<typeof intelligenceWebhookResultSchema>) {
+async function persistIntelligenceWebhookResult(
+  body: z.infer<typeof intelligenceWebhookResultSchema>,
+) {
   const job = await db.query.intelligenceJob.findFirst({
     where: eq(intelligenceJob.id, body.jobId),
   });
@@ -4194,7 +5574,11 @@ async function persistIntelligenceWebhookResult(body: z.infer<typeof intelligenc
   const competitorByUrl = new Map(existingCompetitors.map((row) => [row.websiteUrl, row]));
 
   for (const competitorInput of body.competitors) {
-    const existing = competitorByUrl.get(competitorInput.websiteUrl) ?? (competitorInput.id ? existingCompetitors.find((row) => row.id === competitorInput.id) : null);
+    const existing =
+      competitorByUrl.get(competitorInput.websiteUrl) ??
+      (competitorInput.id
+        ? existingCompetitors.find((row) => row.id === competitorInput.id)
+        : null);
     const values = {
       name: competitorInput.name,
       websiteUrl: competitorInput.websiteUrl,
@@ -4207,15 +5591,24 @@ async function persistIntelligenceWebhookResult(body: z.infer<typeof intelligenc
       updatedAt: now,
     };
     if (existing) {
-      await db.update(intelligenceCompetitor).set(values).where(eq(intelligenceCompetitor.id, existing.id));
+      await db
+        .update(intelligenceCompetitor)
+        .set(values)
+        .where(eq(intelligenceCompetitor.id, existing.id));
       competitorIds.add(existing.id);
     } else {
-      const [created] = await db.insert(intelligenceCompetitor).values({
-        id: competitorInput.id && !competitorIds.has(competitorInput.id) ? competitorInput.id : makeId("intelcomp"),
-        projectId: project.id,
-        userId: project.userId,
-        ...values,
-      }).returning();
+      const [created] = await db
+        .insert(intelligenceCompetitor)
+        .values({
+          id:
+            competitorInput.id && !competitorIds.has(competitorInput.id)
+              ? competitorInput.id
+              : makeId("intelcomp"),
+          projectId: project.id,
+          userId: project.userId,
+          ...values,
+        })
+        .returning();
       competitorIds.add(created.id);
       competitorByUrl.set(created.websiteUrl, created);
     }
@@ -4227,161 +5620,182 @@ async function persistIntelligenceWebhookResult(body: z.infer<typeof intelligenc
   const keywordIds = new Set(existingKeywords.map((row) => row.id));
 
   if (body.rankings.length) {
-    await db.insert(intelligenceKeywordRanking).values(body.rankings.map((row) => ({
-      id: makeId("intelrank"),
-      projectId: project.id,
-      userId: project.userId,
-      keywordId: row.keywordId && keywordIds.has(row.keywordId) ? row.keywordId : null,
-      competitorId: row.competitorId && competitorIds.has(row.competitorId) ? row.competitorId : null,
-      keyword: row.keyword,
-      target: row.target ?? "primary",
-      rank: row.rank ?? null,
-      previousRank: row.previousRank ?? null,
-      bestRank: row.bestRank ?? null,
-      searchVolume: row.searchVolume ?? null,
-      difficulty: row.difficulty ?? null,
-      opportunity: row.opportunity ?? null,
-      serpFeatures: toJsonText(row.serpFeatures),
-      raw: toJsonText(row.raw),
-      observedAt: toDateOrNull(row.observedAt) ?? now,
-    })));
+    await db.insert(intelligenceKeywordRanking).values(
+      body.rankings.map((row) => ({
+        id: makeId("intelrank"),
+        projectId: project.id,
+        userId: project.userId,
+        keywordId: row.keywordId && keywordIds.has(row.keywordId) ? row.keywordId : null,
+        competitorId:
+          row.competitorId && competitorIds.has(row.competitorId) ? row.competitorId : null,
+        keyword: row.keyword,
+        target: row.target ?? "primary",
+        rank: row.rank ?? null,
+        previousRank: row.previousRank ?? null,
+        bestRank: row.bestRank ?? null,
+        searchVolume: row.searchVolume ?? null,
+        difficulty: row.difficulty ?? null,
+        opportunity: row.opportunity ?? null,
+        serpFeatures: toJsonText(row.serpFeatures),
+        raw: toJsonText(row.raw),
+        observedAt: toDateOrNull(row.observedAt) ?? now,
+      })),
+    );
   }
 
   if (body.crawlPages.length) {
-    await db.insert(intelligenceCrawlPage).values(body.crawlPages.map((row) => ({
-      id: makeId("intelpage"),
-      projectId: project.id,
-      jobId: job.id,
-      userId: project.userId,
-      competitorId: row.competitorId && competitorIds.has(row.competitorId) ? row.competitorId : null,
-      url: row.url,
-      target: row.target ?? "primary",
-      httpStatus: row.httpStatus ?? null,
-      title: row.title ?? null,
-      metaDescription: row.metaDescription ?? null,
-      h1: row.h1 ?? null,
-      h2Count: row.h2Count ?? 0,
-      wordCount: row.wordCount ?? 0,
-      internalLinkCount: row.internalLinkCount ?? 0,
-      externalLinkCount: row.externalLinkCount ?? 0,
-      imageMissingAltCount: row.imageMissingAltCount ?? 0,
-      hasCanonical: row.hasCanonical ?? false,
-      hasSchema: row.hasSchema ?? false,
-      loadTimeMs: row.loadTimeMs ?? null,
-      screenshotUrl: row.screenshotUrl ?? null,
-      raw: toJsonText(row.raw),
-      observedAt: toDateOrNull(row.observedAt) ?? now,
-    })));
+    await db.insert(intelligenceCrawlPage).values(
+      body.crawlPages.map((row) => ({
+        id: makeId("intelpage"),
+        projectId: project.id,
+        jobId: job.id,
+        userId: project.userId,
+        competitorId:
+          row.competitorId && competitorIds.has(row.competitorId) ? row.competitorId : null,
+        url: row.url,
+        target: row.target ?? "primary",
+        httpStatus: row.httpStatus ?? null,
+        title: row.title ?? null,
+        metaDescription: row.metaDescription ?? null,
+        h1: row.h1 ?? null,
+        h2Count: row.h2Count ?? 0,
+        wordCount: row.wordCount ?? 0,
+        internalLinkCount: row.internalLinkCount ?? 0,
+        externalLinkCount: row.externalLinkCount ?? 0,
+        imageMissingAltCount: row.imageMissingAltCount ?? 0,
+        hasCanonical: row.hasCanonical ?? false,
+        hasSchema: row.hasSchema ?? false,
+        loadTimeMs: row.loadTimeMs ?? null,
+        screenshotUrl: row.screenshotUrl ?? null,
+        raw: toJsonText(row.raw),
+        observedAt: toDateOrNull(row.observedAt) ?? now,
+      })),
+    );
   }
 
   const auditIds = new Set<string>();
   if (body.audits.length) {
     for (const row of body.audits) {
-      const [created] = await db.insert(intelligenceSeoAudit).values({
-        id: makeId("intelaudit"),
-        projectId: project.id,
-        jobId: job.id,
-        userId: project.userId,
-        target: row.target ?? "primary",
-        targetUrl: row.targetUrl,
-        technicalScore: row.technicalScore ?? 0,
-        contentScore: row.contentScore ?? 0,
-        localScore: row.localScore ?? 0,
-        performanceScore: row.performanceScore ?? 0,
-        aiReadinessScore: row.aiReadinessScore ?? 0,
-        summary: row.summary ?? null,
-        raw: toJsonText(row.raw),
-      }).returning();
+      const [created] = await db
+        .insert(intelligenceSeoAudit)
+        .values({
+          id: makeId("intelaudit"),
+          projectId: project.id,
+          jobId: job.id,
+          userId: project.userId,
+          target: row.target ?? "primary",
+          targetUrl: row.targetUrl,
+          technicalScore: row.technicalScore ?? 0,
+          contentScore: row.contentScore ?? 0,
+          localScore: row.localScore ?? 0,
+          performanceScore: row.performanceScore ?? 0,
+          aiReadinessScore: row.aiReadinessScore ?? 0,
+          summary: row.summary ?? null,
+          raw: toJsonText(row.raw),
+        })
+        .returning();
       auditIds.add(created.id);
     }
   }
 
   if (body.issues.length) {
-    await db.insert(intelligencePageIssue).values(body.issues.map((row) => ({
-      id: makeId("intelissue"),
-      projectId: project.id,
-      userId: project.userId,
-      auditId: row.auditId && auditIds.has(row.auditId) ? row.auditId : null,
-      crawlPageId: null,
-      category: row.category,
-      severity: row.severity ?? "medium",
-      title: row.title,
-      description: row.description ?? null,
-      recommendation: row.recommendation ?? null,
-      sourceUrl: row.sourceUrl ?? null,
-      status: row.status ?? "open",
-    })));
+    await db.insert(intelligencePageIssue).values(
+      body.issues.map((row) => ({
+        id: makeId("intelissue"),
+        projectId: project.id,
+        userId: project.userId,
+        auditId: row.auditId && auditIds.has(row.auditId) ? row.auditId : null,
+        crawlPageId: null,
+        category: row.category,
+        severity: row.severity ?? "medium",
+        title: row.title,
+        description: row.description ?? null,
+        recommendation: row.recommendation ?? null,
+        sourceUrl: row.sourceUrl ?? null,
+        status: row.status ?? "open",
+      })),
+    );
   }
 
   if (body.contentGaps.length) {
-    await db.insert(intelligenceContentGap).values(body.contentGaps.map((row) => ({
-      id: makeId("intelgap"),
-      projectId: project.id,
-      userId: project.userId,
-      competitorId: row.competitorId && competitorIds.has(row.competitorId) ? row.competitorId : null,
-      gapType: row.gapType,
-      title: row.title,
-      description: row.description ?? null,
-      opportunity: row.opportunity ?? "medium",
-      sourceUrl: row.sourceUrl ?? null,
-      suggestedAction: row.suggestedAction ?? null,
-      status: row.status ?? "open",
-    })));
+    await db.insert(intelligenceContentGap).values(
+      body.contentGaps.map((row) => ({
+        id: makeId("intelgap"),
+        projectId: project.id,
+        userId: project.userId,
+        competitorId:
+          row.competitorId && competitorIds.has(row.competitorId) ? row.competitorId : null,
+        gapType: row.gapType,
+        title: row.title,
+        description: row.description ?? null,
+        opportunity: row.opportunity ?? "medium",
+        sourceUrl: row.sourceUrl ?? null,
+        suggestedAction: row.suggestedAction ?? null,
+        status: row.status ?? "open",
+      })),
+    );
   }
 
   if (body.serpResults.length) {
-    await db.insert(intelligenceSerpResult).values(body.serpResults.map((row) => ({
-      id: makeId("intelserp"),
-      projectId: project.id,
-      userId: project.userId,
-      keywordId: row.keywordId && keywordIds.has(row.keywordId) ? row.keywordId : null,
-      keyword: row.keyword,
-      location: row.location ?? null,
-      device: row.device ?? null,
-      resultUrl: row.resultUrl ?? null,
-      resultTitle: row.resultTitle ?? null,
-      domain: row.domain ?? null,
-      rank: row.rank ?? null,
-      resultType: row.resultType ?? "organic",
-      hasAds: row.hasAds ?? false,
-      hasMapPack: row.hasMapPack ?? false,
-      hasAiOverview: row.hasAiOverview ?? false,
-      raw: toJsonText(row.raw),
-      observedAt: toDateOrNull(row.observedAt) ?? now,
-    })));
+    await db.insert(intelligenceSerpResult).values(
+      body.serpResults.map((row) => ({
+        id: makeId("intelserp"),
+        projectId: project.id,
+        userId: project.userId,
+        keywordId: row.keywordId && keywordIds.has(row.keywordId) ? row.keywordId : null,
+        keyword: row.keyword,
+        location: row.location ?? null,
+        device: row.device ?? null,
+        resultUrl: row.resultUrl ?? null,
+        resultTitle: row.resultTitle ?? null,
+        domain: row.domain ?? null,
+        rank: row.rank ?? null,
+        resultType: row.resultType ?? "organic",
+        hasAds: row.hasAds ?? false,
+        hasMapPack: row.hasMapPack ?? false,
+        hasAiOverview: row.hasAiOverview ?? false,
+        raw: toJsonText(row.raw),
+        observedAt: toDateOrNull(row.observedAt) ?? now,
+      })),
+    );
   }
 
   if (body.recommendations.length) {
-    await db.insert(intelligenceRecommendation).values(body.recommendations.map((row) => ({
-      id: makeId("intelrec"),
-      projectId: project.id,
-      userId: project.userId,
-      title: row.title,
-      description: row.description ?? null,
-      category: row.category ?? "seo",
-      priority: row.priority ?? "medium",
-      impact: row.impact ?? "medium",
-      effort: row.effort ?? "medium",
-      sourceType: row.sourceType ?? null,
-      sourceId: row.sourceId ?? null,
-      status: row.status ?? "open",
-    })));
+    await db.insert(intelligenceRecommendation).values(
+      body.recommendations.map((row) => ({
+        id: makeId("intelrec"),
+        projectId: project.id,
+        userId: project.userId,
+        title: row.title,
+        description: row.description ?? null,
+        category: row.category ?? "seo",
+        priority: row.priority ?? "medium",
+        impact: row.impact ?? "medium",
+        effort: row.effort ?? "medium",
+        sourceType: row.sourceType ?? null,
+        sourceId: row.sourceId ?? null,
+        status: row.status ?? "open",
+      })),
+    );
   }
 
   let report = null;
   if (body.report) {
-    const [created] = await db.insert(intelligenceReport).values({
-      id: makeId("intelreport"),
-      projectId: project.id,
-      jobId: job.id,
-      userId: project.userId,
-      title: body.report.title ?? `${project.businessName} Competitor Intelligence Report`,
-      status: body.report.status ?? "published",
-      executiveSummary: body.report.executiveSummary ?? null,
-      insightPacket: toJsonText(body.report.insightPacket),
-      reportJson: toJsonText(body.report.reportJson),
-      pdfUrl: body.report.pdfUrl ?? null,
-    }).returning();
+    const [created] = await db
+      .insert(intelligenceReport)
+      .values({
+        id: makeId("intelreport"),
+        projectId: project.id,
+        jobId: job.id,
+        userId: project.userId,
+        title: body.report.title ?? `${project.businessName} Competitor Intelligence Report`,
+        status: body.report.status ?? "published",
+        executiveSummary: body.report.executiveSummary ?? null,
+        insightPacket: toJsonText(body.report.insightPacket),
+        reportJson: toJsonText(body.report.reportJson),
+        pdfUrl: body.report.pdfUrl ?? null,
+      })
+      .returning();
     report = created;
   }
 
@@ -4389,31 +5803,46 @@ async function persistIntelligenceWebhookResult(body: z.infer<typeof intelligenc
     Object.entries(body.scores).filter(([, value]) => typeof value === "number"),
   ) as Partial<typeof intelligenceProject.$inferInsert>;
 
-  const [updatedProject] = await db.update(intelligenceProject).set({
-    ...scoreUpdate,
-    status: body.status === "completed" ? "active" : project.status,
-    lastScanStatus: body.status,
-    lastScanAt: body.status === "completed" ? now : project.lastScanAt,
-    updatedAt: now,
-  }).where(eq(intelligenceProject.id, project.id)).returning();
+  const [updatedProject] = await db
+    .update(intelligenceProject)
+    .set({
+      ...scoreUpdate,
+      status: body.status === "completed" ? "active" : project.status,
+      lastScanStatus: body.status,
+      lastScanAt: body.status === "completed" ? now : project.lastScanAt,
+      updatedAt: now,
+    })
+    .where(eq(intelligenceProject.id, project.id))
+    .returning();
 
-  const [updatedJob] = await db.update(intelligenceJob).set({
-    status: body.status,
-    externalRunId: body.externalRunId ?? job.externalRunId,
-    error: body.error ?? null,
-    output: JSON.stringify(body),
-    startedAt: job.startedAt ?? now,
-    completedAt: ["completed", "failed", "cancelled"].includes(body.status) ? now : null,
-    updatedAt: now,
-  }).where(eq(intelligenceJob.id, job.id)).returning();
+  const [updatedJob] = await db
+    .update(intelligenceJob)
+    .set({
+      status: body.status,
+      externalRunId: body.externalRunId ?? job.externalRunId,
+      error: body.error ?? null,
+      output: JSON.stringify(body),
+      startedAt: job.startedAt ?? now,
+      completedAt: ["completed", "failed", "cancelled"].includes(body.status) ? now : null,
+      updatedAt: now,
+    })
+    .where(eq(intelligenceJob.id, job.id))
+    .returning();
 
   return { project: updatedProject, job: updatedJob, report };
 }
 
 function normalizeDomain(value: string | null | undefined) {
   if (!value) return null;
-  const trimmed = value.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").split(/[/?#]/)[0];
-  return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/.test(trimmed)
+  const trimmed = value
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .split(/[/?#]/)[0];
+  return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/.test(
+    trimmed,
+  )
     ? trimmed
     : null;
 }
@@ -4421,7 +5850,9 @@ function normalizeDomain(value: string | null | undefined) {
 function extractDomainCandidates(...values: Array<string | null | undefined>) {
   const domains = new Set<string>();
   for (const value of values) {
-    for (const match of String(value ?? "").matchAll(/[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+/gi)) {
+    for (const match of String(value ?? "").matchAll(
+      /[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+/gi,
+    )) {
       const domain = normalizeDomain(match[0]);
       if (domain) domains.add(domain);
     }
@@ -4451,7 +5882,11 @@ async function probeManagedWebsite(domain: string) {
     sslHostnameMatches: ssl.hostnameMatches,
     appType: null,
     source: "cloudmonkey-inferred",
-    raw: JSON.stringify({ source: "cloudmonkey-inferred", redirectUrl: httpResult.redirectUrl, sslHostnameMatches: ssl.hostnameMatches }),
+    raw: JSON.stringify({
+      source: "cloudmonkey-inferred",
+      redirectUrl: httpResult.redirectUrl,
+      sslHostnameMatches: ssl.hostnameMatches,
+    }),
     observedAt: new Date().toISOString(),
   };
 }
@@ -4492,21 +5927,33 @@ async function probeHttpUrl(url: string) {
   }
 }
 
-async function probeServerSsl(domain: string): Promise<{ status: string; issuer: string | null; expiresAt: string | null; hostnameMatches: boolean | null }> {
+async function probeServerSsl(domain: string): Promise<{
+  status: string;
+  issuer: string | null;
+  expiresAt: string | null;
+  hostnameMatches: boolean | null;
+}> {
   return new Promise((resolve) => {
-    const socket = tls.connect({ host: domain, port: 443, servername: domain, timeout: 6000 }, () => {
-      const cert = socket.getPeerCertificate();
-      socket.end();
-      const expiresAt = cert?.valid_to ? new Date(cert.valid_to).toISOString() : null;
-      const hostnameError = cert ? tls.checkServerIdentity(domain, cert as tls.PeerCertificate) : new Error("No certificate");
-      resolve({
-        status: cert?.valid_to ? "valid" : "unknown",
-        issuer: typeof cert?.issuer === "object" ? Object.values(cert.issuer).join(" ") : null,
-        expiresAt,
-        hostnameMatches: !hostnameError,
-      });
-    });
-    socket.on("error", () => resolve({ status: "error", issuer: null, expiresAt: null, hostnameMatches: null }));
+    const socket = tls.connect(
+      { host: domain, port: 443, servername: domain, timeout: 6000 },
+      () => {
+        const cert = socket.getPeerCertificate();
+        socket.end();
+        const expiresAt = cert?.valid_to ? new Date(cert.valid_to).toISOString() : null;
+        const hostnameError = cert
+          ? tls.checkServerIdentity(domain, cert as tls.PeerCertificate)
+          : new Error("No certificate");
+        resolve({
+          status: cert?.valid_to ? "valid" : "unknown",
+          issuer: typeof cert?.issuer === "object" ? Object.values(cert.issuer).join(" ") : null,
+          expiresAt,
+          hostnameMatches: !hostnameError,
+        });
+      },
+    );
+    socket.on("error", () =>
+      resolve({ status: "error", issuer: null, expiresAt: null, hostnameMatches: null }),
+    );
     socket.on("timeout", () => {
       socket.destroy();
       resolve({ status: "timeout", issuer: null, expiresAt: null, hostnameMatches: null });
@@ -4521,85 +5968,106 @@ async function getServersWithTelemetry(userId: string, includeAll: boolean) {
   });
 
   const userIds = [...new Set(instances.map((instance) => instance.userId))];
-  const [domains, managedWebsites] = userIds.length ? await Promise.all([
-    db.query.registeredDomain.findMany({
-      ...(includeAll ? {} : { where: eq(registeredDomain.userId, userId) }),
-    }),
-    db.query.website.findMany({
-      ...(includeAll ? {} : { where: eq(website.userId, userId) }),
-    }),
-  ]) : [[], []];
+  const [domains, managedWebsites] = userIds.length
+    ? await Promise.all([
+        db.query.registeredDomain.findMany({
+          ...(includeAll ? {} : { where: eq(registeredDomain.userId, userId) }),
+        }),
+        db.query.website.findMany({
+          ...(includeAll ? {} : { where: eq(website.userId, userId) }),
+        }),
+      ])
+    : [[], []];
 
-  return Promise.all(instances.map(async (instance) => {
-    const agent = await db.query.serverAgent.findFirst({
-      where: eq(serverAgent.instanceId, instance.id),
-      orderBy: (serverAgent, { desc }) => [desc(serverAgent.createdAt)],
-    });
+  return Promise.all(
+    instances.map(async (instance) => {
+      const agent = await db.query.serverAgent.findFirst({
+        where: eq(serverAgent.instanceId, instance.id),
+        orderBy: (serverAgent, { desc }) => [desc(serverAgent.createdAt)],
+      });
 
-    if (!agent) {
+      if (!agent) {
+        return {
+          ...instance,
+          agent: null,
+          latestTelemetry: null,
+          websites: await getInferredWebsitesForInstance(instance, domains, managedWebsites, []),
+          containers: [],
+          databases: [],
+          securityFindings: [],
+          aiRuntimes: [],
+          n8nIntegration: null,
+          n8nWorkflows: [],
+        };
+      }
+
+      const [
+        latestTelemetry,
+        websites,
+        containers,
+        databases,
+        securityFindings,
+        aiRuntimes,
+        n8nIntegration,
+      ] = await Promise.all([
+        db.query.serverTelemetrySnapshot.findFirst({
+          where: eq(serverTelemetrySnapshot.agentId, agent.id),
+          orderBy: (serverTelemetrySnapshot, { desc }) => [
+            desc(serverTelemetrySnapshot.observedAt),
+          ],
+        }),
+        db.query.serverWebsite.findMany({
+          where: eq(serverWebsite.agentId, agent.id),
+          orderBy: (serverWebsite, { desc }) => [desc(serverWebsite.observedAt)],
+        }),
+        db.query.serverContainer.findMany({
+          where: eq(serverContainer.agentId, agent.id),
+          orderBy: (serverContainer, { desc }) => [desc(serverContainer.observedAt)],
+        }),
+        db.query.serverDatabase.findMany({
+          where: eq(serverDatabase.agentId, agent.id),
+          orderBy: (serverDatabase, { desc }) => [desc(serverDatabase.observedAt)],
+        }),
+        db.query.serverSecurityFinding.findMany({
+          where: eq(serverSecurityFinding.agentId, agent.id),
+          orderBy: (serverSecurityFinding, { desc }) => [desc(serverSecurityFinding.observedAt)],
+        }),
+        db.query.detectedAiRuntime.findMany({
+          where: eq(detectedAiRuntime.agentId, agent.id),
+          orderBy: (detectedAiRuntime, { desc }) => [desc(detectedAiRuntime.observedAt)],
+        }),
+        db.query.serverN8nIntegration.findFirst({
+          where: eq(serverN8nIntegration.instanceId, instance.id),
+          orderBy: (serverN8nIntegration, { desc }) => [desc(serverN8nIntegration.updatedAt)],
+        }),
+      ]);
+      const inferredWebsites = await getInferredWebsitesForInstance(
+        instance,
+        domains,
+        managedWebsites,
+        websites,
+      );
+      const n8nWorkflows = n8nIntegration
+        ? await db.query.serverN8nWorkflow.findMany({
+            where: eq(serverN8nWorkflow.integrationId, n8nIntegration.id),
+            orderBy: (serverN8nWorkflow, { desc }) => [desc(serverN8nWorkflow.workflowUpdatedAt)],
+          })
+        : [];
+
       return {
         ...instance,
-        agent: null,
-        latestTelemetry: null,
-        websites: await getInferredWebsitesForInstance(instance, domains, managedWebsites, []),
-        containers: [],
-        databases: [],
-        securityFindings: [],
-        aiRuntimes: [],
-        n8nIntegration: null,
-        n8nWorkflows: [],
+        agent,
+        latestTelemetry,
+        websites: [...websites, ...inferredWebsites],
+        containers,
+        databases,
+        securityFindings,
+        aiRuntimes,
+        n8nIntegration: n8nIntegration ? sanitizeN8nIntegration(n8nIntegration) : null,
+        n8nWorkflows,
       };
-    }
-
-    const [latestTelemetry, websites, containers, databases, securityFindings, aiRuntimes, n8nIntegration] = await Promise.all([
-      db.query.serverTelemetrySnapshot.findFirst({
-        where: eq(serverTelemetrySnapshot.agentId, agent.id),
-        orderBy: (serverTelemetrySnapshot, { desc }) => [desc(serverTelemetrySnapshot.observedAt)],
-      }),
-      db.query.serverWebsite.findMany({
-        where: eq(serverWebsite.agentId, agent.id),
-        orderBy: (serverWebsite, { desc }) => [desc(serverWebsite.observedAt)],
-      }),
-      db.query.serverContainer.findMany({
-        where: eq(serverContainer.agentId, agent.id),
-        orderBy: (serverContainer, { desc }) => [desc(serverContainer.observedAt)],
-      }),
-      db.query.serverDatabase.findMany({
-        where: eq(serverDatabase.agentId, agent.id),
-        orderBy: (serverDatabase, { desc }) => [desc(serverDatabase.observedAt)],
-      }),
-      db.query.serverSecurityFinding.findMany({
-        where: eq(serverSecurityFinding.agentId, agent.id),
-        orderBy: (serverSecurityFinding, { desc }) => [desc(serverSecurityFinding.observedAt)],
-      }),
-      db.query.detectedAiRuntime.findMany({
-        where: eq(detectedAiRuntime.agentId, agent.id),
-        orderBy: (detectedAiRuntime, { desc }) => [desc(detectedAiRuntime.observedAt)],
-      }),
-      db.query.serverN8nIntegration.findFirst({
-        where: eq(serverN8nIntegration.instanceId, instance.id),
-        orderBy: (serverN8nIntegration, { desc }) => [desc(serverN8nIntegration.updatedAt)],
-      }),
-    ]);
-    const inferredWebsites = await getInferredWebsitesForInstance(instance, domains, managedWebsites, websites);
-    const n8nWorkflows = n8nIntegration ? await db.query.serverN8nWorkflow.findMany({
-      where: eq(serverN8nWorkflow.integrationId, n8nIntegration.id),
-      orderBy: (serverN8nWorkflow, { desc }) => [desc(serverN8nWorkflow.workflowUpdatedAt)],
-    }) : [];
-
-    return {
-      ...instance,
-      agent,
-      latestTelemetry,
-      websites: [...websites, ...inferredWebsites],
-      containers,
-      databases,
-      securityFindings,
-      aiRuntimes,
-      n8nIntegration: n8nIntegration ? sanitizeN8nIntegration(n8nIntegration) : null,
-      n8nWorkflows,
-    };
-  }));
+    }),
+  );
 }
 
 async function getInferredWebsitesForInstance(
@@ -4608,13 +6076,29 @@ async function getInferredWebsitesForInstance(
   managedWebsites: Array<typeof website.$inferSelect>,
   discoveredWebsites: Array<typeof serverWebsite.$inferSelect>,
 ) {
-  const alreadyDiscovered = new Set(discoveredWebsites.map((site) => normalizeDomain(site.domain)).filter(Boolean));
+  const alreadyDiscovered = new Set(
+    discoveredWebsites.map((site) => normalizeDomain(site.domain)).filter(Boolean),
+  );
   const labelDomains = extractDomainCandidates(instance.label);
   const matchedRecordDomains = [
-    ...domains.filter((domain) => domain.userId === instance.userId && domainTokenMatches(instance.label, domain.id)).map((domain) => domain.id),
-    ...managedWebsites.filter((site) => site.userId === instance.userId && domainTokenMatches(instance.label, site.domain)).map((site) => site.domain),
-  ].map((domain) => normalizeDomain(domain)).filter((domain): domain is string => !!domain);
-  const candidates = [...new Set([...labelDomains, ...matchedRecordDomains])].filter((domain) => !alreadyDiscovered.has(domain));
+    ...domains
+      .filter(
+        (domain) =>
+          domain.userId === instance.userId && domainTokenMatches(instance.label, domain.id),
+      )
+      .map((domain) => domain.id),
+    ...managedWebsites
+      .filter(
+        (site) =>
+          site.userId === instance.userId && domainTokenMatches(instance.label, site.domain),
+      )
+      .map((site) => site.domain),
+  ]
+    .map((domain) => normalizeDomain(domain))
+    .filter((domain): domain is string => !!domain);
+  const candidates = [...new Set([...labelDomains, ...matchedRecordDomains])].filter(
+    (domain) => !alreadyDiscovered.has(domain),
+  );
   return Promise.all(candidates.map((domain) => probeManagedWebsite(domain)));
 }
 
@@ -4628,7 +6112,7 @@ async function syncN8nWorkflows(integration: typeof serverN8nIntegration.$inferS
   const baseUrl = integration.baseUrl.replace(/\/+$/, "");
   const response = await fetch(`${baseUrl}/api/v1/workflows`, {
     headers: {
-      "Accept": "application/json",
+      Accept: "application/json",
       "X-N8N-API-KEY": apiKey,
     },
   });
@@ -4637,32 +6121,42 @@ async function syncN8nWorkflows(integration: typeof serverN8nIntegration.$inferS
   }
 
   const payload = await response.json();
-  const workflows = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload) ? payload : [];
+  const workflows = Array.isArray(payload?.data)
+    ? payload.data
+    : Array.isArray(payload)
+      ? payload
+      : [];
   const observedAt = new Date();
 
   await db.delete(serverN8nWorkflow).where(eq(serverN8nWorkflow.integrationId, integration.id));
   if (workflows.length) {
-    await db.insert(serverN8nWorkflow).values(workflows.map((workflow: any) => ({
-      id: makeId("n8nwf"),
-      integrationId: integration.id,
-      instanceId: integration.instanceId,
-      userId: integration.userId,
-      workflowId: String(workflow.id),
-      name: String(workflow.name ?? "Untitled workflow"),
-      active: Boolean(workflow.active),
-      triggerSummary: summarizeN8nTriggers(workflow),
-      workflowUpdatedAt: toDateOrNull(workflow.updatedAt ?? workflow.updated_at),
-      raw: JSON.stringify(workflow),
-      observedAt,
-    })));
+    await db.insert(serverN8nWorkflow).values(
+      workflows.map((workflow: any) => ({
+        id: makeId("n8nwf"),
+        integrationId: integration.id,
+        instanceId: integration.instanceId,
+        userId: integration.userId,
+        workflowId: String(workflow.id),
+        name: String(workflow.name ?? "Untitled workflow"),
+        active: Boolean(workflow.active),
+        triggerSummary: summarizeN8nTriggers(workflow),
+        workflowUpdatedAt: toDateOrNull(workflow.updatedAt ?? workflow.updated_at),
+        raw: JSON.stringify(workflow),
+        observedAt,
+      })),
+    );
   }
 
-  const [updated] = await db.update(serverN8nIntegration).set({
-    status: "synced",
-    lastSyncAt: observedAt,
-    lastError: null,
-    updatedAt: observedAt,
-  }).where(eq(serverN8nIntegration.id, integration.id)).returning();
+  const [updated] = await db
+    .update(serverN8nIntegration)
+    .set({
+      status: "synced",
+      lastSyncAt: observedAt,
+      lastError: null,
+      updatedAt: observedAt,
+    })
+    .where(eq(serverN8nIntegration.id, integration.id))
+    .returning();
 
   return {
     integration: sanitizeN8nIntegration(updated),
@@ -4676,7 +6170,15 @@ async function syncN8nWorkflows(integration: typeof serverN8nIntegration.$inferS
 function summarizeN8nTriggers(workflow: any) {
   const nodes = Array.isArray(workflow?.nodes) ? workflow.nodes : [];
   const triggers = nodes
-    .filter((node: any) => String(node?.type ?? "").toLowerCase().includes("trigger") || String(node?.type ?? "").toLowerCase().includes("webhook"))
+    .filter(
+      (node: any) =>
+        String(node?.type ?? "")
+          .toLowerCase()
+          .includes("trigger") ||
+        String(node?.type ?? "")
+          .toLowerCase()
+          .includes("webhook"),
+    )
     .map((node: any) => String(node?.name ?? node?.type ?? "Trigger"));
   return triggers.length ? triggers.join(", ") : "Manual or unknown trigger";
 }
@@ -4695,7 +6197,8 @@ async function getDetectedAgentRows(userId: string, includeAll: boolean) {
     purpose: `${runtime.runtime === "openclaw" ? "OpenClaw" : runtime.runtime === "n8n" ? "n8n" : "Hermes"} runtime detected on ${runtime.instance?.label || runtime.instanceId}`,
     provider: runtime.runtime,
     model: runtime.version || runtime.image || null,
-    status: runtime.status === "running" || runtime.status === "healthy" ? "active" : runtime.status,
+    status:
+      runtime.status === "running" || runtime.status === "healthy" ? "active" : runtime.status,
     lastRunAt: runtime.observedAt,
     createdAt: runtime.createdAt,
     updatedAt: runtime.updatedAt,
@@ -4724,17 +6227,15 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
   });
 }
 
-const roleUpdateSchema = z.object({
-  userId: z.string().min(1),
-  role: z.enum(["owner", "admin", "support", "finance", "customer"]),
-});
-
 const subscriptionSchema = z.object({
   userId: z.string().min(1),
   name: z.string().min(1),
-  status: z.enum(["pending", "active", "trialing", "past_due", "cancelled"]).default("pending"),
+  status: z
+    .enum(["pending", "active", "trialing", "past_due", "suspended", "cancelled"])
+    .default("pending"),
   amount: z.coerce.number().int().nonnegative(),
   interval: z.enum(["month", "year"]).default("month"),
+  minimumTermMonths: z.coerce.number().int().positive().optional().nullable(),
   planId: z.string().optional().nullable(),
   bundleId: z.string().optional().nullable(),
   currentPeriodEnd: z.string().optional().nullable(),
@@ -4742,107 +6243,1314 @@ const subscriptionSchema = z.object({
 
 const manualInvoiceSchema = z.object({
   userId: z.string().min(1),
-  name: z.string().min(1),
-  amount: z.coerce.number().int().positive(),
+  name: z.string().min(1).optional(),
+  amount: z.coerce.number().int().positive().optional(),
   interval: z.enum(["month", "year"]).default("month"),
   planId: z.string().optional().nullable(),
   bundleId: z.string().optional().nullable(),
   websitePackageType: z.enum(["website", "ecommerce"]).optional().nullable(),
+  items: z
+    .array(
+      z.object({
+        description: z.string().min(1),
+        quantity: z.coerce.number().int().positive().default(1),
+        unitPrice: z.coerce.number().int().positive(),
+        planId: z.string().optional().nullable(),
+        bundleId: z.string().optional().nullable(),
+        recurring: z.coerce.boolean().default(false),
+        interval: z.enum(["month", "year"]).default("month"),
+        websitePackageType: z.enum(["website", "ecommerce"]).optional().nullable(),
+      }),
+    )
+    .optional(),
   billingPeriodStart: z.string().optional().nullable(),
   dueDate: z.string().optional().nullable(),
   billingPeriodEnd: z.string().optional().nullable(),
+  paymentMethod: z.enum(["gateway", "eft"]).default("gateway"),
   notes: z.string().optional().nullable(),
   customerCompany: z.string().optional().nullable(),
   customerAddress: z.string().optional().nullable(),
   customerVatNumber: z.string().optional().nullable(),
 });
 
+const proposalLineSchema = z.object({
+  productType: z.enum(["plan", "bundle", "custom"]).default("plan"),
+  productId: z.string().optional().nullable(),
+  planId: z.string().optional().nullable(),
+  bundleId: z.string().optional().nullable(),
+  name: z.string().min(1).optional(),
+  description: z.string().optional().nullable(),
+  quantity: z.coerce.number().int().positive().default(1),
+  unitPrice: z.coerce.number().int().nonnegative().optional(),
+  setupPrice: z.coerce.number().int().nonnegative().optional(),
+  recurring: z.coerce.boolean().default(true),
+  interval: z.enum(["month", "year"]).default("month"),
+});
+
 const invoiceVoidSchema = z.object({
   reason: z.string().optional().nullable(),
 });
 
-const affiliateApplicationSchema = z.object({
-  fullName: z.string().min(2),
-  email: z.string().email(),
-  phone: z.string().optional().nullable(),
-  companyName: z.string().optional().nullable(),
-  website: z.string().optional().nullable(),
-  socialLinks: z.string().optional().nullable(),
-  affiliateType: z.enum(["individual", "agency", "msp", "it_consultant", "web_designer_developer", "existing_customer", "other"]).default("individual"),
-  expectedReferralMethod: z.string().min(1),
-  payoutMethod: z.string().optional().default("manual_eft"),
-  payoutDetails: z.string().optional().nullable(),
-  termsAccepted: z.boolean().refine(Boolean, "Affiliate terms must be accepted"),
+const manualPaymentCaptureSchema = z.object({
+  idempotencyKey: z.string().min(16).max(200),
+  amount: z.coerce.number().int().positive().optional().nullable(),
+  method: z.enum(["eft", "cash", "manual", "gateway"]).default("eft"),
+  reference: z.string().max(160).optional().nullable(),
+  notes: z.string().max(1000).optional().nullable(),
+  paidAt: z.string().optional().nullable(),
 });
 
-const affiliateClickSchema = z.object({
-  referralCode: z.string().min(2),
-  visitorId: z.string().optional().nullable(),
-  sourceUrl: z.string().optional().nullable(),
-  landingPage: z.string().optional().nullable(),
-});
+type ManualInvoiceLineInput = {
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  amount: number;
+  planId?: string | null;
+  bundleId?: string | null;
+  recurring: boolean;
+  interval: "month" | "year";
+  websitePackageType?: "website" | "ecommerce" | null;
+};
 
-const affiliateProfileSchema = z.object({
-  phone: z.string().optional().nullable(),
-  companyName: z.string().optional().nullable(),
-  website: z.string().optional().nullable(),
-  socialLinks: z.string().optional().nullable(),
-  expectedReferralMethod: z.string().optional().nullable(),
-  payoutMethod: z.string().optional().default("manual_eft"),
-  payoutDetails: z.string().optional().nullable(),
-});
+function manualInvoiceSubscriptionId(invoiceId: string, itemId: string) {
+  return `sub_${invoiceId}_${itemId}`.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 120);
+}
 
-const adminAffiliateCreateSchema = z.object({
-  fullName: z.string().min(2),
-  email: z.string().email(),
-  tier: z.enum(["starter", "growth", "strategic"]).default("starter"),
-  commissionRateBps: z.coerce.number().int().min(1).max(10000).optional().nullable(),
-  notes: z.string().optional().nullable(),
-});
+function normalizeManualInvoiceLines(
+  body: z.infer<typeof manualInvoiceSchema>,
+): ManualInvoiceLineInput[] {
+  const rawItems = body.items?.length
+    ? body.items
+    : [
+        {
+          description: body.name ?? "Manual CloudMonkey invoice",
+          quantity: 1,
+          unitPrice: body.amount ?? 0,
+          planId: body.planId ?? null,
+          bundleId: body.bundleId ?? null,
+          recurring: Boolean(body.planId || body.bundleId),
+          interval: body.interval,
+          websitePackageType: body.websitePackageType ?? null,
+        },
+      ];
+  return rawItems.map((item) => {
+    const quantity = Math.max(1, Number(item.quantity) || 1);
+    const unitPrice = Math.max(0, Number(item.unitPrice) || 0);
+    return {
+      description: item.description,
+      quantity,
+      unitPrice,
+      amount: quantity * unitPrice,
+      planId: item.planId ?? null,
+      bundleId: item.bundleId ?? null,
+      recurring: Boolean(item.recurring),
+      interval: item.interval ?? body.interval,
+      websitePackageType: item.websitePackageType ?? null,
+    };
+  });
+}
 
-const adminAffiliateUpdateSchema = z.object({
-  status: z.enum(["pending", "approved", "rejected", "suspended", "active", "inactive"]).optional(),
-  tier: z.enum(["starter", "growth", "strategic"]).optional(),
-  commissionRateBps: z.coerce.number().int().min(1).max(10000).optional().nullable(),
-  notes: z.string().optional().nullable(),
-});
+type ProposalLineInput = z.infer<typeof proposalLineSchema>;
+type BillingFrequency = "month" | "year" | "once_off";
 
-const manualAttributionSchema = z.object({
-  affiliateId: z.string().min(1),
-  customerId: z.string().min(1),
-  reason: z.string().min(3),
-});
+type ProposalDocument = {
+  proposal: typeof proposal.$inferSelect;
+  items: Array<typeof proposalItem.$inferSelect>;
+  publicUrl?: string;
+  workspaceBilling?: ReturnType<typeof getWorkspaceBillingDetails>;
+};
 
-const commissionActionSchema = z.object({
-  status: z.enum(["approved", "payable", "paid", "cancelled", "reversed"]),
-  commissionAmount: z.coerce.number().int().nonnegative().optional().nullable(),
-  adminNotes: z.string().optional().nullable(),
-});
+function makeProposalNumber(id: string, issuedAt = new Date()) {
+  return `PROP-${issuedAt.getFullYear()}-${id
+    .replace(/^prop[_-]?/i, "")
+    .replace(/[^a-z0-9]/gi, "")
+    .slice(-6)
+    .toUpperCase()}`;
+}
 
-const payoutMarkPaidSchema = z.object({
-  affiliateId: z.string().min(1),
-  commissionIds: z.array(z.string().min(1)).min(1),
-  payoutReference: z.string().optional().nullable(),
-  notes: z.string().optional().nullable(),
-});
+function makeInvoiceNumber(id: string, issuedAt = new Date()) {
+  return `INV-${issuedAt.getFullYear()}-${id
+    .replace(/^inv[_-]?/i, "")
+    .replace(/[^a-z0-9]/gi, "")
+    .slice(-6)
+    .toUpperCase()}`;
+}
+
+function normalizeBillingFrequency(input: {
+  billingFrequency?: string | null;
+  billingType?: string | null;
+  unit?: string | null;
+}): BillingFrequency {
+  if (
+    input.billingFrequency === "once_off" ||
+    input.billingFrequency === "year" ||
+    input.billingFrequency === "month"
+  ) {
+    return input.billingFrequency;
+  }
+  if (input.billingType === "once_off") return "once_off";
+  const unit = (input.unit ?? "").toLowerCase();
+  if (unit.includes("once")) return "once_off";
+  if (unit.includes("year") || unit.includes("annual")) return "year";
+  return "month";
+}
+
+function frequencyToInterval(frequency: BillingFrequency): "month" | "year" {
+  return frequency === "year" || frequency === "once_off" ? "year" : "month";
+}
+
+function frequencyUnitLabel(frequency: BillingFrequency) {
+  if (frequency === "once_off") return "once-off";
+  if (frequency === "year") return "/year";
+  return "/month";
+}
+
+function frequencyRecurring(frequency: BillingFrequency) {
+  return frequency !== "once_off";
+}
+
+function parseMinimumTermMonths(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value > 0 ? Math.round(value) : null;
+  }
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim().toLowerCase();
+  if (!trimmed) return null;
+  if (trimmed === "monthly" || trimmed === "month") return 1;
+  const number = Number.parseInt(trimmed.replace(/[^0-9]/g, ""), 10);
+  if (!Number.isFinite(number) || number <= 0) return null;
+  return trimmed.includes("year") ? number * 12 : number;
+}
+
+function minimumTermLabel(months: number | null | undefined) {
+  if (!months || months <= 0) return null;
+  return months === 1 ? "1 month" : `${months} months`;
+}
+
+function normalizeMinimumTermMonths(input: {
+  minimumTermMonths?: number | string | null;
+  minimumTerm?: string | null;
+}) {
+  return (
+    parseMinimumTermMonths(input.minimumTermMonths) ?? parseMinimumTermMonths(input.minimumTerm)
+  );
+}
+
+function addMonths(date: Date, months: number) {
+  const next = new Date(date);
+  next.setMonth(next.getMonth() + months);
+  return next;
+}
+
+function proposalUrl(origin: string, token: string | null | undefined) {
+  return token ? `${origin}/api/proposals/${encodeURIComponent(token)}` : null;
+}
+
+function publicAssetUrl(asset: string) {
+  if (/^https?:\/\//.test(asset)) return asset;
+  return asset.startsWith("/") ? asset : `/${asset}`;
+}
+
+function htmlEscape(value: unknown) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function attributeEscape(value: unknown) {
+  return htmlEscape(value).replace(/`/g, "&#96;");
+}
+
+function centsFromText(value: string | null | undefined) {
+  const parsed = Number.parseInt(value ?? "0", 10);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+}
+
+function listFromJson(value: string | null | undefined): string[] {
+  const parsed = safeJsonParse(value);
+  return Array.isArray(parsed) ? parsed.map((item) => String(item)).filter(Boolean) : [];
+}
+
+function definitionSections(value: string | null | undefined) {
+  const definition = safeJsonParse(value) ?? {};
+  const readFrom = (source: Record<string, unknown>, ...keys: string[]) => {
+    for (const key of keys) {
+      const current = source[key];
+      if (Array.isArray(current)) return current.map((item) => String(item)).filter(Boolean);
+      if (typeof current === "string" && current.trim()) return [current.trim()];
+      if (current && typeof current === "object") {
+        return Object.entries(current as Record<string, unknown>).map(
+          ([label, detail]) => `${label}: ${String(detail)}`,
+        );
+      }
+    }
+    return [];
+  };
+  const root = definition as Record<string, unknown>;
+  const packageRules =
+    root.packageRules && typeof root.packageRules === "object"
+      ? (root.packageRules as Record<string, unknown>)
+      : {};
+  const unique = (...groups: string[][]) => [...new Set(groups.flat().filter(Boolean))];
+  return {
+    scope: unique(
+      readFrom(root, "scope", "scopeOfInclusion", "included", "includedScope", "managementLayer"),
+      readFrom(packageRules, "coverage"),
+      readFrom(packageRules, "serviceAllocation"),
+      readFrom(packageRules, "infrastructureAllocation"),
+      readFrom(packageRules, "supportAllocation"),
+      readFrom(packageRules, "includedChanges"),
+    ),
+    limits: unique(
+      readFrom(root, "limits", "hardLimits", "serviceLimits", "usageLimits"),
+      readFrom(packageRules, "usageLimits"),
+    ),
+    exclusions: unique(
+      readFrom(root, "exclusions", "excludedScope", "outOfScope", "notIncluded"),
+      readFrom(packageRules, "limitExceeded"),
+      readFrom(root, "outOfScopeBilling"),
+    ),
+    sla: unique(
+      readFrom(root, "sla", "serviceLevel", "serviceLevels", "support"),
+      readFrom(packageRules, "responseTimes"),
+    ),
+    terms: unique(readFrom(root, "standardTerms"), readFrom(root, "vatTreatment")),
+  };
+}
+
+function renderList(items: string[]) {
+  if (!items.length)
+    return `<li>Defined during onboarding and governed by the selected service plan.</li>`;
+  return items.map((item) => `<li>${htmlEscape(item)}</li>`).join("");
+}
+
+async function resolveProposalLines(inputLines: ProposalLineInput[]) {
+  const resolved = [];
+  for (let index = 0; index < inputLines.length; index += 1) {
+    const input = inputLines[index];
+    const productType = input.productType;
+    const quantity = Math.max(1, Number(input.quantity) || 1);
+
+    if (productType === "bundle" || input.bundleId) {
+      const bundleId = input.bundleId ?? input.productId;
+      const row = bundleId
+        ? await db.query.bundle.findFirst({
+            where: eq(bundle.id, bundleId),
+            with: { features: true },
+          })
+        : null;
+      if (!row)
+        throw Object.assign(new Error(`Selected bundle not found: ${bundleId}`), { status: 400 });
+      const unitPrice = input.unitPrice ?? centsFromText(row.priceZar);
+      const setupPrice = input.setupPrice ?? centsFromText(row.setupPriceZar);
+      const billingFrequency = normalizeBillingFrequency(row);
+      resolved.push({
+        productType: "bundle",
+        productId: row.id,
+        planId: null,
+        bundleId: row.id,
+        name: input.name ?? row.name,
+        description: input.description ?? row.serviceNote ?? row.categoryNote ?? null,
+        quantity,
+        unitPrice,
+        setupPrice,
+        recurring: frequencyRecurring(billingFrequency),
+        interval: frequencyToInterval(billingFrequency),
+        sortOrder: index,
+        serviceDefinition: row.serviceDefinition ?? null,
+        features: JSON.stringify(row.features?.map((feature) => feature.content) ?? []),
+        lineTotal: quantity * (unitPrice + setupPrice),
+      });
+      continue;
+    }
+
+    if (productType === "plan" || input.planId) {
+      const planId = input.planId ?? input.productId;
+      const row = planId
+        ? await db.query.servicePlan.findFirst({
+            where: eq(servicePlan.id, planId),
+            with: { service: true, features: true },
+          })
+        : null;
+      if (!row)
+        throw Object.assign(new Error(`Selected service plan not found: ${planId}`), {
+          status: 400,
+        });
+      const unitPrice = input.unitPrice ?? centsFromText(row.priceZar);
+      const setupPrice = input.setupPrice ?? centsFromText(row.setupPriceZar);
+      const billingFrequency = normalizeBillingFrequency(row);
+      resolved.push({
+        productType: "plan",
+        productId: row.id,
+        planId: row.id,
+        bundleId: null,
+        name: input.name ?? `${row.service?.name ? `${row.service.name} - ` : ""}${row.name}`,
+        description: input.description ?? row.serviceNote ?? row.tagline ?? null,
+        quantity,
+        unitPrice,
+        setupPrice,
+        recurring: frequencyRecurring(billingFrequency),
+        interval: frequencyToInterval(billingFrequency),
+        sortOrder: index,
+        serviceDefinition: row.serviceDefinition ?? null,
+        features: JSON.stringify(row.features?.map((feature) => feature.content) ?? []),
+        lineTotal: quantity * (unitPrice + setupPrice),
+      });
+      continue;
+    }
+
+    const unitPrice = input.unitPrice ?? 0;
+    const setupPrice = input.setupPrice ?? 0;
+    resolved.push({
+      productType: "custom",
+      productId: input.productId ?? null,
+      planId: null,
+      bundleId: null,
+      name: input.name ?? "Custom CloudMonkey service",
+      description: input.description ?? null,
+      quantity,
+      unitPrice,
+      setupPrice,
+      recurring: input.recurring,
+      interval: input.interval,
+      sortOrder: index,
+      serviceDefinition: null,
+      features: JSON.stringify([]),
+      lineTotal: quantity * (unitPrice + setupPrice),
+    });
+  }
+  return resolved;
+}
+
+function proposalTotals(lines: Awaited<ReturnType<typeof resolveProposalLines>>) {
+  const setupTotal = lines.reduce((sum, item) => sum + item.quantity * item.setupPrice, 0);
+  const recurringTotal = lines.reduce(
+    (sum, item) => sum + (item.recurring ? item.quantity * item.unitPrice : 0),
+    0,
+  );
+  const onceOffTotal = lines.reduce(
+    (sum, item) => sum + (!item.recurring ? item.quantity * item.unitPrice : 0),
+    0,
+  );
+  return {
+    setupTotal,
+    recurringTotal,
+    subtotal: setupTotal + recurringTotal + onceOffTotal,
+    total: setupTotal + recurringTotal + onceOffTotal,
+  };
+}
+
+function renderProposalHtml(document: ProposalDocument) {
+  const { proposal: row, items, publicUrl } = document;
+  const billing = document.workspaceBilling ?? getWorkspaceBillingDetails(null);
+  const logoUrl = publicAssetUrl(logo);
+  const billingAddress = billing.address
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => `<span>${htmlEscape(line)}</span>`)
+    .join("");
+  const proposalItems = items
+    .map((item) => {
+      const sections = definitionSections(item.serviceDefinition);
+      const features = listFromJson(item.features);
+      const priceLabel = item.recurring
+        ? `${formatEmailMoney(item.unitPrice, row.currency)}/${item.interval}`
+        : `${formatEmailMoney(item.unitPrice, row.currency)} once-off`;
+      return `
+        <section class="service-card">
+          <div class="service-head">
+            <div>
+              <p class="eyebrow">${htmlEscape(item.productType)}</p>
+              <h2>${htmlEscape(item.name)}</h2>
+              <p>${htmlEscape(item.description || "Managed CloudMonkey service with defined delivery scope.")}</p>
+            </div>
+            <div class="price-pill">
+              <strong>${htmlEscape(priceLabel)}</strong>
+              ${item.setupPrice > 0 ? `<span>Setup ${htmlEscape(formatEmailMoney(item.setupPrice, row.currency))}</span>` : ""}
+            </div>
+          </div>
+          <div class="definition-grid">
+            <div>
+              <h3>Included Scope</h3>
+              <ul>${renderList(sections.scope.length ? sections.scope : features)}</ul>
+            </div>
+            <div>
+              <h3>Service Levels</h3>
+              <ul>${renderList(sections.sla)}</ul>
+            </div>
+            <div>
+              <h3>Hard Limits</h3>
+              <ul>${renderList(sections.limits)}</ul>
+            </div>
+            <div>
+              <h3>Out Of Scope</h3>
+              <ul>${renderList(sections.exclusions)}</ul>
+            </div>
+            <div>
+              <h3>Package Terms</h3>
+              <ul>${renderList(sections.terms)}</ul>
+            </div>
+          </div>
+        </section>`;
+    })
+    .join("");
+  const proposalServiceNames = items.map((item) => item.name);
+
+  const approvalBlock =
+    publicUrl && ["draft", "sent"].includes(row.status)
+      ? `<form method="POST" action="${attributeEscape(publicUrl)}/approve" class="approval">
+          <button type="submit">Approve proposal and generate invoice</button>
+          <p>Approval records your timestamp, IP address, and proposal version. If your customer account is not registered yet, the approval is stored and invoicing will complete when your account is created.</p>
+        </form>`
+      : `<div class="approval muted">Proposal status: ${htmlEscape(row.status)}</div>`;
+
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>${htmlEscape(row.title)}</title>
+  <style>
+    :root { color-scheme: light; --ink:#07102c; --muted:#58637e; --line:#dfe4ef; --brand:#5d2fe8; --brand-2:#6d34f7; --cyan:#12b7d6; --navy:#070d23; --paper:#f6f8fc; --card:#ffffff; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:radial-gradient(circle at top left, rgba(93,47,232,.18), transparent 35%), #eef2f8; color:var(--ink); font-family:Inter, "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif; }
+    .page { max-width:1120px; margin:32px auto; background:var(--paper); border:1px solid var(--line); box-shadow:0 28px 90px rgba(7,13,35,.18); }
+    .hero { position:relative; overflow:hidden; padding:42px 56px 62px; color:#fff; background:radial-gradient(circle at 86% 18%, rgba(18,183,214,.42), transparent 28%), radial-gradient(circle at 8% 0%, rgba(109,52,247,.8), transparent 34%), linear-gradient(135deg,#070d23 0%,#121b43 48%,#5d2fe8 100%); }
+    .hero:after { content:""; position:absolute; right:-120px; bottom:-160px; width:420px; height:420px; border:1px solid rgba(255,255,255,.14); border-radius:50%; box-shadow:inset 0 0 0 48px rgba(255,255,255,.035); }
+    .brand { position:relative; z-index:1; display:flex; justify-content:space-between; gap:24px; align-items:flex-start; }
+    .brand-mark { display:flex; align-items:center; gap:14px; }
+    .brand-mark img { width:58px; height:58px; border-radius:18px; background:#fff; padding:6px; box-shadow:0 18px 38px rgba(0,0,0,.2); }
+    .brand-mark strong { display:block; font-size:26px; line-height:1; letter-spacing:-.04em; }
+    .brand-mark small { display:block; margin-top:6px; color:rgba(255,255,255,.72); font-size:12px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+    .proposal-id { text-align:right; color:rgba(255,255,255,.78); text-transform:uppercase; letter-spacing:.14em; font:800 12px ui-sans-serif,system-ui,sans-serif; }
+    h1 { position:relative; z-index:1; margin:58px 0 18px; max-width:790px; font-size:56px; line-height:.96; letter-spacing:-.055em; }
+    .hero p { position:relative; z-index:1; max-width:760px; color:rgba(255,255,255,.84); font:500 18px/1.65 ui-sans-serif,system-ui,sans-serif; }
+    .hero-strip { position:relative; z-index:1; display:flex; flex-wrap:wrap; gap:10px; margin-top:28px; }
+    .hero-strip span { border:1px solid rgba(255,255,255,.18); border-radius:999px; background:rgba(255,255,255,.08); padding:9px 12px; color:rgba(255,255,255,.82); font-size:12px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; }
+    .meta { display:grid; grid-template-columns:repeat(4,1fr); gap:1px; background:var(--line); border-bottom:1px solid var(--line); }
+    .meta div { background:#fff; padding:22px 28px; }
+    .meta span, .eyebrow { display:block; color:var(--muted); text-transform:uppercase; letter-spacing:.12em; font:800 11px ui-sans-serif,system-ui,sans-serif; }
+    .meta strong { display:block; margin-top:8px; font:800 15px ui-sans-serif,system-ui,sans-serif; }
+    .content { padding:46px 56px 56px; }
+    .summary { display:grid; grid-template-columns:1.1fr .9fr; gap:28px; margin-bottom:34px; }
+    .panel { border:1px solid var(--line); background:#fff; border-radius:20px; padding:28px; }
+    .panel h2, .service-card h2 { margin:0 0 12px; font-size:30px; letter-spacing:-.03em; }
+    .panel p, .service-card p, li { color:#3b4559; font:400 15px/1.7 ui-sans-serif,system-ui,sans-serif; }
+    .service-card { margin:22px 0; border:1px solid var(--line); border-radius:24px; background:#fff; overflow:hidden; box-shadow:0 16px 42px rgba(7,13,35,.06); }
+    .service-head { display:flex; justify-content:space-between; gap:24px; padding:30px; border-bottom:1px solid var(--line); background:linear-gradient(135deg,#fff,#f7f4ff); }
+    .price-pill { min-width:190px; align-self:flex-start; border-radius:16px; background:#070d23; color:#fff; padding:18px; text-align:right; font:700 14px ui-sans-serif,system-ui,sans-serif; box-shadow:0 16px 32px rgba(7,13,35,.18); }
+    .price-pill strong, .price-pill span { display:block; }
+    .price-pill span { margin-top:6px; color:#c9d2f0; font-size:12px; }
+    .definition-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:1px; background:var(--line); }
+    .definition-grid div { background:#fff; padding:24px 28px; }
+    h3 { margin:0 0 12px; color:var(--brand); font:900 13px ui-sans-serif,system-ui,sans-serif; text-transform:uppercase; letter-spacing:.1em; }
+    ul { margin:0; padding-left:20px; }
+    .pricing { width:100%; border-collapse:collapse; overflow:hidden; border-radius:18px; background:#fff; }
+    .pricing th, .pricing td { padding:16px 18px; border-bottom:1px solid var(--line); text-align:left; font:500 14px ui-sans-serif,system-ui,sans-serif; }
+    .pricing th { color:#667085; text-transform:uppercase; letter-spacing:.1em; font-size:11px; }
+    .pricing td:last-child, .pricing th:last-child { text-align:right; }
+    .totals { margin-top:0; border:1px solid var(--line); border-radius:0 0 20px 20px; background:#fff; padding:24px 28px; }
+    .total-row { display:flex; justify-content:space-between; padding:8px 0; font:700 15px ui-sans-serif,system-ui,sans-serif; }
+    .total-row.grand { margin-top:10px; padding-top:18px; border-top:1px solid var(--line); color:var(--brand); font-size:22px; }
+    .terms { margin-top:28px; }
+    .markdown > :first-child { margin-top:0; }
+    .markdown > :last-child { margin-bottom:0; }
+    .markdown p { margin:0 0 16px; color:#3b4559; font:400 15px/1.75 ui-sans-serif,system-ui,sans-serif; }
+    .markdown h2, .markdown h3, .markdown h4 { margin:26px 0 12px; color:var(--ink); text-transform:none; letter-spacing:-.015em; font:800 19px/1.3 ui-sans-serif,system-ui,sans-serif; }
+    .markdown h2 { padding-bottom:9px; border-bottom:1px solid var(--line); font-size:22px; }
+    .markdown h4 { font-size:16px; }
+    .markdown ul, .markdown ol { margin:0 0 18px; padding-left:26px; }
+    .markdown li { margin:6px 0; }
+    .markdown strong { color:var(--ink); font-weight:800; }
+    .markdown em { color:#303a50; }
+    .markdown code { border-radius:5px; background:#eef1f7; padding:2px 5px; font:500 13px ui-monospace,SFMono-Regular,monospace; }
+    .markdown blockquote { margin:18px 0; border-left:3px solid var(--brand); background:#f7f4ff; padding:12px 16px; color:#3b4559; }
+    .markdown hr { margin:24px 0; border:0; border-top:1px solid var(--line); }
+    .approval { margin-top:30px; border-radius:20px; background:linear-gradient(135deg,#070d23,#251256 58%,#5d2fe8); color:#fff; padding:28px; font:400 14px/1.7 ui-sans-serif,system-ui,sans-serif; box-shadow:0 20px 48px rgba(93,47,232,.22); }
+    .approval button { width:100%; border:0; border-radius:14px; background:#fff; color:#321594; cursor:pointer; padding:18px 22px; font:900 16px ui-sans-serif,system-ui,sans-serif; }
+    .approval p { margin:16px 0 0; color:rgba(255,255,255,.76); }
+    .muted { background:#f3f6fa; color:#4f5a6e; }
+    .company-footer { margin-top:30px; display:grid; grid-template-columns:1.1fr .9fr; gap:22px; border-radius:24px; background:#070d23; color:#fff; padding:30px; }
+    .footer-brand { display:flex; gap:14px; align-items:flex-start; }
+    .footer-brand img { width:46px; height:46px; border-radius:14px; background:#fff; padding:5px; }
+    .footer-brand strong { display:block; font-size:22px; letter-spacing:-.03em; }
+    .footer-brand small, .company-footer p { color:rgba(255,255,255,.68); font-size:13px; line-height:1.7; }
+    .company-details { display:grid; gap:4px; color:rgba(255,255,255,.78); font-size:13px; line-height:1.55; }
+    .company-details span { display:block; }
+    .company-details a { color:#c8bbff; text-decoration:none; font-weight:800; }
+    @media (max-width: 760px) {
+      .page { margin:0; }
+      .hero, .content { padding:30px 22px; }
+      h1 { font-size:40px; }
+      .brand { display:block; }
+      .proposal-id { margin-top:20px; text-align:left; }
+      .meta, .summary, .definition-grid, .company-footer { grid-template-columns:1fr; }
+      .service-head { display:block; }
+      .price-pill { margin-top:18px; text-align:left; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <div class="brand">
+        <div class="brand-mark">
+          <img src="${attributeEscape(logoUrl)}" alt="CloudMonkey logo">
+          <span>
+            <strong>CloudMonkey</strong>
+            <small>Cloud made simple. Support that cares.</small>
+          </span>
+        </div>
+        <div class="proposal-id">Managed Services Proposal<br>${htmlEscape(row.proposalNumber ?? row.id)}</div>
+      </div>
+      <h1>${htmlEscape(row.title)}</h1>
+      <p>${htmlEscape(row.introduction || PROPOSAL_DEFAULT_INTRODUCTION)}</p>
+      <div class="hero-strip">
+        <span>Managed Cloud</span>
+        <span>Business IT</span>
+        <span>AI Automation</span>
+        <span>One invoice</span>
+      </div>
+    </section>
+    <section class="meta">
+      <div><span>Prepared For</span><strong>${htmlEscape(row.customerName)}</strong></div>
+      <div><span>Company</span><strong>${htmlEscape(row.customerCompany || "Not specified")}</strong></div>
+      <div><span>Email</span><strong>${htmlEscape(row.customerEmail)}</strong></div>
+      <div><span>Valid Until</span><strong>${htmlEscape(row.expiresAt ? formatEmailDate(row.expiresAt) : "30 days from issue")}</strong></div>
+    </section>
+    <section class="content">
+      <div class="summary">
+        <div class="panel">
+          <h2>Executive Summary</h2>
+          <p>${htmlEscape(row.executiveSummary || PROPOSAL_DEFAULT_EXECUTIVE_SUMMARY)}</p>
+        </div>
+        <div class="panel">
+          <h2>Commercial Position</h2>
+          <p>Setup and onboarding fees are once-off. Recurring managed service fees are billed ${htmlEscape(items.find((item) => item.recurring)?.interval ?? "month")}ly unless explicitly stated otherwise. Prices are shown in ${htmlEscape(row.currency)} and exclude any out-of-scope work.</p>
+        </div>
+      </div>
+      ${proposalItems}
+      <section class="panel">
+        <h2>Pricing Summary</h2>
+        <table class="pricing">
+          <thead><tr><th>Service</th><th>Qty</th><th>Recurring</th><th>Setup</th><th>First Invoice</th></tr></thead>
+          <tbody>
+            ${items
+              .map(
+                (item) => `<tr>
+                  <td>${htmlEscape(item.name)}</td>
+                  <td>${item.quantity}</td>
+                  <td>${htmlEscape(item.recurring ? `${formatEmailMoney(item.unitPrice, row.currency)}/${item.interval}` : "Once-off")}</td>
+                  <td>${htmlEscape(formatEmailMoney(item.quantity * item.setupPrice, row.currency))}</td>
+                  <td>${htmlEscape(formatEmailMoney(item.lineTotal, row.currency))}</td>
+                </tr>`,
+              )
+              .join("")}
+          </tbody>
+        </table>
+        <div class="totals">
+          <div class="total-row"><span>Once-off setup</span><strong>${htmlEscape(formatEmailMoney(row.setupTotal, row.currency))}</strong></div>
+          <div class="total-row"><span>Recurring services</span><strong>${htmlEscape(formatEmailMoney(row.recurringTotal, row.currency))}</strong></div>
+          <div class="total-row grand"><span>First invoice total</span><strong>${htmlEscape(formatEmailMoney(row.total, row.currency))}</strong></div>
+        </div>
+      </section>
+      <section class="panel terms">
+        <h2>Terms And Boundaries</h2>
+        <div class="markdown">${renderSafeMarkdown(row.terms || buildProposalTerms(proposalServiceNames))}</div>
+      </section>
+      ${approvalBlock}
+      <footer class="company-footer">
+        <div class="footer-brand">
+          <img src="${attributeEscape(logoUrl)}" alt="CloudMonkey logo">
+          <span>
+            <strong>CloudMonkey</strong>
+            <small>Cloud made simple. Support that cares.</small>
+            <p>This proposal is prepared by ${htmlEscape(billing.legalName)} and forms the commercial basis for onboarding after approval and customer registration.</p>
+          </span>
+        </div>
+        <div class="company-details">
+          <span><strong>${htmlEscape(billing.legalName)}</strong></span>
+          ${billing.registrationNumber ? `<span>Registration number: ${htmlEscape(billing.registrationNumber)}</span>` : ""}
+          ${billing.vatNumber ? `<span>VAT number: ${htmlEscape(billing.vatNumber)}</span>` : ""}
+          <span>Email: <a href="mailto:${attributeEscape(billing.email)}">${htmlEscape(billing.email)}</a></span>
+          <span>Phone: ${htmlEscape(billing.phone)}</span>
+          <span>Website: <a href="https://${attributeEscape(billing.website.replace(/^https?:\/\//, ""))}">${htmlEscape(billing.website)}</a></span>
+          <span>${billingAddress}</span>
+        </div>
+      </footer>
+    </section>
+  </main>
+</body>
+</html>`;
+}
+
+function renderProposalResultHtml(input: {
+  title: string;
+  message: string;
+  invoiceUrl?: string | null;
+  registerUrl?: string | null;
+}) {
+  const logoUrl = publicAssetUrl(logo);
+  const cta = input.invoiceUrl
+    ? `<a href="${attributeEscape(input.invoiceUrl)}">View invoice</a>`
+    : input.registerUrl
+      ? `<a href="${attributeEscape(input.registerUrl)}">Register customer account</a>`
+      : "";
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${htmlEscape(input.title)}</title><style>body{margin:0;min-height:100vh;background:radial-gradient(circle at 12% 0%,rgba(109,52,247,.3),transparent 34%),linear-gradient(135deg,#070d23,#101941 58%,#5d2fe8);color:#07102c;font-family:Inter,ui-sans-serif,system-ui,sans-serif}.card{max-width:680px;margin:12vh auto;background:#fff;border:1px solid #dfe4ef;border-radius:28px;padding:38px;box-shadow:0 24px 80px rgba(7,13,35,.28)}.brand{display:flex;align-items:center;gap:12px;margin-bottom:26px}.brand img{width:46px;height:46px;border-radius:14px}.brand strong{display:block;font-size:22px;letter-spacing:-.04em}.brand small{display:block;color:#58637e;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em}h1{margin:0 0 14px;font-size:34px;letter-spacing:-.04em}p{color:#4b5568;line-height:1.7}a{display:inline-block;margin-top:18px;border-radius:12px;background:#5d2fe8;color:#fff;padding:14px 20px;text-decoration:none;font-weight:900}</style></head><body><main class="card"><div class="brand"><img src="${attributeEscape(logoUrl)}" alt="CloudMonkey logo"><span><strong>CloudMonkey</strong><small>Cloud made simple. Support that cares.</small></span></div><h1>${htmlEscape(input.title)}</h1><p>${htmlEscape(input.message)}</p>${cta}</main></body></html>`;
+}
+
+async function fetchProposalDocument(
+  idOrToken: string,
+  byToken = false,
+): Promise<ProposalDocument | null> {
+  const row = await db.query.proposal.findFirst({
+    where: byToken ? eq(proposal.publicToken, idOrToken) : eq(proposal.id, idOrToken),
+    with: { items: { orderBy: (proposalItem, { asc }) => [asc(proposalItem.sortOrder)] } },
+  });
+  if (!row) return null;
+  return { proposal: row, items: row.items ?? [] };
+}
+
+async function createProposalInvoice(input: {
+  proposalId: string;
+  origin: string;
+  actorUserId?: string | null;
+}) {
+  const document = await fetchProposalDocument(input.proposalId);
+  if (!document) throw Object.assign(new Error("Proposal not found"), { status: 404 });
+  const row = document.proposal;
+  if (row.invoiceId) {
+    const existing = await db.query.invoice.findFirst({ where: eq(invoice.id, row.invoiceId) });
+    return { invoice: existing, created: false, requiresRegistration: false };
+  }
+
+  const targetUser = await db.query.user.findFirst({
+    where: sql`lower(${user.email}) = ${row.customerEmail.trim().toLowerCase()}`,
+  });
+  if (!targetUser) return { invoice: null, created: false, requiresRegistration: true };
+
+  const invoiceLines = document.items.flatMap((item) => {
+    const lines = [];
+    if (item.setupPrice > 0) {
+      lines.push({
+        description: `${item.name} - setup and onboarding`,
+        quantity: item.quantity,
+        unitPrice: item.setupPrice,
+        amount: item.quantity * item.setupPrice,
+        recurring: false,
+        interval: item.interval as "month" | "year",
+        planId: null,
+        bundleId: null,
+      });
+    }
+    if (item.unitPrice > 0) {
+      lines.push({
+        description: item.name,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        amount: item.quantity * item.unitPrice,
+        recurring: item.recurring,
+        interval: item.interval as "month" | "year",
+        planId: item.planId,
+        bundleId: item.bundleId,
+      });
+    }
+    return lines;
+  });
+  const amount = invoiceLines.reduce((sum, line) => sum + line.amount, 0);
+  if (amount <= 0) {
+    throw Object.assign(new Error("Proposal has no payable line items to invoice"), {
+      status: 400,
+    });
+  }
+
+  const issuedAt = new Date();
+  const dueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  const billingPeriodEnd = new Date(issuedAt);
+  billingPeriodEnd.setMonth(billingPeriodEnd.getMonth() + 1);
+  const invoiceId = makeId("inv");
+  const settings = await getWorkspaceSettings();
+  const invoiceNumber = makeInvoiceNumber(invoiceId, issuedAt);
+  const callbackUrl = `${input.origin}/dashboard/billing/invoices/${encodeURIComponent(invoiceId)}`;
+
+  const payment = await initializePayment({
+    email: targetUser.email,
+    amountCents: amount,
+    invoiceId,
+    subscriptionId: invoiceId,
+    userId: targetUser.id,
+    callbackUrl,
+  });
+
+  const [createdInvoice] = await db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(invoice)
+      .values({
+        id: invoiceId,
+        userId: targetUser.id,
+        invoiceNumber,
+        invoiceSource: "proposal",
+        amount,
+        status: "pending",
+        dueDate,
+        issuedAt,
+        publishedAt: issuedAt,
+        billingPeriodStart: issuedAt,
+        billingPeriodEnd,
+        currency: row.currency,
+        vatRateBps: 0,
+        customerName: targetUser.name ?? row.customerName,
+        customerEmail: targetUser.email,
+        customerCompany: row.customerCompany ?? null,
+        workspaceBillingSnapshot: JSON.stringify(getWorkspaceBillingDetails(settings)),
+        notes:
+          `Generated from proposal ${row.proposalNumber ?? row.id}. ${settings?.billingInvoiceNotes ?? ""}`.trim(),
+        paystackReference: payment.data.reference,
+        paystackUrl: payment.data.authorization_url,
+      })
+      .returning();
+    await tx.insert(invoiceItem).values(
+      invoiceLines.map((line) => ({
+        id: makeId("invitem"),
+        invoiceId,
+        planId: line.planId,
+        bundleId: line.bundleId,
+        description: line.description,
+        quantity: line.quantity,
+        unitPrice: line.unitPrice,
+        amount: line.amount,
+        recurring: line.recurring,
+        interval: line.interval,
+      })),
+    );
+    await tx
+      .update(proposal)
+      .set({
+        customerUserId: targetUser.id,
+        invoiceId,
+        status: "converted",
+        convertedAt: issuedAt,
+        updatedAt: issuedAt,
+      })
+      .where(eq(proposal.id, row.id));
+    return [created];
+  });
+
+  await upsertManualInvoiceLineSubscriptions({
+    invoiceId,
+    userId: targetUser.id,
+    billingPeriodStart: issuedAt,
+    billingPeriodEnd,
+    status: "pending",
+  });
+
+  await recordAudit({
+    actorUserId: input.actorUserId ?? targetUser.id,
+    action: "proposal.invoice_created",
+    entityType: "proposal",
+    entityId: row.id,
+    message: `Proposal invoice generated for ${targetUser.email}`,
+    metadata: { invoiceId, proposalNumber: row.proposalNumber, amount },
+  });
+
+  sendEmail({
+    template: "invoice_created",
+    to: targetUser.email,
+    subject: `CloudMonkey invoice ${createdInvoice.invoiceNumber ?? createdInvoice.id}`,
+    data: {
+      firstName: targetUser.name,
+      customerName: targetUser.name,
+      invoiceId,
+      invoiceNumber: createdInvoice.invoiceNumber ?? invoiceId,
+      productName: row.title,
+      subscriptionName: row.title,
+      totalDue: formatEmailMoney(createdInvoice.amount, createdInvoice.currency ?? "ZAR"),
+      dueDate: formatEmailDate(createdInvoice.dueDate),
+      primaryCtaText: "View and pay invoice",
+      primaryCtaUrl: callbackUrl,
+    },
+    idempotencyKey: `proposal:${row.id}:invoice:${invoiceId}`,
+  }).catch((error) => console.error("Proposal invoice email failed:", error));
+
+  return { invoice: createdInvoice, created: true, requiresRegistration: false };
+}
+
+async function upsertManualInvoiceLineSubscriptions(input: {
+  invoiceId: string;
+  userId: string;
+  billingPeriodStart: Date;
+  billingPeriodEnd: Date | null;
+  status: "pending" | "active";
+}) {
+  const items = await db.query.invoiceItem.findMany({
+    where: eq(invoiceItem.invoiceId, input.invoiceId),
+  });
+  const recurringItems = items.filter((item) => item.recurring);
+  const touched: Array<typeof subscription.$inferSelect> = [];
+  for (const item of recurringItems) {
+    const subscriptionId = manualInvoiceSubscriptionId(input.invoiceId, item.id);
+    const minimumTermMonths = await getMinimumTermMonthsForProduct({
+      planId: item.planId,
+      bundleId: item.bundleId,
+    });
+    const [row] = await db
+      .insert(subscription)
+      .values({
+        id: subscriptionId,
+        userId: input.userId,
+        planId: item.planId ?? null,
+        bundleId: item.bundleId ?? null,
+        name: item.description,
+        status: input.status,
+        amount: item.amount,
+        interval: item.interval || "month",
+        minimumTermMonths,
+        minimumTermEndsAt: minimumTermMonths
+          ? addMonths(input.billingPeriodStart, minimumTermMonths)
+          : null,
+        currentPeriodStart: input.billingPeriodStart,
+        currentPeriodEnd: input.billingPeriodEnd,
+      })
+      .onConflictDoUpdate({
+        target: subscription.id,
+        set: {
+          planId: item.planId ?? null,
+          bundleId: item.bundleId ?? null,
+          name: item.description,
+          status: input.status,
+          amount: item.amount,
+          interval: item.interval || "month",
+          minimumTermMonths,
+          minimumTermEndsAt: minimumTermMonths
+            ? addMonths(input.billingPeriodStart, minimumTermMonths)
+            : null,
+          currentPeriodStart: input.billingPeriodStart,
+          currentPeriodEnd: input.billingPeriodEnd,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    touched.push(row);
+  }
+  return touched;
+}
+
+async function getMinimumTermMonthsForProduct(input: {
+  planId?: string | null;
+  bundleId?: string | null;
+}) {
+  if (input.planId) {
+    const row = await db.query.servicePlan.findFirst({ where: eq(servicePlan.id, input.planId) });
+    return normalizeMinimumTermMonths(row ?? {});
+  }
+  if (input.bundleId) {
+    const row = await db.query.bundle.findFirst({ where: eq(bundle.id, input.bundleId) });
+    return normalizeMinimumTermMonths(row ?? {});
+  }
+  return null;
+}
+
+async function getInvoicePaymentTotal(invoiceId: string) {
+  const rows = await db.query.invoicePayment.findMany({
+    where: eq(invoicePayment.invoiceId, invoiceId),
+  });
+  return rows.reduce((sum, row) => sum + Math.max(0, Number(row.amount) || 0), 0);
+}
+
+async function activateBillingAfterPayment(input: {
+  invoiceRow: typeof invoice.$inferSelect;
+  origin: string;
+  actorUserId?: string | null;
+  paymentId?: string | null;
+}) {
+  const now = new Date();
+  const existingSubscription = await db.query.subscription.findFirst({
+    where: eq(subscription.id, input.invoiceRow.id),
+  });
+  if (existingSubscription) {
+    await db
+      .update(subscription)
+      .set({
+        status: "active",
+        updatedAt: now,
+        currentPeriodStart: now,
+      })
+      .where(eq(subscription.id, existingSubscription.id));
+  }
+  await upsertManualInvoiceLineSubscriptions({
+    invoiceId: input.invoiceRow.id,
+    userId: input.invoiceRow.userId,
+    billingPeriodStart: now,
+    billingPeriodEnd: input.invoiceRow.billingPeriodEnd,
+    status: "active",
+  });
+
+  await createAffiliateCommissionForPayment({
+    invoiceId: input.invoiceRow.id,
+    customerId: input.invoiceRow.userId,
+    amount: input.invoiceRow.amount,
+    subscriptionId: existingSubscription?.id ?? input.invoiceRow.id,
+    paymentId: input.paymentId ?? input.invoiceRow.paystackReference ?? input.invoiceRow.id,
+  });
+
+  const paidDomainOrder = await db.query.domainOrder.findFirst({
+    where: eq(domainOrder.invoiceId, input.invoiceRow.id),
+  });
+  if (paidDomainOrder && !["registered", "registration_failed"].includes(paidDomainOrder.status)) {
+    await db
+      .update(domainOrder)
+      .set({
+        status: "paid",
+        updatedAt: now,
+      })
+      .where(eq(domainOrder.id, paidDomainOrder.id));
+    tryRegisterPaidDomainOrder(paidDomainOrder, input.origin).catch((error) => {
+      console.error("Domain registration follow-up failed:", error);
+    });
+  }
+
+  const targetUser = await db.query.user.findFirst({ where: eq(user.id, input.invoiceRow.userId) });
+  if (targetUser?.email) {
+    sendEmail({
+      template: "payment_received",
+      to: targetUser.email,
+      subject: `Payment received for ${input.invoiceRow.invoiceNumber ?? input.invoiceRow.id}`,
+      data: {
+        firstName: targetUser.name,
+        productName: input.invoiceRow.invoiceNumber ?? "CloudMonkey invoice",
+        subscriptionName:
+          existingSubscription?.name ?? input.invoiceRow.invoiceNumber ?? "CloudMonkey services",
+        totalDue: formatEmailMoney(input.invoiceRow.amount, input.invoiceRow.currency ?? "ZAR"),
+        primaryCtaText: "Open invoice",
+        primaryCtaUrl: `${input.origin}/dashboard/billing/invoices/${encodeURIComponent(input.invoiceRow.id)}`,
+      },
+      idempotencyKey: `payment:${input.invoiceRow.id}:received`,
+    }).catch((error) => console.error("Payment receipt email failed:", error));
+  }
+
+  await recordAudit({
+    actorUserId: input.actorUserId ?? null,
+    action: "invoice.payment_activated",
+    entityType: "invoice",
+    entityId: input.invoiceRow.id,
+    message: `Invoice ${input.invoiceRow.invoiceNumber ?? input.invoiceRow.id} marked paid and services activated`,
+    metadata: { paymentId: input.paymentId ?? null },
+  });
+}
+
+async function captureInvoicePayment(input: {
+  invoiceId: string;
+  amount?: number | null;
+  method: "eft" | "cash" | "manual" | "gateway";
+  reference?: string | null;
+  notes?: string | null;
+  paidAt?: Date | null;
+  capturedByUserId?: string | null;
+  idempotencyKey: string;
+  origin: string;
+}) {
+  const result = await captureInvoicePaymentAtomically(db, input);
+  if (result.shouldActivate && result.invoice.status === "paid") {
+    await activateBillingAfterPayment({
+      invoiceRow: result.invoice,
+      origin: input.origin,
+      actorUserId: input.capturedByUserId ?? null,
+      paymentId: result.payment?.id ?? null,
+    });
+  }
+  const { shouldActivate: _shouldActivate, ...response } = result;
+  return response;
+}
+
+function renderSuspendedServicePage(input: {
+  title?: string;
+  domain?: string | null;
+  reason?: string | null;
+  invoiceUrl?: string | null;
+}) {
+  const logoUrl = publicAssetUrl(logo);
+  const domain = input.domain ? `<p class="domain">${htmlEscape(input.domain)}</p>` : "";
+  const cta = input.invoiceUrl
+    ? `<a href="${attributeEscape(input.invoiceUrl)}">Open invoice and restore service</a>`
+    : `<a href="mailto:billing@cloudmonkey.co.za">Contact billing</a>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Service suspended - CloudMonkey</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:radial-gradient(circle at 18% 12%,rgba(247,181,0,.28),transparent 28%),radial-gradient(circle at 82% 0%,rgba(91,64,236,.22),transparent 34%),linear-gradient(135deg,#07102c,#101941 58%,#0f766e);font-family:Inter,ui-sans-serif,system-ui,sans-serif;color:#07102c}.card{width:min(720px,calc(100% - 32px));background:#fff;border:1px solid #dfe4ef;border-radius:30px;padding:42px;box-shadow:0 26px 90px rgba(3,7,18,.34)}.brand{display:flex;gap:13px;align-items:center;margin-bottom:28px}.brand img{height:48px;width:48px;border-radius:14px}.brand strong{display:block;font-size:23px;letter-spacing:-.05em}.brand span span{display:block;color:#58637e;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.08em}.pill{display:inline-flex;border:1px solid #fed7aa;background:#fff7ed;color:#9a3412;border-radius:999px;padding:7px 11px;font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.08em}h1{font-size:42px;line-height:1;margin:18px 0 14px;letter-spacing:-.06em}p{font-size:16px;line-height:1.7;color:#4b5568}.domain{font-size:20px;font-weight:900;color:#07102c;background:#f6f7fb;border:1px solid #dfe4ef;border-radius:16px;padding:14px 16px}a{display:inline-flex;margin-top:18px;background:#5d2fe8;color:#fff;text-decoration:none;border-radius:14px;padding:15px 20px;font-weight:900}.meta{margin-top:22px;color:#7b849b;font-size:13px}</style></head><body><main class="card"><div class="brand"><img src="${attributeEscape(logoUrl)}" alt="CloudMonkey logo"><span><strong>CloudMonkey</strong><span>Managed services billing</span></span></div><span class="pill">Temporarily suspended</span><h1>${htmlEscape(input.title ?? "This service is suspended")}</h1>${domain}<p>${htmlEscape(input.reason ?? "The linked invoice is still outstanding after the payment grace period. Service can be restored once payment has been confirmed by CloudMonkey billing.")}</p>${cta}<p class="meta">If you paid by EFT, please send proof of payment to billing@cloudmonkey.co.za and include your invoice number.</p></main></body></html>`;
+}
+
+async function suspendResourcesForInvoice(input: {
+  invoiceRow: typeof invoice.$inferSelect;
+  origin: string;
+  actorUserId?: string | null;
+}) {
+  const now = new Date();
+  const reason = `Suspended for unpaid invoice ${input.invoiceRow.invoiceNumber ?? input.invoiceRow.id}`;
+  await db
+    .update(subscription)
+    .set({ status: "suspended", updatedAt: now })
+    .where(
+      sql`${subscription.id} = ${input.invoiceRow.id} OR ${subscription.id} LIKE ${`sub_${input.invoiceRow.id}_%`}`,
+    );
+
+  const linkedSubscriptions = await db.query.subscription.findMany({
+    where: sql`${subscription.id} = ${input.invoiceRow.id} OR ${subscription.id} LIKE ${`sub_${input.invoiceRow.id}_%`}`,
+  });
+  const subscriptionIds = linkedSubscriptions.map((row) => row.id);
+
+  const websiteMap = new Map<string, typeof website.$inferSelect>();
+  const invoiceWebsites = await db.query.website.findMany({
+    where: eq(website.invoiceId, input.invoiceRow.id),
+  });
+  for (const site of invoiceWebsites) websiteMap.set(site.id, site);
+  for (const subscriptionId of subscriptionIds) {
+    const subscriptionWebsites = await db.query.website.findMany({
+      where: eq(website.subscriptionId, subscriptionId),
+    });
+    for (const site of subscriptionWebsites) websiteMap.set(site.id, site);
+  }
+  const directlyLinkedWebsites = [...websiteMap.values()];
+  if (directlyLinkedWebsites.length) {
+    for (const site of directlyLinkedWebsites) {
+      await db
+        .update(website)
+        .set({
+          status: "suspended",
+          containerStatus: "suspended",
+          suspendedAt: now,
+          suspensionReason: reason,
+          updatedAt: now,
+        })
+        .where(eq(website.id, site.id));
+      await db
+        .update(websiteStore)
+        .set({
+          status: "suspended",
+          suspendedAt: now,
+          updatedAt: now,
+        })
+        .where(eq(websiteStore.websiteId, site.id));
+    }
+  }
+
+  const order = await db.query.domainOrder.findFirst({
+    where: eq(domainOrder.invoiceId, input.invoiceRow.id),
+  });
+  if (order) {
+    await db
+      .update(domainOrder)
+      .set({ status: "suspended", updatedAt: now })
+      .where(eq(domainOrder.id, order.id));
+    await db
+      .update(registeredDomain)
+      .set({ status: "suspended", updatedAt: now })
+      .where(eq(registeredDomain.id, order.domainName));
+  }
+
+  const items = await db.query.invoiceItem.findMany({
+    where: eq(invoiceItem.invoiceId, input.invoiceRow.id),
+  });
+  const itemPlans = await Promise.all(
+    items
+      .filter((item) => item.planId)
+      .map((item) =>
+        db.query.servicePlan.findFirst({
+          where: eq(servicePlan.id, item.planId!),
+          with: { service: true },
+        }),
+      ),
+  );
+  const plansById = new Map(itemPlans.filter(Boolean).map((plan) => [plan!.id, plan!]));
+  const hasVultrServer = items.some((item) => {
+    const plan = item.planId ? plansById.get(item.planId) : null;
+    const text =
+      `${item.description} ${plan?.id ?? ""} ${plan?.service?.id ?? ""} ${plan?.service?.name ?? ""}`.toLowerCase();
+    return text.includes("vultr") || text.includes("vps") || text.includes("server");
+  });
+  if (hasVultrServer) {
+    const instances = await db.query.vultrInstance.findMany({
+      where: eq(vultrInstance.userId, input.invoiceRow.userId),
+    });
+    for (const instance of instances) {
+      try {
+        if (instance.powerStatus !== "stopped") await stopInstance(instance.id);
+      } catch (error) {
+        console.error(`Failed to stop Vultr instance ${instance.id}:`, error);
+      }
+      await db
+        .update(vultrInstance)
+        .set({
+          status: instance.status === "active" ? "suspended" : instance.status,
+          powerStatus: "stopped",
+          suspendedAt: now,
+          suspensionReason: reason,
+          updatedAt: now,
+        })
+        .where(eq(vultrInstance.id, instance.id));
+    }
+  }
+
+  await db
+    .update(invoice)
+    .set({
+      status: "overdue",
+      collectionStatus: "suspended",
+      suspendedAt: now,
+      updatedAt: now,
+    })
+    .where(eq(invoice.id, input.invoiceRow.id));
+
+  await recordAudit({
+    actorUserId: input.actorUserId ?? null,
+    action: "invoice.collection.suspended",
+    entityType: "invoice",
+    entityId: input.invoiceRow.id,
+    message: reason,
+    level: "warning",
+    metadata: {
+      websites: directlyLinkedWebsites.map((site) => site.id),
+      domainOrderId: order?.id ?? null,
+      vultrSuspended: hasVultrServer,
+    },
+  });
+}
+
+async function sendInvoiceCollectionReminder(input: {
+  invoiceRow: typeof invoice.$inferSelect;
+  customer: typeof user.$inferSelect;
+  day: number;
+  origin: string;
+}) {
+  const settings = await getWorkspaceSettings();
+  const billing = getWorkspaceBillingDetails(settings);
+  const method = input.invoiceRow.paymentMethod === "eft" ? "eft" : "gateway";
+  const daysLeft = Math.max(0, 7 - input.day);
+  const invoiceUrl = `${input.origin}/dashboard/billing/invoices/${encodeURIComponent(input.invoiceRow.id)}`;
+  const paymentLine =
+    method === "eft"
+      ? `Please pay by EFT using these details:\nBank: ${billing.bankName}\nAccount name: ${billing.bankAccountName}\nAccount number: ${billing.bankAccountNumber}\nBranch code: ${billing.bankBranchCode}\nReference: ${input.invoiceRow.invoiceNumber ?? input.invoiceRow.id}`
+      : `Please use the secure payment link on your invoice. Payment link: ${input.invoiceRow.paystackUrl ?? invoiceUrl}`;
+  await sendEmail({
+    template: "generic",
+    to: input.customer.email,
+    subject: `CloudMonkey payment reminder: ${input.invoiceRow.invoiceNumber ?? input.invoiceRow.id}`,
+    data: {
+      firstName: input.customer.name,
+      emailTitle: "Invoice payment reminder",
+      emailIntro: `Invoice ${input.invoiceRow.invoiceNumber ?? input.invoiceRow.id} is still outstanding.`,
+      emailBody: `Amount due: ${formatEmailMoney(input.invoiceRow.amount, input.invoiceRow.currency ?? "ZAR")}\nCollection day: ${input.day} of 7\nSuspension countdown: ${daysLeft} day${daysLeft === 1 ? "" : "s"} remaining before automated suspension.\n\n${paymentLine}`,
+      primaryCtaText: method === "eft" ? "Open invoice" : "Pay invoice",
+      primaryCtaUrl: invoiceUrl,
+    },
+    idempotencyKey: `invoice:${input.invoiceRow.id}:collection:${input.day}`,
+  });
+}
+
+async function runInvoiceCollections(input: { origin: string; actorUserId?: string | null }) {
+  const now = new Date();
+  const openInvoices = await db.query.invoice.findMany({
+    where: sql`${invoice.status} IN ('pending', 'overdue')`,
+    orderBy: (invoice, { asc }) => [asc(invoice.createdAt)],
+  });
+  const summary = { scanned: openInvoices.length, reminded: 0, suspended: 0, skipped: 0 };
+
+  for (const row of openInvoices) {
+    const start = row.publishedAt ?? row.issuedAt ?? row.createdAt;
+    const elapsedDays = Math.floor((now.getTime() - start.getTime()) / (24 * 60 * 60 * 1000));
+    if (elapsedDays < 1) {
+      summary.skipped += 1;
+      continue;
+    }
+
+    if (row.paystackReference && row.status !== "paid") {
+      try {
+        const verification = await verifyPayment(row.paystackReference);
+        const paid =
+          verification?.data?.status === "success" ||
+          verification?.data?.gateway_response === "Successful";
+        if (paid) {
+          const [updatedInvoice] = await db
+            .update(invoice)
+            .set({ status: "paid", collectionStatus: "paid", paidAt: now, updatedAt: now })
+            .where(eq(invoice.id, row.id))
+            .returning();
+          await activateBillingAfterPayment({
+            invoiceRow: updatedInvoice,
+            origin: input.origin,
+            actorUserId: input.actorUserId ?? null,
+            paymentId: row.paystackReference,
+          });
+          summary.skipped += 1;
+          continue;
+        }
+      } catch (error) {
+        console.error(`Payment verification failed during collections for ${row.id}:`, error);
+      }
+    }
+
+    const day = Math.min(7, elapsedDays);
+    if (day >= 7) {
+      if (!row.suspendedAt) {
+        await suspendResourcesForInvoice({
+          invoiceRow: row,
+          origin: input.origin,
+          actorUserId: input.actorUserId ?? null,
+        });
+        summary.suspended += 1;
+      } else {
+        summary.skipped += 1;
+      }
+      continue;
+    }
+
+    if (row.collectionDayCount >= day) {
+      summary.skipped += 1;
+      continue;
+    }
+
+    const customer = await db.query.user.findFirst({ where: eq(user.id, row.userId) });
+    if (!customer?.email) {
+      summary.skipped += 1;
+      continue;
+    }
+    await sendInvoiceCollectionReminder({
+      invoiceRow: row,
+      customer,
+      day,
+      origin: input.origin,
+    });
+    await db
+      .update(invoice)
+      .set({
+        status: row.status === "pending" && now > row.dueDate ? "overdue" : row.status,
+        collectionStatus: "reminder",
+        collectionDayCount: day,
+        firstReminderAt: row.firstReminderAt ?? now,
+        lastReminderAt: now,
+        nextReminderAt: addDays(now, 1),
+        suspensionDueAt: addDays(start, 7),
+        updatedAt: now,
+      })
+      .where(eq(invoice.id, row.id));
+    summary.reminded += 1;
+  }
+
+  await recordAudit({
+    actorUserId: input.actorUserId ?? null,
+    action: "invoice.collections.run",
+    entityType: "invoice",
+    entityId: "collections",
+    message: `Invoice collections run: ${summary.reminded} reminders, ${summary.suspended} suspensions`,
+    metadata: summary,
+  });
+  return summary;
+}
 
 const domainOrderSchema = z.object({
   domainName: z.string().min(3),
   domainPlanId: z.string().min(1),
   addonPlanIds: z.array(z.string().min(1)).optional().default([]),
-});
-
-const supportChatSchema = z.object({
-  sessionId: z.string().optional().nullable(),
-  message: z.string().optional().default(""),
-  attachmentIds: z.array(z.string().min(1)).optional().default([]),
-  clientCapabilities: z.object({
-    audioReply: z.boolean().optional(),
-    imageUpload: z.boolean().optional(),
-    voiceNotes: z.boolean().optional(),
-  }).optional().default({}),
-}).refine((body) => body.message.trim().length > 0 || body.attachmentIds.length > 0, {
-  message: "Message or attachment is required",
 });
 
 const supportAgentToolCallSchema = z.discriminatedUnion("type", [
@@ -4855,21 +7563,36 @@ const supportAgentToolCallSchema = z.discriminatedUnion("type", [
 const supportAgentResponseSchema = z.object({
   reply: z.string().min(1).optional(),
   message: z.string().min(1).optional(),
-  intent: z.enum(["support", "billing", "signup_guidance", "domain_check", "dns_query", "onboarding", "general"]).optional(),
+  intent: z
+    .enum([
+      "support",
+      "billing",
+      "signup_guidance",
+      "domain_check",
+      "dns_query",
+      "onboarding",
+      "general",
+    ])
+    .optional(),
   createTicket: z.boolean().optional(),
-  ticket: z.object({
-    subject: z.string().optional(),
-    description: z.string().optional(),
-    priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
-    category: z.string().optional(),
-  }).optional(),
+  ticket: z
+    .object({
+      subject: z.string().optional(),
+      description: z.string().optional(),
+      priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
+      category: z.string().optional(),
+    })
+    .optional(),
   subject: z.string().optional(),
   description: z.string().optional(),
   priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
   category: z.string().optional(),
   status: z.enum(["open", "pending", "resolved", "closed"]).optional(),
   toolCalls: z.array(supportAgentToolCallSchema).optional().default([]),
-  suggestedActions: z.array(z.object({ label: z.string(), href: z.string() })).optional().default([]),
+  suggestedActions: z
+    .array(z.object({ label: z.string(), href: z.string() }))
+    .optional()
+    .default([]),
   summary: z.string().optional(),
   internalNote: z.string().optional(),
   audioReplyText: z.string().optional(),
@@ -4892,11 +7615,20 @@ const intelligenceProjectSchema = z.object({
   industry: z.string().max(160).optional().nullable(),
   servicesProducts: z.string().max(2000).optional().nullable(),
   targetKeywords: z.array(z.string().min(2).max(180)).max(50).optional().default([]),
-  competitors: z.array(z.object({
-    name: z.string().min(1).max(140).optional().nullable(),
-    websiteUrl: z.string().url(),
-    competitorType: z.enum(["manual", "organic", "local", "ad", "content", "pricing"]).optional().default("manual"),
-  })).max(10).optional().default([]),
+  competitors: z
+    .array(
+      z.object({
+        name: z.string().min(1).max(140).optional().nullable(),
+        websiteUrl: z.string().url(),
+        competitorType: z
+          .enum(["manual", "organic", "local", "ad", "content", "pricing"])
+          .optional()
+          .default("manual"),
+      }),
+    )
+    .max(10)
+    .optional()
+    .default([]),
 });
 
 const intelligenceProjectUpdateSchema = intelligenceProjectSchema.partial().omit({
@@ -4907,7 +7639,10 @@ const intelligenceProjectUpdateSchema = intelligenceProjectSchema.partial().omit
 const intelligenceCompetitorSchema = z.object({
   name: z.string().min(1).max(140).optional().nullable(),
   websiteUrl: z.string().url(),
-  competitorType: z.enum(["manual", "organic", "local", "ad", "content", "pricing"]).optional().default("manual"),
+  competitorType: z
+    .enum(["manual", "organic", "local", "ad", "content", "pricing"])
+    .optional()
+    .default("manual"),
 });
 
 const intelligenceKeywordSchema = z.object({
@@ -4928,129 +7663,174 @@ const intelligenceWebhookResultSchema = z.object({
   status: z.enum(["queued", "running", "completed", "failed", "cancelled"]).default("completed"),
   externalRunId: z.string().optional().nullable(),
   error: z.string().optional().nullable(),
-  scores: z.object({
-    visibilityScore: z.coerce.number().int().min(0).max(100).optional(),
-    technicalSeoScore: z.coerce.number().int().min(0).max(100).optional(),
-    contentSeoScore: z.coerce.number().int().min(0).max(100).optional(),
-    contentGapScore: z.coerce.number().int().min(0).max(100).optional(),
-    localSeoScore: z.coerce.number().int().min(0).max(100).optional(),
-    performanceScore: z.coerce.number().int().min(0).max(100).optional(),
-    aiReadinessScore: z.coerce.number().int().min(0).max(100).optional(),
-    opportunityScore: z.coerce.number().int().min(0).max(100).optional(),
-  }).optional().default({}),
-  competitors: z.array(z.object({
-    id: z.string().optional(),
-    name: z.string().min(1),
-    websiteUrl: z.string().url(),
-    competitorType: z.string().optional().default("organic"),
-    visibilityScore: z.coerce.number().int().min(0).max(100).optional(),
-    technicalSeoScore: z.coerce.number().int().min(0).max(100).optional(),
-    contentSeoScore: z.coerce.number().int().min(0).max(100).optional(),
-    localSeoScore: z.coerce.number().int().min(0).max(100).optional(),
-    metadata: z.unknown().optional(),
-  })).optional().default([]),
-  rankings: z.array(z.object({
-    keywordId: z.string().optional().nullable(),
-    competitorId: z.string().optional().nullable(),
-    keyword: z.string().min(1),
-    target: z.string().optional().default("primary"),
-    rank: z.coerce.number().int().optional().nullable(),
-    previousRank: z.coerce.number().int().optional().nullable(),
-    bestRank: z.coerce.number().int().optional().nullable(),
-    searchVolume: z.coerce.number().int().optional().nullable(),
-    difficulty: z.coerce.number().int().optional().nullable(),
-    opportunity: z.string().optional().nullable(),
-    serpFeatures: z.unknown().optional(),
-    raw: z.unknown().optional(),
-    observedAt: z.string().optional().nullable(),
-  })).optional().default([]),
-  crawlPages: z.array(z.object({
-    competitorId: z.string().optional().nullable(),
-    url: z.string().url(),
-    target: z.string().optional().default("primary"),
-    httpStatus: z.coerce.number().int().optional().nullable(),
-    title: z.string().optional().nullable(),
-    metaDescription: z.string().optional().nullable(),
-    h1: z.string().optional().nullable(),
-    h2Count: z.coerce.number().int().optional().default(0),
-    wordCount: z.coerce.number().int().optional().default(0),
-    internalLinkCount: z.coerce.number().int().optional().default(0),
-    externalLinkCount: z.coerce.number().int().optional().default(0),
-    imageMissingAltCount: z.coerce.number().int().optional().default(0),
-    hasCanonical: z.boolean().optional().default(false),
-    hasSchema: z.boolean().optional().default(false),
-    loadTimeMs: z.coerce.number().int().optional().nullable(),
-    screenshotUrl: z.string().optional().nullable(),
-    raw: z.unknown().optional(),
-    observedAt: z.string().optional().nullable(),
-  })).optional().default([]),
-  audits: z.array(z.object({
-    target: z.string().optional().default("primary"),
-    targetUrl: z.string().url(),
-    technicalScore: z.coerce.number().int().min(0).max(100).optional().default(0),
-    contentScore: z.coerce.number().int().min(0).max(100).optional().default(0),
-    localScore: z.coerce.number().int().min(0).max(100).optional().default(0),
-    performanceScore: z.coerce.number().int().min(0).max(100).optional().default(0),
-    aiReadinessScore: z.coerce.number().int().min(0).max(100).optional().default(0),
-    summary: z.string().optional().nullable(),
-    raw: z.unknown().optional(),
-  })).optional().default([]),
-  issues: z.array(z.object({
-    auditId: z.string().optional().nullable(),
-    crawlPageId: z.string().optional().nullable(),
-    category: z.string().min(1),
-    severity: z.enum(["low", "medium", "high", "critical"]).optional().default("medium"),
-    title: z.string().min(1),
-    description: z.string().optional().nullable(),
-    recommendation: z.string().optional().nullable(),
-    sourceUrl: z.string().optional().nullable(),
-    status: z.string().optional().default("open"),
-  })).optional().default([]),
-  contentGaps: z.array(z.object({
-    competitorId: z.string().optional().nullable(),
-    gapType: z.string().min(1),
-    title: z.string().min(1),
-    description: z.string().optional().nullable(),
-    opportunity: z.enum(["low", "medium", "high", "very_high"]).optional().default("medium"),
-    sourceUrl: z.string().optional().nullable(),
-    suggestedAction: z.string().optional().nullable(),
-    status: z.string().optional().default("open"),
-  })).optional().default([]),
-  serpResults: z.array(z.object({
-    keywordId: z.string().optional().nullable(),
-    keyword: z.string().min(1),
-    location: z.string().optional().nullable(),
-    device: z.string().optional().nullable(),
-    resultUrl: z.string().optional().nullable(),
-    resultTitle: z.string().optional().nullable(),
-    domain: z.string().optional().nullable(),
-    rank: z.coerce.number().int().optional().nullable(),
-    resultType: z.string().optional().default("organic"),
-    hasAds: z.boolean().optional().default(false),
-    hasMapPack: z.boolean().optional().default(false),
-    hasAiOverview: z.boolean().optional().default(false),
-    raw: z.unknown().optional(),
-    observedAt: z.string().optional().nullable(),
-  })).optional().default([]),
-  recommendations: z.array(z.object({
-    title: z.string().min(1),
-    description: z.string().optional().nullable(),
-    category: z.string().optional().default("seo"),
-    priority: z.enum(["low", "medium", "high", "urgent"]).optional().default("medium"),
-    impact: z.enum(["low", "medium", "high"]).optional().default("medium"),
-    effort: z.enum(["low", "medium", "high"]).optional().default("medium"),
-    sourceType: z.string().optional().nullable(),
-    sourceId: z.string().optional().nullable(),
-    status: z.string().optional().default("open"),
-  })).optional().default([]),
-  report: z.object({
-    title: z.string().min(1).optional(),
-    status: z.string().optional().default("published"),
-    executiveSummary: z.string().optional().nullable(),
-    insightPacket: z.unknown().optional(),
-    reportJson: z.unknown().optional(),
-    pdfUrl: z.string().optional().nullable(),
-  }).optional(),
+  scores: z
+    .object({
+      visibilityScore: z.coerce.number().int().min(0).max(100).optional(),
+      technicalSeoScore: z.coerce.number().int().min(0).max(100).optional(),
+      contentSeoScore: z.coerce.number().int().min(0).max(100).optional(),
+      contentGapScore: z.coerce.number().int().min(0).max(100).optional(),
+      localSeoScore: z.coerce.number().int().min(0).max(100).optional(),
+      performanceScore: z.coerce.number().int().min(0).max(100).optional(),
+      aiReadinessScore: z.coerce.number().int().min(0).max(100).optional(),
+      opportunityScore: z.coerce.number().int().min(0).max(100).optional(),
+    })
+    .optional()
+    .default({}),
+  competitors: z
+    .array(
+      z.object({
+        id: z.string().optional(),
+        name: z.string().min(1),
+        websiteUrl: z.string().url(),
+        competitorType: z.string().optional().default("organic"),
+        visibilityScore: z.coerce.number().int().min(0).max(100).optional(),
+        technicalSeoScore: z.coerce.number().int().min(0).max(100).optional(),
+        contentSeoScore: z.coerce.number().int().min(0).max(100).optional(),
+        localSeoScore: z.coerce.number().int().min(0).max(100).optional(),
+        metadata: z.unknown().optional(),
+      }),
+    )
+    .optional()
+    .default([]),
+  rankings: z
+    .array(
+      z.object({
+        keywordId: z.string().optional().nullable(),
+        competitorId: z.string().optional().nullable(),
+        keyword: z.string().min(1),
+        target: z.string().optional().default("primary"),
+        rank: z.coerce.number().int().optional().nullable(),
+        previousRank: z.coerce.number().int().optional().nullable(),
+        bestRank: z.coerce.number().int().optional().nullable(),
+        searchVolume: z.coerce.number().int().optional().nullable(),
+        difficulty: z.coerce.number().int().optional().nullable(),
+        opportunity: z.string().optional().nullable(),
+        serpFeatures: z.unknown().optional(),
+        raw: z.unknown().optional(),
+        observedAt: z.string().optional().nullable(),
+      }),
+    )
+    .optional()
+    .default([]),
+  crawlPages: z
+    .array(
+      z.object({
+        competitorId: z.string().optional().nullable(),
+        url: z.string().url(),
+        target: z.string().optional().default("primary"),
+        httpStatus: z.coerce.number().int().optional().nullable(),
+        title: z.string().optional().nullable(),
+        metaDescription: z.string().optional().nullable(),
+        h1: z.string().optional().nullable(),
+        h2Count: z.coerce.number().int().optional().default(0),
+        wordCount: z.coerce.number().int().optional().default(0),
+        internalLinkCount: z.coerce.number().int().optional().default(0),
+        externalLinkCount: z.coerce.number().int().optional().default(0),
+        imageMissingAltCount: z.coerce.number().int().optional().default(0),
+        hasCanonical: z.boolean().optional().default(false),
+        hasSchema: z.boolean().optional().default(false),
+        loadTimeMs: z.coerce.number().int().optional().nullable(),
+        screenshotUrl: z.string().optional().nullable(),
+        raw: z.unknown().optional(),
+        observedAt: z.string().optional().nullable(),
+      }),
+    )
+    .optional()
+    .default([]),
+  audits: z
+    .array(
+      z.object({
+        target: z.string().optional().default("primary"),
+        targetUrl: z.string().url(),
+        technicalScore: z.coerce.number().int().min(0).max(100).optional().default(0),
+        contentScore: z.coerce.number().int().min(0).max(100).optional().default(0),
+        localScore: z.coerce.number().int().min(0).max(100).optional().default(0),
+        performanceScore: z.coerce.number().int().min(0).max(100).optional().default(0),
+        aiReadinessScore: z.coerce.number().int().min(0).max(100).optional().default(0),
+        summary: z.string().optional().nullable(),
+        raw: z.unknown().optional(),
+      }),
+    )
+    .optional()
+    .default([]),
+  issues: z
+    .array(
+      z.object({
+        auditId: z.string().optional().nullable(),
+        crawlPageId: z.string().optional().nullable(),
+        category: z.string().min(1),
+        severity: z.enum(["low", "medium", "high", "critical"]).optional().default("medium"),
+        title: z.string().min(1),
+        description: z.string().optional().nullable(),
+        recommendation: z.string().optional().nullable(),
+        sourceUrl: z.string().optional().nullable(),
+        status: z.string().optional().default("open"),
+      }),
+    )
+    .optional()
+    .default([]),
+  contentGaps: z
+    .array(
+      z.object({
+        competitorId: z.string().optional().nullable(),
+        gapType: z.string().min(1),
+        title: z.string().min(1),
+        description: z.string().optional().nullable(),
+        opportunity: z.enum(["low", "medium", "high", "very_high"]).optional().default("medium"),
+        sourceUrl: z.string().optional().nullable(),
+        suggestedAction: z.string().optional().nullable(),
+        status: z.string().optional().default("open"),
+      }),
+    )
+    .optional()
+    .default([]),
+  serpResults: z
+    .array(
+      z.object({
+        keywordId: z.string().optional().nullable(),
+        keyword: z.string().min(1),
+        location: z.string().optional().nullable(),
+        device: z.string().optional().nullable(),
+        resultUrl: z.string().optional().nullable(),
+        resultTitle: z.string().optional().nullable(),
+        domain: z.string().optional().nullable(),
+        rank: z.coerce.number().int().optional().nullable(),
+        resultType: z.string().optional().default("organic"),
+        hasAds: z.boolean().optional().default(false),
+        hasMapPack: z.boolean().optional().default(false),
+        hasAiOverview: z.boolean().optional().default(false),
+        raw: z.unknown().optional(),
+        observedAt: z.string().optional().nullable(),
+      }),
+    )
+    .optional()
+    .default([]),
+  recommendations: z
+    .array(
+      z.object({
+        title: z.string().min(1),
+        description: z.string().optional().nullable(),
+        category: z.string().optional().default("seo"),
+        priority: z.enum(["low", "medium", "high", "urgent"]).optional().default("medium"),
+        impact: z.enum(["low", "medium", "high"]).optional().default("medium"),
+        effort: z.enum(["low", "medium", "high"]).optional().default("medium"),
+        sourceType: z.string().optional().nullable(),
+        sourceId: z.string().optional().nullable(),
+        status: z.string().optional().default("open"),
+      }),
+    )
+    .optional()
+    .default([]),
+  report: z
+    .object({
+      title: z.string().min(1).optional(),
+      status: z.string().optional().default("published"),
+      executiveSummary: z.string().optional().nullable(),
+      insightPacket: z.unknown().optional(),
+      reportJson: z.unknown().optional(),
+      pdfUrl: z.string().optional().nullable(),
+    })
+    .optional(),
 });
 
 const n8nIntegrationSchema = z.object({
@@ -5061,6 +7841,329 @@ const n8nIntegrationSchema = z.object({
 
 const n8nSyncSchema = z.object({
   instanceId: z.string().min(1),
+});
+
+const webhooksHandlers = createWebhookHandlers({
+  db,
+  json,
+  recordAudit,
+  sendEmail,
+  verifyMailjetWebhookSignature,
+  verifyIntelligenceWebhook,
+  persistIntelligenceWebhookResult,
+  parseBody,
+  intelligenceWebhookResultSchema,
+  proposal,
+  invoice,
+  subscription,
+  domainOrder,
+  user,
+  formatEmailMoney,
+  createAffiliateCommissionForPayment,
+  upsertManualInvoiceLineSubscriptions,
+  tryRegisterPaidDomainOrder,
+  makeId,
+  tokenWallet,
+  tokenWalletLedger,
+  tokenWalletReservation,
+  tokenFeatureRate,
+  tokenTopupIntent,
+});
+
+const walletHandlers = createWalletHandlers({
+  db,
+  json,
+  parseBody,
+  requireSession,
+  requireAdmin,
+  recordAudit,
+  makeId,
+  initializePayment,
+  tokenWallet,
+  tokenWalletLedger,
+  tokenWalletReservation,
+  tokenFeatureRate,
+  tokenTopupIntent,
+  user,
+});
+
+const walletServiceDeps = {
+  db,
+  json,
+  recordAudit,
+  makeId,
+  initializePayment,
+  tokenWallet,
+  tokenWalletLedger,
+  tokenWalletReservation,
+  tokenFeatureRate,
+  tokenTopupIntent,
+  user,
+};
+
+const reserveWalletUsageBound = (input: Parameters<typeof reserveWalletUsage>[1]) =>
+  reserveWalletUsage(walletServiceDeps, input);
+const commitWalletReservationBound = (input: Parameters<typeof commitWalletReservation>[1]) =>
+  commitWalletReservation(walletServiceDeps, input);
+const releaseWalletReservationBound = (input: Parameters<typeof releaseWalletReservation>[1]) =>
+  releaseWalletReservation(walletServiceDeps, input);
+
+const supportChatHandlers = createSupportChatHandlers({
+  db,
+  json,
+  parseBody,
+  requireSession,
+  makeId,
+  safeJsonParse,
+  getSupportCrmContext: (userId) => getSupportCrmContext({ db }, userId),
+  resolveSupportChatSession: (userId, requestedSessionId) =>
+    resolveSupportChatSession({ db, makeId }, userId, requestedSessionId),
+  loadSupportChatHistory: (sessionId, limit) => loadSupportChatHistory({ db }, sessionId, limit),
+  retrieveSupportKnowledge: (input) => retrieveSupportKnowledge({ db, makeId }, input),
+  sendN8nSupportChat,
+  executeToolCalls: (userId, toolCalls, access) =>
+    executeSupportToolCalls({ db, recordAudit }, userId, toolCalls, access),
+  storeSupportLearning: (input) => storeSupportLearning({ db, makeId }, input),
+  readFile,
+  stat,
+  mkdir,
+  writeFile,
+  CHAT_UPLOAD_DIR,
+  getAttachmentKind,
+  maxBytesForAttachment,
+  sanitizeFileName,
+});
+
+const caesarHandlers = createCaesarHandlers(
+  {
+    db,
+    json,
+    parseBody,
+    requireSession,
+    makeId,
+    recordAudit,
+  },
+  () => ({
+    brand: "CloudMonkey",
+    promise: "One platform, one invoice, one accountable team.",
+    markets: ["South Africa", "Namibia", "Botswana", "Nigeria", "Mozambique", "Kenya"],
+    categories: CATEGORIES.map((category) => ({
+      id: category.id,
+      name: category.name,
+      tagline: category.tagline,
+      services: category.services.map((service) => ({
+        id: service.id,
+        name: service.name,
+        plans: service.plans.map((plan) => ({
+          id: plan.id,
+          name: plan.name,
+          priceZar: plan.priceZar,
+          setupPriceZar: plan.setupPriceZar,
+          unit: plan.unit,
+          minimumTermMonths: plan.minimumTermMonths,
+          serviceDefinition: plan.serviceDefinition,
+        })),
+      })),
+    })),
+    bundles: BUNDLES.map((item) => ({
+      id: item.id,
+      name: item.name,
+      priceZar: item.priceZar,
+      setupPriceZar: item.setupPriceZar,
+      minimumTermMonths: item.minimumTermMonths,
+      description: item.description,
+      serviceDefinition: item.serviceDefinition,
+    })),
+  }),
+);
+
+const affiliateHandlers = createAffiliateHandlers({
+  db,
+  json,
+  parseBody,
+  requireSession,
+  requireAdmin,
+  recordAudit,
+  makeId,
+  encryptSecret,
+  decryptSecret,
+  affiliate,
+  affiliateCommission,
+  affiliateFraudFlag,
+  affiliatePayout,
+  affiliateReferral,
+  user,
+});
+
+const billingHandlers = createBillingHandlers({
+  db,
+  json,
+  parseBody,
+  requireSession,
+  requireAdmin,
+  makeId,
+  initializePayment,
+  verifyPayment,
+  recordAudit,
+  sendEmail,
+  formatEmailDate,
+  upsertManualInvoiceLineSubscriptions,
+  createAffiliateCommissionForPayment,
+  tryRegisterPaidDomainOrder,
+  formatEmailMoney,
+  agreementRequirementForProduct,
+  safeServiceDefinition,
+  signedAgreementExists,
+  runInvoiceCollections,
+  getWorkspaceSettings,
+  getWorkspaceBillingDetails,
+  captureInvoicePayment,
+  sendInvoiceCollectionReminder,
+  getInvoiceDocumentPayload,
+  renderInvoicePdf,
+  normalizeManualInvoiceLines,
+  manualInvoiceSchema,
+  manualPaymentCaptureSchema,
+  invoiceVoidSchema,
+  subscriptionSchema,
+  invoice,
+  invoiceItem,
+  invoicePayment,
+  subscription,
+  domainOrder,
+  user,
+  servicePlan,
+  bundle,
+  addMonths,
+});
+
+const agentsRuntimeHandlers = createAgentsRuntimeHandlers({
+  db,
+  json,
+  parseBody,
+  requireAdmin,
+  recordAudit,
+  makeId,
+  getRemoteIp,
+  encryptSecret,
+  decryptSecret,
+  serverAgent,
+  serverTelemetrySnapshot,
+  serverSecurityFinding,
+  serverWebsite,
+  serverContainer,
+  serverDatabase,
+  detectedAiRuntime,
+  vultrInstance,
+  user,
+});
+
+const publicScanHandlers = createPublicScanHandlers({ getRemoteIp });
+
+const adminHandlers = createAdminHandlers({
+  db,
+  json,
+  parseBody,
+  requireAdmin,
+  recordAudit,
+  sendEmail,
+  makeId,
+  getWorkspaceSettings,
+  getWorkspaceBillingDetails,
+  getSupportCrmContext: (userId) => getSupportCrmContext({ db }, userId),
+  getAdminServerStatus,
+  resolveAdminChatSession,
+  loadAdminChatHistory,
+  sendN8nAdminChat,
+  generateGeminiText,
+  sanitizeN8nIntegration,
+  syncN8nWorkflows,
+  signMicrosoft365State,
+  verifyMicrosoft365State,
+  microsoft365ClientConfig,
+  microsoft365Scopes,
+  exchangeMicrosoft365Code,
+  syncMicrosoft365Tenant,
+  microsoft365RedirectUri,
+});
+
+const intelligenceHandlers = createIntelligenceHandlers({
+  db,
+  json,
+  parseBody,
+  requireIntelligenceAccess,
+  requireAdmin,
+  recordAudit,
+  makeId,
+  safeJsonParse,
+  publicProjectDto,
+  publicReportDto,
+  getIntelligenceProjectForSession,
+  buildIntelligenceOverview,
+  sendN8nCompetitorIntelligence,
+  crawlSiteFingerprint,
+  fetchGoogleSearchConsoleSnapshot,
+  intelligenceProject,
+  intelligenceCompetitor,
+  intelligenceKeyword,
+  intelligenceKeywordRanking,
+  intelligenceJob,
+  intelligenceCrawlPage,
+  intelligenceSeoAudit,
+  intelligenceSerpResult,
+  intelligencePageIssue,
+  intelligenceContentGap,
+  intelligenceRecommendation,
+  intelligenceReport,
+  user,
+  reserveWalletUsage: reserveWalletUsageBound,
+  commitWalletReservation: commitWalletReservationBound,
+  releaseWalletReservation: releaseWalletReservationBound,
+  intelligenceProjectCreateSchema: intelligenceProjectSchema,
+  intelligenceCompetitorSchema,
+  intelligenceKeywordSchema,
+  intelligenceScanSchema,
+  buildIntelligenceProjectUpdateSchema,
+});
+
+const internalToolsHandlers = createInternalToolsHandlers({
+  db,
+  json,
+  recordInternalToolAudit,
+  getRequestIp,
+  getRequestUserAgent,
+  verifyInternalSqlConsoleAccess,
+  verifyInternalAdminSecondFactor,
+  sendInvoiceCollectionReminder,
+  invoice,
+  user,
+  eq,
+  recordAudit,
+});
+
+const domainsHandlers = createDomainsHandlers({
+  db,
+  json,
+  parseBody,
+  requireSession,
+  requireAdmin,
+  makeId,
+  initializePayment,
+  sendEmail,
+  formatEmailDate,
+  formatEmailMoney,
+  getWorkspaceSettings,
+  getWorkspaceBillingDetails,
+  servicePlan,
+  invoice,
+  invoiceItem,
+  subscription,
+  domainOrder,
+  registeredDomain,
+  supportTicket,
+  addMonths,
+  normalizeMinimumTermMonths,
+  recordAudit,
 });
 
 const ticketSchema = z.object({
@@ -5082,54 +8185,12 @@ const ticketCommentSchema = z.object({
   isInternal: z.boolean().optional().default(false),
 });
 
-const settingsSchema = z.object({
-  workspaceName: z.string().min(1),
-  adminNotificationEmail: z.string().email().optional().nullable(),
-  securityContactEmail: z.string().email().optional().nullable(),
-  billingLegalName: z.string().optional().nullable(),
-  billingEmail: z.string().email().optional().nullable(),
-  billingPhone: z.string().optional().nullable(),
-  billingWebsite: z.string().optional().nullable(),
-  billingAddress: z.string().optional().nullable(),
-  billingRegistrationNumber: z.string().optional().nullable(),
-  billingVatNumber: z.string().optional().nullable(),
-  billingBankName: z.string().optional().nullable(),
-  billingBankAccountName: z.string().optional().nullable(),
-  billingBankAccountNumber: z.string().optional().nullable(),
-  billingBankBranchCode: z.string().optional().nullable(),
-  billingInvoiceNotes: z.string().optional().nullable(),
-  defaultTicketPriority: z.enum(["low", "medium", "high", "urgent"]).default("medium"),
-  allowCustomerTicketCreation: z.boolean().default(true),
-});
-
 const websiteSchema = z.object({
   userId: z.string().min(1),
   domain: z.string().min(1),
   plan: z.string().min(1),
   status: z.enum(["online", "offline", "maintenance"]).default("online"),
   githubRepo: z.string().optional().nullable(),
-});
-
-const runtimeServerSchema = z.object({
-  id: z.string().min(3).optional(),
-  provider: z.string().default("manual"),
-  providerInstanceId: z.string().optional().nullable(),
-  profileName: z.string().default("geek247-compatible-docker-host"),
-  hostname: z.string().min(1),
-  publicIp: z.string().optional().nullable(),
-  privateIp: z.string().optional().nullable(),
-  provisionerUrl: z.string().url(),
-  provisionerSecret: z.string().min(16),
-  ingressHostname: z.string().optional().nullable(),
-  ingressIp: z.string().optional().nullable(),
-  dockerNetworkName: z.string().default("cm_runtime"),
-  proxyMode: z.enum(["caddy", "traefik", "nginx"]).default("caddy"),
-  region: z.string().optional().nullable(),
-  status: z.enum(["planned", "active", "maintenance", "offline"]).default("active"),
-  cpuTotal: z.coerce.number().int().min(0).default(0),
-  memoryTotalMb: z.coerce.number().int().min(0).default(0),
-  diskTotalGb: z.coerce.number().int().min(0).default(0),
-  maxSiteCount: z.coerce.number().int().min(0).default(0),
 });
 
 const userWebsiteCreateSchema = z.object({
@@ -5139,7 +8200,10 @@ const userWebsiteCreateSchema = z.object({
   industry: z.string().max(120).optional().default(""),
   targetCustomers: z.string().max(500).optional().default(""),
   whatsapp: z.string().max(80).optional().default(""),
-  email: z.union([z.string().email(), z.literal("")]).optional().default(""),
+  email: z
+    .union([z.string().email(), z.literal("")])
+    .optional()
+    .default(""),
   preferredSlug: z.string().max(80).optional().default(""),
   productCount: z.coerce.number().int().min(0).max(100000).optional().default(0),
   needsInventory: z.boolean().optional().default(false),
@@ -5152,10 +8216,30 @@ const websiteOnboardingSchema = z.object({
   answers: z.record(z.unknown()),
 });
 
+const adminWebsiteProjectCreateSchema = z.object({
+  userId: z.string().min(1),
+  siteType: z.enum(["website", "ecommerce"]),
+  planId: z.string().min(1),
+  subscriptionId: z.string().optional().nullable(),
+  githubRepo: z.string().url().max(255).optional().or(z.literal("")).nullable(),
+  businessName: z.string().min(2).max(120),
+  businessDescription: z.string().max(1000).optional().default(""),
+  industry: z.string().max(120).optional().default(""),
+  preferredSlug: z.string().max(80).optional().default(""),
+  subscriptionStatus: z.enum(["pending", "active", "trialing"]).optional().default("active"),
+});
+
 const adminDesignOptionSchema = z.object({
   styleLabel: z.string().min(1).max(120),
   notes: z.string().max(1000).optional().default(""),
   imageUrl: z.string().url().optional().or(z.literal("")).default(""),
+});
+
+const adminWebsiteDesignInputsSchema = z.object({
+  designBrief: z.string().max(20000).optional().default(""),
+  contentNotes: z.string().max(20000).optional().default(""),
+  preferredStyle: z.string().max(2000).optional().default(""),
+  mustHaveSections: z.string().max(5000).optional().default(""),
 });
 
 const websiteApprovalResponseSchema = z.object({
@@ -5174,99 +8258,95 @@ const storeProductCreateSchema = z.object({
   status: z.enum(["draft", "active", "archived"]).default("active"),
 });
 
-const agentEnrollmentRequestSchema = z.object({
-  instanceId: z.string().min(1),
-  name: z.string().optional().nullable(),
-});
-
-const agentEnrollSchema = z.object({
-  enrollmentToken: z.string().min(20),
-  hostname: z.string().optional().nullable(),
-  version: z.string().optional().nullable(),
-});
-
-const agentHeartbeatSchema = z.object({
-  hostname: z.string().optional().nullable(),
-  version: z.string().optional().nullable(),
-  status: z.enum(["online", "degraded", "offline"]).optional().default("online"),
-});
-
-const agentSnapshotSchema = z.object({
-  observedAt: z.string().optional(),
-  host: z.object({
-    hostname: z.string().optional().nullable(),
-    osName: z.string().optional().nullable(),
-    kernel: z.string().optional().nullable(),
-    uptimeSeconds: z.coerce.number().int().nonnegative().optional().nullable(),
-  }).optional().default({}),
-  metrics: z.object({
-    cpuUsagePercent: z.coerce.number().int().min(0).max(100).optional().nullable(),
-    memoryUsedMb: z.coerce.number().int().nonnegative().optional().nullable(),
-    memoryTotalMb: z.coerce.number().int().nonnegative().optional().nullable(),
-    diskUsedGb: z.coerce.number().int().nonnegative().optional().nullable(),
-    diskTotalGb: z.coerce.number().int().nonnegative().optional().nullable(),
-  }).optional().default({}),
-  security: z.object({
-    score: z.coerce.number().int().min(0).max(100).optional().nullable(),
-    summary: z.string().optional().nullable(),
-    findings: z.array(z.object({
-      code: z.string().min(1),
-      title: z.string().min(1),
-      severity: z.enum(["info", "low", "medium", "high", "critical"]).default("info"),
-      detail: z.string().optional().nullable(),
-      evidence: z.unknown().optional().nullable(),
-    })).optional().default([]),
-  }).optional().default({ findings: [] }),
-  websites: z.array(z.object({
-    url: z.string().min(1),
-    domain: z.string().min(1),
-    status: z.string().optional().default("unknown"),
-    httpStatus: z.coerce.number().int().optional().nullable(),
-    redirectUrl: z.string().optional().nullable(),
-    sslStatus: z.string().optional().nullable(),
-    sslIssuer: z.string().optional().nullable(),
-    sslExpiresAt: z.string().optional().nullable(),
-    sslHostnameMatches: z.boolean().optional().nullable(),
-    appType: z.string().optional().nullable(),
-    source: z.string().optional().nullable(),
-  })).optional().default([]),
-  containers: z.array(z.object({
-    containerId: z.string().min(1),
-    name: z.string().min(1),
-    image: z.string().min(1),
-    status: z.string().min(1),
-    health: z.string().optional().nullable(),
-    ports: z.unknown().optional().nullable(),
-    labels: z.unknown().optional().nullable(),
-    isPrivileged: z.boolean().optional().default(false),
-    restartCount: z.coerce.number().int().nonnegative().optional().default(0),
-  })).optional().default([]),
-  databases: z.array(z.object({
-    engine: z.string().min(1),
-    version: z.string().optional().nullable(),
-    source: z.string().optional().default("container"),
-    containerName: z.string().optional().nullable(),
-    port: z.coerce.number().int().optional().nullable(),
-    status: z.string().optional().default("unknown"),
-    isPublic: z.boolean().optional().default(false),
-    hasPersistentVolume: z.boolean().optional().default(false),
-  })).optional().default([]),
-  aiRuntimes: z.array(z.object({
-    runtime: z.enum(["hermes", "openclaw", "n8n"]),
-    name: z.string().min(1),
-    image: z.string().optional().nullable(),
-    version: z.string().optional().nullable(),
-    status: z.string().optional().default("unknown"),
-    health: z.string().optional().nullable(),
-    ports: z.unknown().optional().nullable(),
-  })).optional().default([]),
+const websiteHandlers = createWebsiteHandlers({
+  db,
+  json,
+  parseBody,
+  requireSession,
+  requireAdmin,
+  recordAudit,
+  sendEmail,
+  makeId,
+  safeJsonParse,
+  addDays,
+  getWorkspaceSettings,
+  getUserWebsiteDetail,
+  getUserWebsiteDashboardRows,
+  createWebsiteProjectFromOnboarding,
+  buildStoreDatabaseRecord,
+  buildWebsiteProvisioningPlan,
+  slugifySiteName,
+  sendN8nWebsiteDesignPreviews,
+  getWebsiteDesignGenerationContext,
+  createMedusaProductForWebsite,
+  storeProductCreateSchema,
+  buildBasicWebsiteManifest,
+  sendN8nBasicWebsiteBuild,
+  provisionWebsiteRuntime,
+  callRuntimeProvisioner,
+  fetchIpv4,
+  reserveWalletUsage: reserveWalletUsageBound,
+  commitWalletReservation: commitWalletReservationBound,
+  releaseWalletReservation: releaseWalletReservationBound,
+  createApprovalToken,
+  website,
+  websiteStore,
+  websiteStoreDatabase,
+  websiteDomain,
+  websitePluginInstall,
+  websiteDesignOption,
+  websiteReviewRequest,
+  websiteApprovalToken,
+  websiteRuntimeServer,
+  onboardingSubmission,
+  subscription,
+  servicePlan,
+  storeProduct,
+  storeProductVariant,
+  user,
+  invoice,
+  readFile,
+  stat,
+  mkdir,
+  writeFile,
+  WEBSITE_UPLOAD_DIR,
+  WEBSITE_MAX_DESIGN_BYTES,
+  ALLOWED_WEBSITE_DESIGN_TYPES,
+  sanitizeFileName,
+  isUploadedFile,
+  adminWebsiteProjectCreateSchema,
+  adminDesignOptionSchema,
+  adminWebsiteDesignInputsSchema,
+  userWebsiteCreateSchema,
+  websiteOnboardingSchema,
+  runtimeServerSchema,
+  websiteSchema,
 });
 
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     const url = new URL(request.url);
-    if (url.pathname === "/sitemap.xml" && request.method === "GET") {
-      return new Response(renderSitemapXml(), {
+    const requestMethodSupportsStaticResponse =
+      request.method === "GET" || request.method === "HEAD";
+
+    if (
+      requestMethodSupportsStaticResponse &&
+      url.pathname.length > 1 &&
+      url.pathname.endsWith("/")
+    ) {
+      return permanentRedirect(url.pathname.replace(/\/+$/, "") || "/");
+    }
+
+    const legacyRedirectTarget = legacyRedirects.get(url.pathname.toLowerCase());
+    if (requestMethodSupportsStaticResponse && legacyRedirectTarget) {
+      return permanentRedirect(legacyRedirectTarget);
+    }
+
+    if (
+      url.pathname === "/sitemap.xml" &&
+      (request.method === "GET" || request.method === "HEAD")
+    ) {
+      return new Response(request.method === "HEAD" ? null : renderSitemapXml(), {
         headers: {
           "Content-Type": "application/xml; charset=utf-8",
           "Cache-Control": "public, max-age=3600",
@@ -5274,8 +8354,173 @@ export default {
       });
     }
 
+    if (url.pathname === "/robots.txt" && requestMethodSupportsStaticResponse) {
+      return new Response(request.method === "HEAD" ? null : renderRobotsTxt(), {
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Cache-Control": "public, max-age=3600",
+        },
+      });
+    }
+
+    if (url.pathname === "/llms.txt" && requestMethodSupportsStaticResponse) {
+      return new Response(request.method === "HEAD" ? null : renderLlmsTxt(), {
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Cache-Control": "public, max-age=3600",
+        },
+      });
+    }
+
+    if (url.pathname === "/dashboard" || url.pathname.startsWith("/dashboard/")) {
+      const session = await auth.api.getSession({ headers: request.headers }).catch(() => null);
+      if (!session) {
+        const callbackURL = `${url.pathname}${url.search}`;
+        return new Response(null, {
+          status: 302,
+          headers: {
+            Location: `/auth/sign-in?callbackURL=${encodeURIComponent(callbackURL)}`,
+            "Cache-Control": "no-store",
+            "X-Robots-Tag": "noindex, nofollow",
+          },
+        });
+      }
+    }
+
+    if (url.pathname === "/service-suspended" && requestMethodSupportsStaticResponse) {
+      const invoiceId = url.searchParams.get("invoice");
+      const invoiceUrl = invoiceId
+        ? `${url.origin}/dashboard/billing/invoices/${encodeURIComponent(invoiceId)}`
+        : null;
+      return new Response(
+        request.method === "HEAD"
+          ? null
+          : renderSuspendedServicePage({
+              domain: url.searchParams.get("domain"),
+              invoiceUrl,
+            }),
+        {
+          status: 402,
+          headers: {
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": "no-store",
+            "X-Robots-Tag": "noindex, nofollow",
+          },
+        },
+      );
+    }
+
+    if (url.pathname === "/.well-known/traffic-advice" && requestMethodSupportsStaticResponse) {
+      return new Response(request.method === "HEAD" ? null : "[]", {
+        headers: {
+          "Content-Type": "application/trafficadvice+json; charset=utf-8",
+          "Cache-Control": "public, max-age=3600",
+          "X-Robots-Tag": "noindex, nofollow",
+        },
+      });
+    }
+
+    if (url.pathname === "/favicon.ico" && requestMethodSupportsStaticResponse) {
+      return permanentRedirect("/assets/cm-logo-Bqwc6v-P.png");
+    }
+
+    if (url.pathname === "/sw.js" && requestMethodSupportsStaticResponse) {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          "Content-Type": "application/javascript; charset=utf-8",
+          "Cache-Control": "no-store, max-age=0",
+          "X-Robots-Tag": "noindex, nofollow",
+        },
+      });
+    }
+
+    if (url.pathname === "/api/public/auth-security-config" && request.method === "GET") {
+      const siteKey = process.env.RECAPTCHA_SITE_KEY ?? "";
+      return json({
+        recaptcha: {
+          enabled: Boolean(siteKey && process.env.RECAPTCHA_SECRET_KEY),
+          siteKey: siteKey || null,
+          action: "auth_email",
+        },
+      });
+    }
+
+    if (url.pathname === "/api/public/pricing" && request.method === "GET") {
+      try {
+        const [categories, services, plans, planFeatures, bundles, bundleFeatures] =
+          await Promise.all([
+            db.query.serviceCategory.findMany({
+              orderBy: (row: any, { asc }: any) => [asc(row.sortOrder)],
+            }),
+            db.query.service.findMany({
+              orderBy: (row: any, { asc }: any) => [asc(row.sortOrder)],
+            }),
+            db.query.servicePlan.findMany({
+              orderBy: (row: any, { asc }: any) => [asc(row.sortOrder)],
+            }),
+            db.query.serviceFeature.findMany(),
+            db.query.bundle.findMany({
+              orderBy: (row: any, { asc }: any) => [asc(row.sortOrder)],
+            }),
+            db.query.bundleFeature.findMany(),
+          ]);
+
+        if (categories.length || services.length || plans.length || bundles.length) {
+          return json(
+            buildPublicPricingResponseFromDatabase({
+              categories,
+              services,
+              plans,
+              planFeatures,
+              bundles,
+              bundleFeatures,
+            }),
+          );
+        }
+      } catch (error) {
+        console.error(
+          "Failed to load database pricing catalog, falling back to static catalog:",
+          error,
+        );
+      }
+
+      return json(serializePublicPricingCatalog({ categories: CATEGORIES, bundles: BUNDLES }));
+    }
+
+    if (url.pathname === "/api/public/caesar") {
+      return caesarHandlers.handlePublicCaesar(request);
+    }
+
     if (url.pathname.startsWith("/api/auth")) {
       return auth.handler(request);
+    }
+
+    if (url.pathname === "/api/user/security-status" && request.method === "GET") {
+      const { session, response } = await requireSession(request);
+      if (response) return response;
+
+      const accounts = await db.query.account.findMany({
+        where: eq(account.userId, session.user.id),
+      });
+      const providerIds = accounts.map((row) => row.providerId);
+      const hasCredential = providerIds.includes("credential");
+      const hasTrustedSso = providerIds.some(
+        (providerId) => providerId === "google" || providerId === "microsoft",
+      );
+      const currentUser = await db.query.user.findFirst({
+        where: eq(user.id, session.user.id),
+      });
+
+      return json({
+        requiresTwoFactorSetup: hasCredential && !hasTrustedSso && !currentUser?.twoFactorEnabled,
+        twoFactorEnabled: !!currentUser?.twoFactorEnabled,
+        providers: providerIds,
+      });
+    }
+
+    if (url.pathname === "/api/user/caesar/claim") {
+      return caesarHandlers.handleClaimCaesar(request);
     }
 
     if (url.pathname === "/install-agent.sh") {
@@ -5326,427 +8571,40 @@ echo "CloudMonkey agent installed."
       });
     }
 
-    if (url.pathname.startsWith("/api/public/website-design-options/") && url.pathname.endsWith("/image") && request.method === "GET") {
-      const parts = url.pathname.split("/").filter(Boolean);
-      const designOptionId = decodeURIComponent(parts[3] ?? "");
-      const option = designOptionId
-        ? await db.query.websiteDesignOption.findFirst({ where: eq(websiteDesignOption.id, designOptionId) })
-        : null;
-      const manifest = safeJsonParse(option?.designManifest);
-      const storagePath = manifest?.storagePath ? String(manifest.storagePath) : null;
-      if (!option || !storagePath) return json({ error: "Design image not found" }, 404);
-      const fileStat = await stat(storagePath).catch(() => null);
-      if (!fileStat?.isFile()) return json({ error: "Design image file not found" }, 404);
-      return new Response(await readFile(storagePath), {
-        headers: {
-          "Content-Type": String(manifest.mimeType || "application/octet-stream"),
-          "Cache-Control": "private, max-age=3600",
-        },
-      });
+    if (
+      url.pathname.startsWith("/api/public/website-design-options/") &&
+      url.pathname.endsWith("/image") &&
+      request.method === "GET"
+    ) {
+      return websiteHandlers.handlePublicWebsiteDesignImage(request);
     }
 
     if (url.pathname.startsWith("/api/public/website-approvals/")) {
-      const token = decodeURIComponent(url.pathname.split("/").filter(Boolean)[3] ?? "");
-      if (!token) return json({ error: "Approval token is required" }, 400);
-
-      const tokenRow = await db.query.websiteApprovalToken.findFirst({
-        where: eq(websiteApprovalToken.tokenHash, sha256(token)),
-      });
-      if (!tokenRow) return json({ error: "Approval link is invalid" }, 404);
-      if (tokenRow.usedAt) return json({ error: "Approval link has already been used" }, 410);
-      if (tokenRow.expiresAt.getTime() < Date.now()) return json({ error: "Approval link has expired" }, 410);
-
-      const site = await getUserWebsiteDetail(tokenRow.userId, tokenRow.websiteId);
-      if (!site) return json({ error: "Website not found" }, 404);
-
-      if (request.method === "GET") {
-        return json({
-          token: { actionType: tokenRow.actionType, targetId: tokenRow.targetId, expiresAt: tokenRow.expiresAt },
-          website: site,
-        });
-      }
-
-      if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
-
-      try {
-        const body = await parseBody(request, websiteApprovalResponseSchema);
-        const respondedAt = new Date();
-        const review = await db.query.websiteReviewRequest.findFirst({
-          where: eq(websiteReviewRequest.targetId, tokenRow.targetId ?? tokenRow.websiteId),
-          orderBy: (websiteReviewRequest, { desc }) => [desc(websiteReviewRequest.createdAt)],
-        });
-
-        if (tokenRow.actionType === "design_approval") {
-          const designOptionId = body.designOptionId ?? tokenRow.targetId;
-          if (!designOptionId) return json({ error: "Design option is required" }, 400);
-          const selectedOption = await db.query.websiteDesignOption.findFirst({
-            where: eq(websiteDesignOption.id, designOptionId),
-          });
-          if (!selectedOption || selectedOption.websiteId !== tokenRow.websiteId) {
-            return json({ error: "Design option not found" }, 404);
-          }
-          if (body.action !== "approve") {
-            if (review) {
-              await db.update(websiteReviewRequest).set({
-                status: "changes_requested",
-                response: body.comments || null,
-                respondedAt,
-                updatedAt: respondedAt,
-              }).where(eq(websiteReviewRequest.id, review.id));
-            }
-            await db.update(websiteApprovalToken).set({ usedAt: respondedAt }).where(eq(websiteApprovalToken.id, tokenRow.id));
-            await db.update(website).set({ status: "design_changes_requested", updatedAt: respondedAt }).where(eq(website.id, tokenRow.websiteId));
-            return json({ ok: true, status: "changes_requested" });
-          }
-
-          const designManifest = safeJsonParse(selectedOption.designManifest) ?? {};
-          const buildManifest = {
-            websiteId: tokenRow.websiteId,
-            selectedDesignOptionId: designOptionId,
-            styleLabel: selectedOption.styleLabel,
-            designManifest,
-            siteType: site.siteType,
-            businessName: site.businessName,
-            temporaryDomain: site.temporaryDomain,
-            baseRepo: site.siteType === "ecommerce" ? "cloudmonkey-commerce-template" : "cloudmonkey-website-template",
-            approvedAt: respondedAt.toISOString(),
-          };
-          await db.update(websiteDesignOption).set({ selectedAt: null }).where(eq(websiteDesignOption.websiteId, tokenRow.websiteId));
-          await db.update(websiteDesignOption).set({ selectedAt: respondedAt }).where(eq(websiteDesignOption.id, designOptionId));
-          await db.update(website).set({
-            selectedDesignOptionId: designOptionId,
-            buildManifest: JSON.stringify(buildManifest),
-            baseRepo: buildManifest.baseRepo,
-            aiGenerationStatus: "design_selected",
-            status: "design_selected",
-            updatedAt: respondedAt,
-          }).where(eq(website.id, tokenRow.websiteId));
-          if (review) {
-            await db.update(websiteReviewRequest).set({
-              status: "approved",
-              response: body.comments || null,
-              respondedAt,
-              updatedAt: respondedAt,
-            }).where(eq(websiteReviewRequest.id, review.id));
-          }
-          await db.update(websiteApprovalToken).set({ usedAt: respondedAt }).where(eq(websiteApprovalToken.id, tokenRow.id));
-          await recordAudit({
-            actorUserId: tokenRow.userId,
-            action: "website.design_approved",
-            entityType: "website",
-            entityId: tokenRow.websiteId,
-            message: `Design approved for ${site.businessName || site.domain}`,
-            metadata: { designOptionId },
-          });
-          return json({ ok: true, status: "approved", designOptionId });
-        }
-
-        if (tokenRow.actionType === "staging_review") {
-          const approved = body.action === "approve";
-          if (approved && site.containerStatus !== "running") {
-            return json({ error: "Staging cannot be approved before the runtime is provisioned" }, 409);
-          }
-          if (review) {
-            await db.update(websiteReviewRequest).set({
-              status: approved ? "approved" : "changes_requested",
-              response: body.comments || null,
-              respondedAt,
-              updatedAt: respondedAt,
-            }).where(eq(websiteReviewRequest.id, review.id));
-          }
-          await db.update(websiteApprovalToken).set({ usedAt: respondedAt }).where(eq(websiteApprovalToken.id, tokenRow.id));
-          await db.update(website).set({
-            status: approved ? "staging_approved" : "staging_changes_requested",
-            updatedAt: respondedAt,
-          }).where(eq(website.id, tokenRow.websiteId));
-          await recordAudit({
-            actorUserId: tokenRow.userId,
-            action: approved ? "website.staging_approved" : "website.staging_changes_requested",
-            entityType: "website",
-            entityId: tokenRow.websiteId,
-            message: `Staging ${approved ? "approved" : "changes requested"} for ${site.businessName || site.domain}`,
-            metadata: { comments: body.comments || null },
-          });
-          return json({ ok: true, status: approved ? "approved" : "changes_requested" });
-        }
-
-        return json({ error: "Unsupported approval action" }, 400);
-      } catch (error: any) {
-        return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-      }
+      return websiteHandlers.handlePublicWebsiteApproval(request);
     }
 
-    if (url.pathname.startsWith("/api/agent/enroll") && request.method === "POST") {
-      try {
-        const body = await parseBody(request, agentEnrollSchema);
-        const tokenHash = sha256(body.enrollmentToken);
-        const agent = await db.query.serverAgent.findFirst({
-          where: eq(serverAgent.enrollmentTokenHash, tokenHash),
-        });
-        if (!agent) return json({ error: "Invalid enrollment token" }, 401);
-
-        const signingSecret = `cm_secret_${crypto.randomBytes(32).toString("base64url")}`;
-        const [updated] = await db.update(serverAgent).set({
-          secretHash: encryptSecret(signingSecret),
-          enrollmentTokenHash: null,
-          hostname: body.hostname ?? agent.hostname,
-          version: body.version ?? agent.version,
-          status: "online",
-          enrolledAt: new Date(),
-          lastSeenAt: new Date(),
-          lastIp: getRemoteIp(request),
-          config: JSON.stringify(getAgentConfig()),
-          updatedAt: new Date(),
-        }).where(eq(serverAgent.id, agent.id)).returning();
-
-        return json({
-          agentId: updated.id,
-          signingSecret,
-          config: getAgentConfig(),
-        });
-      } catch (error: any) {
-        return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-      }
+    if (url.pathname.startsWith("/api/agent/enroll")) {
+      return agentsRuntimeHandlers.handleAgentEnroll(request);
     }
 
     if (url.pathname.startsWith("/api/agent/config")) {
-      const signed = await readSignedAgentRequest(request, url);
-      if (signed.response) return signed.response;
-      return json({ config: getAgentConfig(), agent: { id: signed.agent.id, instanceId: signed.agent.instanceId } });
+      return agentsRuntimeHandlers.handleAgentConfig(request);
     }
 
-    if (url.pathname.startsWith("/api/agent/heartbeat") && request.method === "POST") {
-      const signed = await readSignedAgentRequest(request, url);
-      if (signed.response) return signed.response;
-      try {
-        const body = agentHeartbeatSchema.parse(signed.bodyText ? JSON.parse(signed.bodyText) : {});
-        const [updated] = await db.update(serverAgent).set({
-          hostname: body.hostname ?? signed.agent.hostname,
-          version: body.version ?? signed.agent.version,
-          status: body.status,
-          lastSeenAt: new Date(),
-          lastIp: getRemoteIp(request),
-          updatedAt: new Date(),
-        }).where(eq(serverAgent.id, signed.agent.id)).returning();
-        return json({ ok: true, agent: { id: updated.id, status: updated.status, lastSeenAt: updated.lastSeenAt } });
-      } catch (error: any) {
-        return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-      }
+    if (url.pathname.startsWith("/api/agent/heartbeat")) {
+      return agentsRuntimeHandlers.handleAgentHeartbeat(request);
     }
 
-    if (url.pathname.startsWith("/api/agent/snapshot") && request.method === "POST") {
-      const signed = await readSignedAgentRequest(request, url);
-      if (signed.response) return signed.response;
-      try {
-        const body = agentSnapshotSchema.parse(JSON.parse(signed.bodyText || "{}"));
-        const observedAt = toDateOrNull(body.observedAt) ?? new Date();
-        const snapshotId = makeId("snap");
-
-        await db.insert(serverTelemetrySnapshot).values({
-          id: snapshotId,
-          agentId: signed.agent.id,
-          instanceId: signed.agent.instanceId,
-          userId: signed.agent.userId,
-          status: "online",
-          hostname: body.host.hostname ?? signed.agent.hostname,
-          osName: body.host.osName,
-          kernel: body.host.kernel,
-          uptimeSeconds: body.host.uptimeSeconds ?? null,
-          cpuUsagePercent: body.metrics.cpuUsagePercent ?? null,
-          memoryUsedMb: body.metrics.memoryUsedMb ?? null,
-          memoryTotalMb: body.metrics.memoryTotalMb ?? null,
-          diskUsedGb: body.metrics.diskUsedGb ?? null,
-          diskTotalGb: body.metrics.diskTotalGb ?? null,
-          securityScore: body.security.score ?? null,
-          securitySummary: body.security.summary ?? null,
-          raw: JSON.stringify(body),
-          observedAt,
-        });
-
-        await Promise.all([
-          db.delete(serverSecurityFinding).where(eq(serverSecurityFinding.agentId, signed.agent.id)),
-          db.delete(serverWebsite).where(eq(serverWebsite.agentId, signed.agent.id)),
-          db.delete(serverContainer).where(eq(serverContainer.agentId, signed.agent.id)),
-          db.delete(serverDatabase).where(eq(serverDatabase.agentId, signed.agent.id)),
-          db.delete(detectedAiRuntime).where(eq(detectedAiRuntime.agentId, signed.agent.id)),
-        ]);
-
-        if (body.security.findings.length) {
-          await db.insert(serverSecurityFinding).values(body.security.findings.map((finding) => ({
-            id: makeId("finding"),
-            agentId: signed.agent.id,
-            instanceId: signed.agent.instanceId,
-            userId: signed.agent.userId,
-            code: finding.code,
-            title: finding.title,
-            severity: finding.severity,
-            status: "open",
-            detail: finding.detail ?? null,
-            evidence: toJsonText(finding.evidence),
-            observedAt,
-          })));
-        }
-
-        if (body.websites.length) {
-          await db.insert(serverWebsite).values(body.websites.map((site) => ({
-            id: makeId("siteobs"),
-            agentId: signed.agent.id,
-            instanceId: signed.agent.instanceId,
-            userId: signed.agent.userId,
-            url: site.url,
-            domain: site.domain,
-            status: site.status,
-            httpStatus: site.httpStatus ?? null,
-            redirectUrl: site.redirectUrl ?? null,
-            sslStatus: site.sslStatus ?? null,
-            sslIssuer: site.sslIssuer ?? null,
-            sslExpiresAt: toDateOrNull(site.sslExpiresAt),
-            sslHostnameMatches: site.sslHostnameMatches ?? null,
-            appType: site.appType ?? null,
-            source: site.source ?? null,
-            raw: JSON.stringify(site),
-            observedAt,
-          })));
-        }
-
-        if (body.containers.length) {
-          await db.insert(serverContainer).values(body.containers.map((container) => ({
-            id: makeId("container"),
-            agentId: signed.agent.id,
-            instanceId: signed.agent.instanceId,
-            userId: signed.agent.userId,
-            containerId: container.containerId,
-            name: container.name,
-            image: container.image,
-            status: container.status,
-            health: container.health ?? null,
-            ports: toJsonText(container.ports),
-            labels: toJsonText(container.labels),
-            isPrivileged: container.isPrivileged,
-            restartCount: container.restartCount,
-            observedAt,
-          })));
-        }
-
-        if (body.databases.length) {
-          await db.insert(serverDatabase).values(body.databases.map((database) => ({
-            id: makeId("dbobs"),
-            agentId: signed.agent.id,
-            instanceId: signed.agent.instanceId,
-            userId: signed.agent.userId,
-            engine: database.engine,
-            version: database.version ?? null,
-            source: database.source,
-            containerName: database.containerName ?? null,
-            port: database.port ?? null,
-            status: database.status,
-            isPublic: database.isPublic,
-            hasPersistentVolume: database.hasPersistentVolume,
-            raw: JSON.stringify(database),
-            observedAt,
-          })));
-        }
-
-        if (body.aiRuntimes.length) {
-          await db.insert(detectedAiRuntime).values(body.aiRuntimes.map((runtime) => ({
-            id: makeId("airuntime"),
-            agentId: signed.agent.id,
-            instanceId: signed.agent.instanceId,
-            userId: signed.agent.userId,
-            runtime: runtime.runtime,
-            name: runtime.name,
-            image: runtime.image ?? null,
-            version: runtime.version ?? null,
-            status: runtime.status,
-            health: runtime.health ?? null,
-            ports: toJsonText(runtime.ports),
-            raw: JSON.stringify(runtime),
-            observedAt,
-          })));
-        }
-
-        await db.update(serverAgent).set({
-          hostname: body.host.hostname ?? signed.agent.hostname,
-          status: "online",
-          lastSeenAt: new Date(),
-          lastIp: getRemoteIp(request),
-          updatedAt: new Date(),
-        }).where(eq(serverAgent.id, signed.agent.id));
-
-        return json({ ok: true, snapshotId });
-      } catch (error: any) {
-        return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-      }
+    if (url.pathname.startsWith("/api/agent/snapshot")) {
+      return agentsRuntimeHandlers.handleAgentSnapshot(request);
     }
 
     if (url.pathname.startsWith("/api/public/affiliate-click") && request.method === "POST") {
-      try {
-        const body = await parseBody(request, affiliateClickSchema);
-        const affiliateRow = await db.query.affiliate.findFirst({
-          where: eq(affiliate.referralCode, body.referralCode.trim()),
-        });
-        if (!affiliateRow || !canGenerateCommission(affiliateRow.status)) {
-          return json({ ok: true, tracked: false });
-        }
-
-        const [created] = await db.insert(affiliateReferral).values({
-          id: makeId("affref"),
-          affiliateId: affiliateRow.id,
-          referralCode: affiliateRow.referralCode,
-          visitorId: body.visitorId ?? null,
-          sourceUrl: body.sourceUrl ?? request.headers.get("referer"),
-          landingPage: body.landingPage ?? url.pathname,
-          ipAddress: getClientIp(request),
-          userAgent: request.headers.get("user-agent"),
-          attributionType: "link",
-          attributionModel: "last_click",
-          status: "clicked",
-        }).returning();
-
-        return json({ ok: true, tracked: true, referralId: created.id });
-      } catch (error: any) {
-        return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-      }
+      return affiliateHandlers.handlePublicAffiliateClick(request);
     }
 
     if (url.pathname.startsWith("/api/public/affiliate-application") && request.method === "POST") {
-      try {
-        const body = await parseBody(request, affiliateApplicationSchema);
-        const email = body.email.toLowerCase();
-        const existing = await db.query.affiliate.findFirst({
-          where: eq(affiliate.email, email),
-        });
-        if (existing) return json({ error: "An affiliate application already exists for this email" }, 409);
-
-        const [created] = await db.insert(affiliate).values({
-          id: makeId("aff"),
-          fullName: body.fullName,
-          email,
-          phone: body.phone ?? null,
-          companyName: body.companyName ?? null,
-          website: body.website ?? null,
-          socialLinks: body.socialLinks ?? null,
-          affiliateType: body.affiliateType,
-          expectedReferralMethod: body.expectedReferralMethod,
-          status: "pending",
-          referralCode: await generateUniqueReferralCode(body.fullName || email),
-          payoutMethod: body.payoutMethod ?? "manual_eft",
-          payoutDetails: body.payoutDetails ? encryptSecret(body.payoutDetails) : null,
-          termsAcceptedAt: new Date(),
-        }).returning();
-
-        await recordAudit({
-          action: "affiliate.application.created",
-          entityType: "affiliate",
-          entityId: created.id,
-          message: `Affiliate application submitted by ${created.email}`,
-          metadata: { affiliateType: created.affiliateType },
-        });
-
-        return json({ affiliate: sanitizeAffiliate(created, url.origin) }, 201);
-      } catch (error: any) {
-        return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-      }
+      return affiliateHandlers.handlePublicAffiliateApplication(request);
     }
 
     if (url.pathname.startsWith("/api/user/metrics")) {
@@ -5781,14 +8639,19 @@ echo "CloudMonkey agent installed."
           where: eq(supportTicket.userId, session.user.id),
         });
 
-        return new Response(JSON.stringify({
-          totalSpend,
-          domains: domains.length,
-          cloudResources: servers.length,
-          websites: websites.length,
-          activeAgents: agents.filter((agent) => agent.status === "active").length,
-          openTickets: openTickets.filter((ticket) => !["resolved", "closed"].includes(ticket.status)).length
-        }), { headers: { "Content-Type": "application/json" } });
+        return new Response(
+          JSON.stringify({
+            totalSpend,
+            domains: domains.length,
+            cloudResources: servers.length,
+            websites: websites.length,
+            activeAgents: agents.filter((agent) => agent.status === "active").length,
+            openTickets: openTickets.filter(
+              (ticket) => !["resolved", "closed"].includes(ticket.status),
+            ).length,
+          }),
+          { headers: { "Content-Type": "application/json" } },
+        );
       } catch (error) {
         console.error("Metrics error:", error);
         return new Response(JSON.stringify({ error: "Failed to fetch metrics" }), { status: 500 });
@@ -5798,7 +8661,8 @@ echo "CloudMonkey agent installed."
     if (url.pathname.startsWith("/api/leads") && request.method === "POST") {
       try {
         const body = await request.json();
-        const wizardAnswers = body.wizardAnswers && typeof body.wizardAnswers === "object" ? body.wizardAnswers : null;
+        const wizardAnswers =
+          body.wizardAnswers && typeof body.wizardAnswers === "object" ? body.wizardAnswers : null;
         const servicesValue = wizardAnswers ? JSON.stringify(wizardAnswers) : body.services;
         await db.insert(lead).values({
           id: "lead_" + Date.now(),
@@ -5826,876 +8690,71 @@ echo "CloudMonkey agent installed."
             idempotencyKey: `lead:${body.email}:${Date.now()}`,
           }).catch((error) => console.error("Lead notification failed:", error));
         }
-        return new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { "Content-Type": "application/json" },
+        });
       } catch (error) {
         console.error("Lead submission error:", error);
         return new Response(JSON.stringify({ error: "Failed to submit lead" }), { status: 500 });
       }
     }
 
-    if (url.pathname.startsWith("/api/user/affiliate/attribute-signup") && request.method === "POST") {
-      const { session, response } = await requireSession(request);
-      if (response) return response;
+    if (url.pathname.startsWith("/api/webhooks/mailjet")) {
+      return webhooksHandlers.handleMailjetWebhook(request);
+    }
 
-      try {
-        const body = await parseBody(request, z.object({
-          referralCode: z.string().min(2),
-          visitorId: z.string().optional().nullable(),
-        }));
-        const referral = await attributeSignupToAffiliate({
-          userId: session.user.id,
-          email: session.user.email ?? "",
-          referralCode: body.referralCode,
-          visitorId: body.visitorId,
-          request,
-        });
-        return json({ attributed: !!referral, referral });
-      } catch (error: any) {
-        return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-      }
+    if (url.pathname.startsWith("/api/webhooks/paystack")) {
+      return webhooksHandlers.handlePaystackWebhook(request);
     }
 
     if (url.pathname.startsWith("/api/webhooks/intelligence")) {
-      if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
-      if (!verifyIntelligenceWebhook(request)) return json({ error: "Invalid webhook secret" }, 401);
+      return webhooksHandlers.handleIntelligenceWebhook(request);
+    }
 
-      try {
-        const body = await parseBody(request, intelligenceWebhookResultSchema);
-        const result = await persistIntelligenceWebhookResult(body);
-        await recordAudit({
-          action: `intelligence.webhook.${body.status}`,
-          entityType: "intelligence_job",
-          entityId: body.jobId,
-          message: `Competitor intelligence job ${body.status}`,
-          metadata: { projectId: result.project.id, externalRunId: body.externalRunId },
-        });
-        return json({ ok: true, ...result });
-      } catch (error: any) {
-        return json({ error: error.message, issues: error.issues }, error.status ?? 500);
+    if (url.pathname === "/api/public/domains/check" || url.pathname === "/api/domains/check") {
+      return webhooksHandlers.handleDomainsCheck(request);
+    }
+
+    if (url.pathname === "/api/public/scan") {
+      return publicScanHandlers.handleGeneralScan(request);
+    }
+
+    if (url.pathname.startsWith("/api/user/wallet")) {
+      if (url.pathname.startsWith("/api/user/wallet/top-ups")) {
+        return walletHandlers.handleUserWalletTopUps(request);
       }
+      return walletHandlers.handleUserWallet(request);
+    }
+
+    if (url.pathname.startsWith("/api/admin/wallet")) {
+      if (url.pathname.startsWith("/api/admin/wallet/adjust")) {
+        return walletHandlers.handleAdminWalletAdjustments(request);
+      }
+      return walletHandlers.handleAdminWallet(request);
     }
 
     if (url.pathname.startsWith("/api/user/intelligence")) {
-      const { session, response } = await requireIntelligenceAccess(request);
-      if (response) return response;
-
-      const detailMatch = url.pathname.match(/^\/api\/user\/intelligence\/([^/]+)(?:\/([^/]+))?$/);
-
-      if (url.pathname === "/api/user/intelligence/access" && request.method === "GET") {
-        return json({ hasAccess: true });
-      }
-
-      if (url.pathname === "/api/user/intelligence" && request.method === "GET") {
-        const rows = await db.query.intelligenceProject.findMany({
-          where: eq(intelligenceProject.userId, session.user.id),
-          orderBy: (intelligenceProject, { desc }) => [desc(intelligenceProject.updatedAt)],
-        });
-        return json({ projects: rows.map(publicProjectDto) });
-      }
-
-      if (url.pathname === "/api/user/intelligence" && request.method === "POST") {
-        try {
-          const body = await parseBody(request, intelligenceProjectSchema);
-          const projectId = makeId("intelproj");
-          const createdAt = new Date();
-          const projectName = body.name?.trim() || `${body.businessName} intelligence`;
-
-          const [created] = await db.insert(intelligenceProject).values({
-            id: projectId,
-            userId: session.user.id,
-            name: projectName,
-            businessName: body.businessName,
-            websiteUrl: body.websiteUrl,
-            location: body.location ?? null,
-            industry: body.industry ?? null,
-            servicesProducts: body.servicesProducts ?? null,
-            status: "draft",
-            metadata: JSON.stringify({ source: "dashboard" }),
-            createdAt,
-            updatedAt: createdAt,
-          }).returning();
-
-          if (body.targetKeywords.length) {
-            await db.insert(intelligenceKeyword).values(body.targetKeywords.map((keyword) => ({
-              id: makeId("intelkw"),
-              projectId,
-              userId: session.user.id,
-              keyword,
-              location: body.location ?? null,
-              priority: "medium",
-            })));
-          }
-
-          if (body.competitors.length) {
-            await db.insert(intelligenceCompetitor).values(body.competitors.map((competitorInput) => ({
-              id: makeId("intelcomp"),
-              projectId,
-              userId: session.user.id,
-              name: competitorInput.name || defaultCompetitorName(competitorInput.websiteUrl),
-              websiteUrl: competitorInput.websiteUrl,
-              competitorType: competitorInput.competitorType ?? "manual",
-              status: "active",
-            })));
-          }
-
-          await recordAudit({
-            actorUserId: session.user.id,
-            action: "intelligence.project.created",
-            entityType: "intelligence_project",
-            entityId: created.id,
-            message: `Competitor intelligence project created for ${created.businessName}`,
-          });
-
-          return json({ project: publicProjectDto(created) }, 201);
-        } catch (error: any) {
-          return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-        }
-      }
-
-      if (detailMatch) {
-        const projectId = decodeURIComponent(detailMatch[1]);
-        const child = detailMatch[2] ? decodeURIComponent(detailMatch[2]) : null;
-        const project = await getIntelligenceProjectForSession(projectId, session);
-        if (!project) return json({ error: "Project not found" }, 404);
-
-        if (!child && request.method === "GET") {
-          return json(await buildIntelligenceOverview(project));
-        }
-
-        if (!child && request.method === "PATCH") {
-          try {
-            const body = await parseBody(request, intelligenceProjectUpdateSchema);
-            const updates: Partial<typeof intelligenceProject.$inferInsert> = {
-              updatedAt: new Date(),
-            };
-            if (body.name !== undefined) updates.name = body.name;
-            if (body.businessName !== undefined) updates.businessName = body.businessName;
-            if (body.websiteUrl !== undefined) updates.websiteUrl = body.websiteUrl;
-            if (body.location !== undefined) updates.location = body.location ?? null;
-            if (body.industry !== undefined) updates.industry = body.industry ?? null;
-            if (body.servicesProducts !== undefined) updates.servicesProducts = body.servicesProducts ?? null;
-
-            const [updated] = await db.update(intelligenceProject)
-              .set(updates)
-              .where(eq(intelligenceProject.id, project.id))
-              .returning();
-            return json({ project: publicProjectDto(updated) });
-          } catch (error: any) {
-            return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-          }
-        }
-
-        if (child === "overview" && request.method === "GET") {
-          return json(await buildIntelligenceOverview(project));
-        }
-
-        if (child === "competitors" && request.method === "POST") {
-          try {
-            const body = await parseBody(request, intelligenceCompetitorSchema);
-            const [created] = await db.insert(intelligenceCompetitor).values({
-              id: makeId("intelcomp"),
-              projectId: project.id,
-              userId: project.userId,
-              name: body.name || defaultCompetitorName(body.websiteUrl),
-              websiteUrl: body.websiteUrl,
-              competitorType: body.competitorType ?? "manual",
-              status: "active",
-            }).returning();
-            await db.update(intelligenceProject).set({ updatedAt: new Date() }).where(eq(intelligenceProject.id, project.id));
-            return json({ competitor: created }, 201);
-          } catch (error: any) {
-            return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-          }
-        }
-
-        if (child === "keywords" && request.method === "POST") {
-          try {
-            const body = await parseBody(request, intelligenceKeywordSchema);
-            const [created] = await db.insert(intelligenceKeyword).values({
-              id: makeId("intelkw"),
-              projectId: project.id,
-              userId: project.userId,
-              keyword: body.keyword,
-              location: body.location ?? project.location,
-              device: body.device,
-              intent: body.intent ?? null,
-              priority: body.priority,
-              status: "active",
-            }).returning();
-            await db.update(intelligenceProject).set({ updatedAt: new Date() }).where(eq(intelligenceProject.id, project.id));
-            return json({ keyword: created }, 201);
-          } catch (error: any) {
-            return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-          }
-        }
-
-        if (child === "submit" && request.method === "POST") {
-          try {
-            const [competitors, keywords] = await Promise.all([
-              db.query.intelligenceCompetitor.findMany({ where: eq(intelligenceCompetitor.projectId, project.id) }),
-              db.query.intelligenceKeyword.findMany({ where: eq(intelligenceKeyword.projectId, project.id) }),
-            ]);
-            const missing = [
-              !project.businessName ? "businessName" : null,
-              !project.websiteUrl ? "websiteUrl" : null,
-              !project.location ? "location" : null,
-              !project.industry ? "industry" : null,
-              !project.servicesProducts ? "servicesProducts" : null,
-              keywords.length < 3 ? "targetKeywords" : null,
-              competitors.length < 3 ? "competitors" : null,
-            ].filter(Boolean);
-            if (missing.length) {
-              return json({ error: "Complete the required intelligence fields before submitting", missing }, 400);
-            }
-
-            const [updated] = await db.update(intelligenceProject).set({
-              status: "submitted",
-              updatedAt: new Date(),
-              metadata: JSON.stringify({
-                ...(safeJsonParse(project.metadata) ?? {}),
-                submittedAt: new Date().toISOString(),
-                submittedBy: session.user.id,
-              }),
-            }).where(eq(intelligenceProject.id, project.id)).returning();
-
-            await recordAudit({
-              actorUserId: session.user.id,
-              action: "intelligence.project.submitted",
-              entityType: "intelligence_project",
-              entityId: project.id,
-              message: `Competitor intelligence project submitted for ${project.businessName}`,
-            });
-
-            return json({ project: publicProjectDto(updated) });
-          } catch (error: any) {
-            return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-          }
-        }
-
-        if (child === "scan" && request.method === "POST") {
-          if (!isAdmin(session)) {
-            return json({ error: "Only admins can run Competitor Intelligence reports" }, 403);
-          }
-          try {
-            const body = await parseBody(request, intelligenceScanSchema);
-            const [competitors, keywords] = await Promise.all([
-              db.query.intelligenceCompetitor.findMany({ where: eq(intelligenceCompetitor.projectId, project.id) }),
-              db.query.intelligenceKeyword.findMany({ where: eq(intelligenceKeyword.projectId, project.id) }),
-            ]);
-            const scanTargets = [project.websiteUrl, ...competitors.map((competitor) => competitor.websiteUrl)].slice(0, 4);
-            const freeCrawlPages: Array<ReturnType<typeof crawlSiteFingerprint> extends Promise<infer T> ? T : never> = [];
-            for (const [index, targetUrl] of scanTargets.entries()) {
-              try {
-                const target = index === 0 ? "primary" : "competitor";
-                const fingerprint = await crawlSiteFingerprint(targetUrl, target);
-                freeCrawlPages.push({
-                  ...fingerprint,
-                  projectId: project.id,
-                  jobId: null,
-                  userId: project.userId,
-                  competitorId: index === 0 ? null : competitors[index - 1]?.id ?? null,
-                });
-              } catch (crawlError: any) {
-                freeCrawlPages.push({
-                  id: makeId("intelpage"),
-                  projectId: project.id,
-                  jobId: null,
-                  userId: project.userId,
-                  competitorId: index === 0 ? null : competitors[index - 1]?.id ?? null,
-                  url: targetUrl,
-                  target: index === 0 ? "primary" : "competitor",
-                  httpStatus: null,
-                  title: null,
-                  metaDescription: null,
-                  h1: null,
-                  h2Count: 0,
-                  wordCount: 0,
-                  internalLinkCount: 0,
-                  externalLinkCount: 0,
-                  imageMissingAltCount: 0,
-                  hasCanonical: false,
-                  hasSchema: false,
-                  loadTimeMs: null,
-                  screenshotUrl: null,
-                  raw: { error: crawlError.message, sourceUrl: targetUrl, target: index === 0 ? "primary" : "competitor" },
-                  observedAt: new Date().toISOString(),
-                } as any);
-              }
-            }
-
-            const freePrimaryPage = freeCrawlPages[0] ?? null;
-            const freeSearchConsoleSnapshot = await fetchGoogleSearchConsoleSnapshot(session.user.id, project.websiteUrl).catch(() => null);
-            const freeSearchConsoleSerpResults = freeSearchConsoleSnapshot?.connected
-              ? freeSearchConsoleSnapshot.rows.slice(0, 25).map((row) => ({
-                  keywordId: null,
-                  keyword: row.query,
-                  location: project.location ?? null,
-                  device: "desktop",
-                  resultUrl: row.page,
-                  resultTitle: row.query,
-                  domain: row.page ? new URL(row.page).hostname.replace(/^www\./, "") : null,
-                  rank: Math.max(1, Math.round(row.position)),
-                  resultType: "search_console",
-                  hasAds: false,
-                  hasMapPack: false,
-                  hasAiOverview: false,
-                  raw: { source: "google-search-console", clicks: row.clicks, impressions: row.impressions, ctr: row.ctr, position: row.position },
-                  observedAt: new Date().toISOString(),
-                }))
-              : [];
-            const freeAudits = freePrimaryPage
-              ? [{
-                  target: "primary",
-                  targetUrl: project.websiteUrl,
-                  technicalScore: Math.max(
-                    10,
-                    100 - (freePrimaryPage.imageMissingAltCount * 3) - (freePrimaryPage.hasCanonical ? 0 : 10) - (freePrimaryPage.hasSchema ? 0 : 8),
-                  ),
-                  contentScore: Math.max(10, Math.min(100, Math.round((freePrimaryPage.wordCount || 0) / 20))),
-                  localScore: project.location ? 48 : 18,
-                  performanceScore: freePrimaryPage.loadTimeMs ? Math.max(10, 100 - Math.round(freePrimaryPage.loadTimeMs / 50)) : 40,
-                  aiReadinessScore: freePrimaryPage.hasSchema ? 72 : 52,
-                  summary: "Free crawl fingerprint generated from the live website without a paid provider.",
-                  raw: freePrimaryPage.raw,
-                }]
-              : [];
-
-            if (freeCrawlPages.length) {
-              await db.insert(intelligenceCrawlPage).values(freeCrawlPages.map((page) => ({
-                id: page.id,
-                projectId: project.id,
-                jobId: null,
-                userId: project.userId,
-                competitorId: page.competitorId ?? null,
-                url: page.url,
-                target: page.target,
-                httpStatus: page.httpStatus ?? null,
-                title: page.title ?? null,
-                metaDescription: page.metaDescription ?? null,
-                h1: page.h1 ?? null,
-                h2Count: page.h2Count ?? 0,
-                wordCount: page.wordCount ?? 0,
-                internalLinkCount: page.internalLinkCount ?? 0,
-                externalLinkCount: page.externalLinkCount ?? 0,
-                imageMissingAltCount: page.imageMissingAltCount ?? 0,
-                hasCanonical: page.hasCanonical ?? false,
-                hasSchema: page.hasSchema ?? false,
-                loadTimeMs: page.loadTimeMs ?? null,
-                screenshotUrl: page.screenshotUrl ?? null,
-                raw: JSON.stringify(page.raw ?? {}),
-                observedAt: new Date(page.observedAt ?? new Date()),
-              })));
-            }
-
-            if (freeAudits.length) {
-              await db.insert(intelligenceSeoAudit).values(freeAudits.map((audit) => ({
-                id: makeId("intelaudit"),
-                projectId: project.id,
-                jobId: null,
-                userId: project.userId,
-                target: audit.target ?? "primary",
-                targetUrl: audit.targetUrl,
-                technicalScore: audit.technicalScore ?? 0,
-                contentScore: audit.contentScore ?? 0,
-                localScore: audit.localScore ?? 0,
-                performanceScore: audit.performanceScore ?? 0,
-                aiReadinessScore: audit.aiReadinessScore ?? 0,
-                summary: audit.summary ?? null,
-                raw: JSON.stringify(audit.raw ?? {}),
-              })));
-            }
-
-            if (freeSearchConsoleSerpResults.length) {
-              await db.insert(intelligenceSerpResult).values(freeSearchConsoleSerpResults.map((row) => ({
-                id: makeId("intelserp"),
-                projectId: project.id,
-                userId: project.userId,
-                keywordId: null,
-                keyword: row.keyword,
-                location: row.location ?? null,
-                device: row.device ?? null,
-                resultUrl: row.resultUrl ?? null,
-                resultTitle: row.resultTitle ?? null,
-                domain: row.domain ?? null,
-                rank: row.rank ?? null,
-                resultType: row.resultType ?? "search_console",
-                hasAds: row.hasAds ?? false,
-                hasMapPack: row.hasMapPack ?? false,
-                hasAiOverview: row.hasAiOverview ?? false,
-                raw: JSON.stringify(row.raw ?? {}),
-                observedAt: new Date(row.observedAt ?? new Date()),
-              })));
-            }
-
-            const freeRecommendations: Array<{ title: string; description: string; category: string; priority: string; impact: string; effort: string; sourceType: string; sourceId: string | null }> = [];
-            if (freeSearchConsoleSnapshot?.connected) {
-              freeRecommendations.push({
-                title: "Use Search Console queries to close ranking gaps",
-                description: `Google Search Console is connected to ${freeSearchConsoleSnapshot.property}. Focus on pages with high impressions and positions between 4 and 20.`,
-                category: "owned_site_growth",
-                priority: "high",
-                impact: "high",
-                effort: "low",
-                sourceType: "search_console",
-                sourceId: project.id,
-              });
-            } else {
-              freeRecommendations.push({
-                title: "Connect Google Search Console",
-                description: "This is the best free owned-site data source. It unlocks click, impression, and query data for your own website.",
-                category: "integration",
-                priority: "medium",
-                impact: "high",
-                effort: "low",
-                sourceType: "integration",
-                sourceId: project.id,
-              });
-            }
-            if (freeCrawlPages.length) {
-              const primary = freeCrawlPages[0];
-              freeRecommendations.push({
-                title: "Tighten the free crawl fingerprints",
-                description: `The live crawl found ${primary.wordCount || 0} words on the homepage and ${primary.imageMissingAltCount || 0} images missing alt text.`,
-                category: "technical_seo",
-                priority: "medium",
-                impact: "medium",
-                effort: "low",
-                sourceType: "crawl",
-                sourceId: project.id,
-              });
-            }
-            if (freeRecommendations.length) {
-              await db.insert(intelligenceRecommendation).values(freeRecommendations.map((row) => ({
-                id: makeId("intelrec"),
-                projectId: project.id,
-                userId: project.userId,
-                title: row.title,
-                description: row.description,
-                category: row.category,
-                priority: row.priority,
-                impact: row.impact,
-                effort: row.effort,
-                sourceType: row.sourceType,
-                sourceId: row.sourceId,
-                status: "open",
-              })));
-            }
-
-            const [job] = await db.insert(intelligenceJob).values({
-              id: makeId("inteljob"),
-              projectId: project.id,
-              userId: project.userId,
-              jobType: body.scanType,
-              status: "queued",
-              provider: "n8n",
-              input: JSON.stringify({
-                scanType: body.scanType,
-                project,
-                competitors,
-                keywords,
-                freeCrawlPages,
-                freeAudits,
-                freeSearchConsoleSnapshot,
-                freeSearchConsoleSerpResults,
-              }),
-            }).returning();
-
-            await db.update(intelligenceProject).set({
-              lastScanStatus: "queued",
-              updatedAt: new Date(),
-            }).where(eq(intelligenceProject.id, project.id));
-
-            try {
-              const n8nResponse = await sendN8nCompetitorIntelligence({
-                project,
-                job,
-                user: {
-                  id: session.user.id,
-                  name: session.user.name,
-                  email: session.user.email,
-                },
-                competitors,
-                keywords,
-                freeCrawlPages,
-                freeAudits,
-                freeSearchConsoleSnapshot,
-                freeSearchConsoleSerpResults,
-                origin: url.origin,
-                idempotencyKey: `intelligence:${job.id}`,
-              });
-              const [updatedJob] = await db.update(intelligenceJob).set({
-                status: "sent_to_n8n",
-                output: JSON.stringify(n8nResponse),
-                startedAt: new Date(),
-                updatedAt: new Date(),
-              }).where(eq(intelligenceJob.id, job.id)).returning();
-              await db.update(intelligenceProject).set({
-                lastScanStatus: "sent_to_n8n",
-                updatedAt: new Date(),
-              }).where(eq(intelligenceProject.id, project.id));
-              return json({ job: updatedJob, n8nStatus: "sent", n8nResponse }, 202);
-            } catch (n8nError: any) {
-              const [updatedJob] = await db.update(intelligenceJob).set({
-                status: "n8n_failed",
-                error: n8nError.message,
-                updatedAt: new Date(),
-              }).where(eq(intelligenceJob.id, job.id)).returning();
-              await db.update(intelligenceProject).set({
-                lastScanStatus: "n8n_failed",
-                updatedAt: new Date(),
-              }).where(eq(intelligenceProject.id, project.id));
-              await recordAudit({
-                actorUserId: session.user.id,
-                action: "intelligence.scan.n8n_failed",
-                entityType: "intelligence_job",
-                entityId: job.id,
-                message: `Competitor intelligence scan saved but n8n failed for ${project.businessName}`,
-                level: "error",
-                metadata: { error: n8nError.message },
-              });
-              return json({ job: updatedJob, n8nStatus: "failed", error: n8nError.message }, 202);
-            }
-          } catch (error: any) {
-            return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-          }
-        }
-
-        if (["recommendations", "reports"].includes(child ?? "") && request.method === "GET") {
-          const overview = await buildIntelligenceOverview(project);
-          return json(child === "reports" ? { reports: overview.reports } : { recommendations: overview.recommendations });
-        }
-      }
-
-      return json({ error: "Not found" }, 404);
+      return intelligenceHandlers.handleUserIntelligence(request);
     }
 
     if (url.pathname.startsWith("/api/admin/intelligence")) {
-      const { session, response } = await requireAdmin(request);
-      if (response) return response;
-
-      const detailMatch = url.pathname.match(/^\/api\/admin\/intelligence\/([^/]+)(?:\/([^/]+))?$/);
-
-      if (url.pathname === "/api/admin/intelligence" && request.method === "GET") {
-        const rows = await db.query.intelligenceProject.findMany({
-          orderBy: (intelligenceProject, { desc }) => [desc(intelligenceProject.updatedAt)],
-        });
-        const owners = await Promise.all(rows.map((row) => db.query.user.findFirst({ where: eq(user.id, row.userId) })));
-        const ownerById = new Map(owners.filter(Boolean).map((row) => [row!.id, row!]));
-        return json({
-          projects: rows.map((row) => ({
-            ...publicProjectDto(row),
-            owner: ownerById.get(row.userId)
-              ? {
-                  id: ownerById.get(row.userId)!.id,
-                  name: ownerById.get(row.userId)!.name,
-                  email: ownerById.get(row.userId)!.email,
-                }
-              : null,
-          })),
-        });
-      }
-
-      if (detailMatch && !detailMatch[2] && request.method === "GET") {
-        const project = await getIntelligenceProjectForSession(decodeURIComponent(detailMatch[1]), session);
-        if (!project) return json({ error: "Project not found" }, 404);
-        return json(await buildIntelligenceOverview(project));
-      }
-
-      if (detailMatch && decodeURIComponent(detailMatch[2] ?? "") === "scan" && request.method === "POST") {
-        try {
-          const project = await getIntelligenceProjectForSession(decodeURIComponent(detailMatch[1]), session);
-          if (!project) return json({ error: "Project not found" }, 404);
-          const body = await parseBody(request, intelligenceScanSchema);
-          const [competitors, keywords, owner] = await Promise.all([
-            db.query.intelligenceCompetitor.findMany({ where: eq(intelligenceCompetitor.projectId, project.id) }),
-            db.query.intelligenceKeyword.findMany({ where: eq(intelligenceKeyword.projectId, project.id) }),
-            db.query.user.findFirst({ where: eq(user.id, project.userId) }),
-          ]);
-
-          const [job] = await db.insert(intelligenceJob).values({
-            id: makeId("inteljob"),
-            projectId: project.id,
-            userId: project.userId,
-            jobType: body.scanType,
-            status: "queued",
-            provider: "n8n",
-            input: JSON.stringify({
-              scanType: body.scanType,
-              project,
-              competitors,
-              keywords,
-              dataForSeoConfigured: Boolean(process.env.DATAFORSEO_LOGIN && process.env.DATAFORSEO_PASSWORD),
-              pageSpeedConfigured: Boolean(process.env.PAGESPEED_API_KEY),
-              googleSearchConsoleOptional: true,
-            }),
-          }).returning();
-
-          await db.update(intelligenceProject).set({
-            status: "running",
-            lastScanStatus: "queued",
-            updatedAt: new Date(),
-          }).where(eq(intelligenceProject.id, project.id));
-
-          try {
-            const n8nResponse = await sendN8nCompetitorIntelligence({
-              project,
-              job,
-              user: {
-                id: owner?.id ?? project.userId,
-                name: owner?.name ?? null,
-                email: owner?.email ?? null,
-              },
-              competitors,
-              keywords,
-              origin: url.origin,
-              idempotencyKey: `intelligence:${job.id}`,
-            });
-            const [updatedJob] = await db.update(intelligenceJob).set({
-              status: "sent_to_n8n",
-              output: JSON.stringify(n8nResponse),
-              startedAt: new Date(),
-              updatedAt: new Date(),
-            }).where(eq(intelligenceJob.id, job.id)).returning();
-            await db.update(intelligenceProject).set({
-              lastScanStatus: "sent_to_n8n",
-              updatedAt: new Date(),
-            }).where(eq(intelligenceProject.id, project.id));
-            return json({ job: updatedJob, n8nStatus: "sent", n8nResponse }, 202);
-          } catch (n8nError: any) {
-            const [updatedJob] = await db.update(intelligenceJob).set({
-              status: "n8n_failed",
-              error: n8nError.message,
-              updatedAt: new Date(),
-            }).where(eq(intelligenceJob.id, job.id)).returning();
-            await db.update(intelligenceProject).set({
-              lastScanStatus: "n8n_failed",
-              updatedAt: new Date(),
-            }).where(eq(intelligenceProject.id, project.id));
-            await recordAudit({
-              actorUserId: session.user.id,
-              action: "intelligence.scan.n8n_failed",
-              entityType: "intelligence_job",
-              entityId: job.id,
-              message: `Competitor intelligence scan saved but n8n failed for ${project.businessName}`,
-              level: "error",
-              metadata: { error: n8nError.message },
-            });
-            return json({ job: updatedJob, n8nStatus: "failed", error: n8nError.message }, 202);
-          }
-        } catch (error: any) {
-          return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-        }
-      }
-
-      return json({ error: "Not found" }, 404);
+      return intelligenceHandlers.handleAdminIntelligence(request);
     }
 
     if (url.pathname.startsWith("/api/user/affiliate")) {
-      const { session, response } = await requireSession(request);
-      if (response) return response;
+      return affiliateHandlers.handleUserAffiliate(request);
+    }
 
-      if (request.method === "GET") {
-        try {
-          const affiliateRow = await db.query.affiliate.findFirst({
-            where: eq(affiliate.email, (session.user.email ?? "").toLowerCase()),
-          }) ?? await db.query.affiliate.findFirst({
-            where: eq(affiliate.userId, session.user.id),
-          });
-
-          if (!affiliateRow) return json({ affiliate: null });
-          if (!affiliateRow.userId) {
-            await db.update(affiliate).set({ userId: session.user.id, updatedAt: new Date() }).where(eq(affiliate.id, affiliateRow.id));
-            affiliateRow.userId = session.user.id;
-          }
-
-          const [referrals, commissions, payouts, flags] = await Promise.all([
-            db.query.affiliateReferral.findMany({
-              where: eq(affiliateReferral.affiliateId, affiliateRow.id),
-              orderBy: (affiliateReferral, { desc }) => [desc(affiliateReferral.createdAt)],
-            }),
-            db.query.affiliateCommission.findMany({
-              where: eq(affiliateCommission.affiliateId, affiliateRow.id),
-              orderBy: (affiliateCommission, { desc }) => [desc(affiliateCommission.createdAt)],
-            }),
-            db.query.affiliatePayout.findMany({
-              where: eq(affiliatePayout.affiliateId, affiliateRow.id),
-              orderBy: (affiliatePayout, { desc }) => [desc(affiliatePayout.createdAt)],
-            }),
-            db.query.affiliateFraudFlag.findMany({
-              where: eq(affiliateFraudFlag.affiliateId, affiliateRow.id),
-              orderBy: (affiliateFraudFlag, { desc }) => [desc(affiliateFraudFlag.createdAt)],
-            }),
-          ]);
-          const customerRows = await Promise.all(referrals.filter((row) => row.customerId).map((row) => db.query.user.findFirst({ where: eq(user.id, row.customerId!) })));
-          const customers = new Map(customerRows.filter(Boolean).map((row) => [row!.id, row!]));
-
-          return json({
-            affiliate: sanitizeAffiliate(affiliateRow, url.origin, true),
-            summary: affiliateSummary({ referrals, commissions }),
-            referrals: referrals.map((row) => {
-              const customer = row.customerId ? customers.get(row.customerId) : null;
-              const rowCommissions = commissions.filter((item) => item.referralId === row.id);
-              return {
-                id: row.id,
-                customerName: customer?.name ?? customer?.email ?? "Lead",
-                signupDate: row.signedUpAt,
-                status: row.status,
-                commissionStatus: rowCommissions[0]?.status ?? "pending",
-              };
-            }),
-            commissions,
-            payouts,
-            flags: flags.filter((row) => row.status === "open"),
-          });
-        } catch (error: any) {
-          console.error("Affiliate profile fetch error:", error);
-          return json({ error: "Failed to load affiliate profile" }, 500);
-        }
-      }
-
-      if (request.method === "PUT") {
-        try {
-          const body = await parseBody(request, affiliateProfileSchema);
-          const affiliateRow = await db.query.affiliate.findFirst({ where: eq(affiliate.userId, session.user.id) })
-            ?? await db.query.affiliate.findFirst({ where: eq(affiliate.email, (session.user.email ?? "").toLowerCase()) });
-          if (!affiliateRow) return json({ error: "Affiliate profile not found" }, 404);
-          const [updated] = await db.update(affiliate).set({
-            phone: body.phone ?? affiliateRow.phone,
-            companyName: body.companyName ?? affiliateRow.companyName,
-            website: body.website ?? affiliateRow.website,
-            socialLinks: body.socialLinks ?? affiliateRow.socialLinks,
-            expectedReferralMethod: body.expectedReferralMethod ?? affiliateRow.expectedReferralMethod,
-            payoutMethod: body.payoutMethod ?? affiliateRow.payoutMethod,
-            payoutDetails: body.payoutDetails ? encryptSecret(body.payoutDetails) : affiliateRow.payoutDetails,
-            userId: session.user.id,
-            updatedAt: new Date(),
-          }).where(eq(affiliate.id, affiliateRow.id)).returning();
-          return json({ affiliate: sanitizeAffiliate(updated, url.origin, true) });
-        } catch (error: any) {
-          return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-        }
-      }
+    if (url.pathname.startsWith("/api/admin/affiliates")) {
+      return affiliateHandlers.handleAdminAffiliates(request);
     }
 
     if (url.pathname.startsWith("/api/user/subscription/verify")) {
-      const { session, response } = await requireSession(request);
-      if (response) return response;
+      return billingHandlers.handleSubscriptionVerify(request);
+    }
 
-      try {
-        const body = request.method === "POST" ? await request.json().catch(() => ({})) : {};
-        const reference = url.searchParams.get("reference") ?? body.reference;
-        const subscriptionId = url.searchParams.get("subscription") ?? body.subscriptionId;
-
-        const targetInvoice = reference
-          ? await db.query.invoice.findFirst({ where: eq(invoice.paystackReference, reference) })
-          : subscriptionId
-            ? await db.query.invoice.findFirst({ where: eq(invoice.id, subscriptionId) })
-            : null;
-        const targetSubscription = targetInvoice
-          ? await db.query.subscription.findFirst({
-              where: eq(subscription.id, targetInvoice.id),
-              with: { plan: { with: { service: true } }, bundle: true },
-            })
-          : subscriptionId
-            ? await db.query.subscription.findFirst({
-                where: eq(subscription.id, subscriptionId),
-                with: { plan: { with: { service: true } }, bundle: true },
-              })
-            : null;
-
-        if (targetInvoice && targetInvoice.userId !== session.user.id) {
-          return json({ error: "Payment record not found" }, 404);
-        }
-
-        if (!targetInvoice) {
-          if (!targetSubscription || targetSubscription.userId !== session.user.id) {
-            return json({ error: "Subscription not found" }, 404);
-          }
-          if (targetSubscription.status === "trialing") {
-            return json({ verified: true, invoice: null, subscription: targetSubscription }, 200);
-          }
-          return json({ error: "Payment record not found" }, 404);
-        }
-
-        if (!targetSubscription || targetSubscription.userId !== session.user.id) {
-          return json({ error: "Subscription not found" }, 404);
-        }
-
-        if (targetInvoice.status === "paid" && targetSubscription.status === "active") {
-          return json({ verified: true, invoice: targetInvoice, subscription: targetSubscription });
-        }
-
-        if (!targetInvoice.paystackReference) {
-          return json({ verified: false, invoice: targetInvoice, subscription: targetSubscription }, 200);
-        }
-
-        const verification = await verifyPayment(targetInvoice.paystackReference);
-        const paid = verification?.data?.status === "success" || verification?.data?.gateway_response === "Successful";
-        if (!paid) {
-          return json({ verified: false, invoice: targetInvoice, subscription: targetSubscription, payment: verification?.data ?? null }, 200);
-        }
-
-        const [updatedInvoice] = await db.update(invoice).set({
-          status: "paid",
-          paidAt: new Date(),
-          updatedAt: new Date(),
-        }).where(eq(invoice.id, targetInvoice.id)).returning();
-
-        const [updatedSubscription] = await db.update(subscription).set({
-          status: "active",
-          updatedAt: new Date(),
-          currentPeriodStart: new Date(),
-        }).where(eq(subscription.id, targetSubscription.id)).returning();
-
-        await createAffiliateCommissionForPayment({
-          invoiceId: updatedInvoice.id,
-          customerId: updatedInvoice.userId,
-          amount: updatedInvoice.amount,
-          subscriptionId: updatedSubscription.id,
-          paymentId: updatedInvoice.paystackReference ?? updatedInvoice.id,
-        });
-
-        const paidDomainOrder = await db.query.domainOrder.findFirst({
-          where: eq(domainOrder.invoiceId, targetInvoice.id),
-        });
-        if (paidDomainOrder && !["registered", "registration_failed"].includes(paidDomainOrder.status)) {
-          await db.update(domainOrder).set({
-            status: "paid",
-            updatedAt: new Date(),
-          }).where(eq(domainOrder.id, paidDomainOrder.id));
-          tryRegisterPaidDomainOrder(paidDomainOrder, request.url).catch((error) => {
-            console.error("Domain registration follow-up failed:", error);
-          });
-        }
-
-        await recordAudit({
-          actorUserId: session.user.id,
-          action: "subscription.verified",
-          entityType: "subscription",
-          entityId: targetSubscription.id,
-          message: `Subscription payment verified for ${targetSubscription.name}`,
-          metadata: { reference: targetInvoice.paystackReference },
-        });
-
-        sendEmail({
-          template: "payment_received",
-          to: session.user.email ?? "",
-          subject: `Payment received for ${targetSubscription.name}`,
-          data: {
-            firstName: session.user.name,
-            productName: targetSubscription.name,
-            subscriptionName: targetSubscription.name,
-            totalDue: formatEmailMoney(updatedInvoice.amount, updatedInvoice.currency ?? "ZAR"),
-            primaryCtaText: "Open dashboard",
-            primaryCtaUrl: `${new URL(request.url).origin}/dashboard`,
-          },
-          idempotencyKey: `payment:${targetInvoice.id}:received`,
-        }).catch((error) => console.error("Payment receipt email failed:", error));
-
-        return json({ verified: true, invoice: updatedInvoice, subscription: updatedSubscription });
-      } catch (error: any) {
-        return json({ error: error.message }, 500);
-      }
+    if (url.pathname === "/api/user/agreement-requirement") {
+      return billingHandlers.handleAgreementRequirement(request);
     }
 
     if (url.pathname.startsWith("/api/user/subscription")) {
@@ -6706,17 +8765,21 @@ echo "CloudMonkey agent installed."
         try {
           const body = await parseBody(
             request,
-            z.object({
-              planId: z.string().min(1).optional().nullable(),
-              bundleId: z.string().min(1).optional().nullable(),
-              name: z.string().min(1).optional().nullable(),
-              amount: z.coerce.number().int().nonnegative().optional().nullable(),
-              interval: z.enum(["month", "year"]).optional(),
-              currentPeriodEnd: z.string().optional().nullable(),
-              couponCode: z.string().max(80).optional().nullable(),
-            }).refine((value) => !(value.planId && value.bundleId), {
-              message: "Choose either a plan or a bundle, not both",
-            }),
+            z
+              .object({
+                planId: z.string().min(1).optional().nullable(),
+                bundleId: z.string().min(1).optional().nullable(),
+                name: z.string().min(1).optional().nullable(),
+                amount: z.coerce.number().int().nonnegative().optional().nullable(),
+                interval: z.enum(["month", "year"]).optional(),
+                currentPeriodEnd: z.string().optional().nullable(),
+                couponCode: z.string().max(80).optional().nullable(),
+                agreementAccepted: z.boolean().optional(),
+                agreementConsentText: z.string().max(1000).optional().nullable(),
+              })
+              .refine((value) => !(value.planId && value.bundleId), {
+                message: "Choose either a plan or a bundle, not both",
+              }),
           );
 
           const planRow = body.planId
@@ -6733,6 +8796,21 @@ echo "CloudMonkey agent installed."
               })
             : null;
 
+          if ((body.planId && !planRow) || (body.bundleId && !bundleRow)) {
+            return json({ error: "Selected product was not found" }, 404);
+          }
+          if (planRow && !planRow.active) {
+            return json({ error: "Selected product is not available for checkout" }, 400);
+          }
+          if (bundleRow && !bundleRow.active) {
+            return json({ error: "Selected bundle is not available for checkout" }, 400);
+          }
+          const selectedBillingType = planRow?.billingType ?? bundleRow?.billingType ?? "recurring";
+          const selectedBillingFrequency = normalizeBillingFrequency(planRow ?? bundleRow ?? {});
+          if (selectedBillingType === "quote") {
+            return json({ error: "This product requires a quote before checkout" }, 400);
+          }
+
           const productId = planRow?.id ?? bundleRow?.id ?? null;
           const productType = planRow ? "plan" : bundleRow ? "bundle" : null;
           const trialDays = planRow?.trialDays && !bundleRow ? planRow.trialDays : null;
@@ -6748,7 +8826,9 @@ echo "CloudMonkey agent installed."
           if (hasCouponInput && !coupon) {
             return json({ error: "Coupon code is invalid" }, 400);
           }
-          const amount = coupon ? applyPercentDiscount(originalAmount, coupon.percentOff) : originalAmount;
+          const amount = coupon
+            ? applyPercentDiscount(originalAmount, coupon.percentOff)
+            : originalAmount;
           if (!originalAmount) {
             return json({ error: "A payable amount is required" }, 400);
           }
@@ -6758,49 +8838,158 @@ echo "CloudMonkey agent installed."
             return json({ error: "User email is required for payment checkout" }, 400);
           }
 
-          const name = body.name ?? (planRow ? `${planRow.service?.name ?? "Service"} - ${planRow.name}` : bundleRow?.name) ?? "Selected package";
-          const interval = body.interval ?? "month";
-          const currentPeriodEnd = body.currentPeriodEnd ? new Date(body.currentPeriodEnd) : (() => {
-            const end = new Date();
-            end.setMonth(end.getMonth() + (interval === "year" ? 12 : 1));
-            return end;
-          })();
+          const name =
+            body.name ??
+            (planRow
+              ? `${planRow.service?.name ?? "Service"} - ${planRow.name}`
+              : bundleRow?.name) ??
+            "Selected package";
+          const serviceDefinition = safeServiceDefinition(
+            planRow?.serviceDefinition ?? bundleRow?.serviceDefinition ?? null,
+          );
+          const agreementRequirement =
+            productType && productId
+              ? await agreementRequirementForProduct({
+                  productType,
+                  productId,
+                  productName: name,
+                  serviceDefinition,
+                })
+              : null;
+          const interval = frequencyToInterval(selectedBillingFrequency);
+          const selectedMinimumTermMonths = normalizeMinimumTermMonths(planRow ?? bundleRow ?? {});
+          const currentPeriodEnd = body.currentPeriodEnd
+            ? new Date(body.currentPeriodEnd)
+            : (() => {
+                const end = new Date();
+                end.setMonth(end.getMonth() + (interval === "year" ? 12 : 1));
+                return end;
+              })();
           const existingSubscriptions = await db.query.subscription.findMany({
             where: eq(subscription.userId, session.user.id),
+            with: {
+              plan: { with: { service: true } },
+              bundle: true,
+            },
             orderBy: (subscription, { desc }) => [desc(subscription.createdAt)],
           });
-          const matchesProduct = (row: typeof existingSubscriptions[number]) => {
+          const matchesProduct = (row: (typeof existingSubscriptions)[number]) => {
             if (!productId) return row.name === name;
             if (productType === "plan") return row.planId === productId;
             if (productType === "bundle") return row.bundleId === productId;
             return false;
           };
-          const accessSubscription = existingSubscriptions.find((row) => (row.status === "active" || row.status === "trialing") && matchesProduct(row));
+          const accessSubscription = existingSubscriptions.find(
+            (row) => (row.status === "active" || row.status === "trialing") && matchesProduct(row),
+          );
           if (accessSubscription) {
-            return json({
-              subscription: accessSubscription,
-              alreadyActive: true,
-            }, 200);
+            if (agreementRequirement && body.agreementAccepted) {
+              await signAgreementForSubscription({
+                request,
+                userId: session.user.id,
+                subscriptionId: accessSubscription.id,
+                productType: productType!,
+                productId: productId!,
+                productName: name,
+                serviceDefinition,
+                consentText: body.agreementConsentText,
+              });
+            }
+            return json(
+              {
+                subscription: accessSubscription,
+                alreadyActive: true,
+              },
+              200,
+            );
           }
 
-          const pendingSubscription = existingSubscriptions.find((row) => row.status === "pending" && matchesProduct(row));
+          const pendingSubscription = existingSubscriptions.find(
+            (row) => row.status === "pending" && matchesProduct(row),
+          );
+          if (planRow?.service?.categoryId === "build") {
+            const existingBuildSubscription = existingSubscriptions.find(
+              (row) =>
+                ["pending", "active", "trialing"].includes(row.status) &&
+                row.plan?.service?.categoryId === "build" &&
+                !matchesProduct(row),
+            );
+            if (existingBuildSubscription) {
+              return json(
+                {
+                  error:
+                    "Build subscriptions are limited to one company, one brand, and one active build project per account. Please finish or cancel the existing build subscription before starting another.",
+                },
+                409,
+              );
+            }
+          }
           const existingInvoice = pendingSubscription
             ? await db.query.invoice.findFirst({ where: eq(invoice.id, pendingSubscription.id) })
             : null;
+
+          if (agreementRequirement) {
+            const hasSignedAgreement = pendingSubscription
+              ? await signedAgreementExists({
+                  userId: session.user.id,
+                  subscriptionId: pendingSubscription.id,
+                  templateId: agreementRequirement.template.id,
+                  documentHash: agreementRequirement.documentHash,
+                  productType: productType!,
+                  productId: productId!,
+                })
+              : false;
+            if (!hasSignedAgreement && !body.agreementAccepted) {
+              return json(
+                {
+                  error: "Required service agreement must be reviewed and signed before checkout",
+                  agreementRequired: true,
+                  template: {
+                    id: agreementRequirement.template.id,
+                    title: agreementRequirement.template.title,
+                    version: agreementRequirement.template.version,
+                    documentType: agreementRequirement.template.documentType,
+                  },
+                  consentText: agreementRequirement.consentText,
+                },
+                428,
+              );
+            }
+          }
+
+          const signSelectedAgreement = async (subscriptionId: string) => {
+            if (!agreementRequirement || !productType || !productId) return;
+            await signAgreementForSubscription({
+              request,
+              userId: session.user.id,
+              subscriptionId,
+              productType,
+              productId,
+              productName: name,
+              serviceDefinition,
+              consentText: body.agreementConsentText,
+            });
+          };
 
           if (coupon && amount === 0) {
             const invoiceId = pendingSubscription?.id ?? makeId("inv");
             const subscriptionId = invoiceId;
             const issuedAt = new Date();
-            const currentPeriodEnd = body.currentPeriodEnd ? new Date(body.currentPeriodEnd) : (() => {
-              const end = new Date();
-              end.setMonth(end.getMonth() + (interval === "year" ? 12 : 1));
-              return end;
-            })();
+            const currentPeriodEnd = body.currentPeriodEnd
+              ? new Date(body.currentPeriodEnd)
+              : (() => {
+                  const end = new Date();
+                  end.setMonth(end.getMonth() + (interval === "year" ? 12 : 1));
+                  return end;
+                })();
             const dueDate = new Date();
             const settings = await getWorkspaceSettings();
             const workspaceBillingSnapshot = JSON.stringify(getWorkspaceBillingDetails(settings));
-            const invoiceNumber = `INV-${issuedAt.getFullYear()}-${invoiceId.replace(/^inv[_-]?/i, "").replace(/[^a-z0-9]/gi, "").slice(-6).toUpperCase()}`;
+            const invoiceNumber = `INV-${issuedAt.getFullYear()}-${invoiceId
+              .replace(/^inv[_-]?/i, "")
+              .replace(/[^a-z0-9]/gi, "")
+              .slice(-6)
+              .toUpperCase()}`;
             const couponNote = `Coupon ${coupon.code} applied: ${coupon.percentOff}% off original amount ${formatEmailMoney(originalAmount)}.`;
             const invoiceValues = {
               invoiceNumber,
@@ -6819,13 +9008,16 @@ echo "CloudMonkey agent installed."
 
             if (pendingSubscription) {
               if (existingInvoice) {
-                await db.update(invoice).set({
-                  amount,
-                  status: "paid",
-                  dueDate,
-                  ...invoiceValues,
-                  updatedAt: new Date(),
-                }).where(eq(invoice.id, existingInvoice.id));
+                await db
+                  .update(invoice)
+                  .set({
+                    amount,
+                    status: "paid",
+                    dueDate,
+                    ...invoiceValues,
+                    updatedAt: new Date(),
+                  })
+                  .where(eq(invoice.id, existingInvoice.id));
                 await db.insert(invoiceItem).values({
                   id: makeId("invitem"),
                   invoiceId,
@@ -6853,17 +9045,28 @@ echo "CloudMonkey agent installed."
                   amount: 0,
                 });
               }
-              const [updatedSubscription] = await db.update(subscription).set({
-                planId: planRow?.id ?? body.planId ?? null,
-                bundleId: bundleRow?.id ?? body.bundleId ?? null,
-                name,
-                status: "active",
-                amount,
-                interval,
-                currentPeriodStart: issuedAt,
-                currentPeriodEnd,
-                updatedAt: new Date(),
-              }).where(eq(subscription.id, pendingSubscription.id)).returning();
+              const [updatedSubscription] = await db
+                .update(subscription)
+                .set({
+                  planId: planRow?.id ?? body.planId ?? null,
+                  bundleId: bundleRow?.id ?? body.bundleId ?? null,
+                  name,
+                  status: "active",
+                  amount,
+                  interval,
+                  minimumTermMonths: selectedMinimumTermMonths,
+                  minimumTermEndsAt: selectedMinimumTermMonths
+                    ? addMonths(issuedAt, selectedMinimumTermMonths)
+                    : null,
+                  currentPeriodStart: issuedAt,
+                  currentPeriodEnd,
+                  requiredAgreementTemplateId: agreementRequirement?.template.id ?? null,
+                  updatedAt: new Date(),
+                })
+                .where(eq(subscription.id, pendingSubscription.id))
+                .returning();
+
+              await signSelectedAgreement(updatedSubscription.id);
 
               await recordAudit({
                 actorUserId: session.user.id,
@@ -6871,36 +9074,55 @@ echo "CloudMonkey agent installed."
                 entityType: "subscription",
                 entityId: updatedSubscription.id,
                 message: `Coupon subscription activated for ${name}`,
-                metadata: { coupon: coupon.code, percentOff: coupon.percentOff, originalAmount, amount },
+                metadata: {
+                  coupon: coupon.code,
+                  percentOff: coupon.percentOff,
+                  originalAmount,
+                  amount,
+                },
               });
 
-              return json({ subscription: updatedSubscription, coupon, discounted: true, alreadyPaid: true }, 200);
+              return json(
+                { subscription: updatedSubscription, coupon, discounted: true, alreadyPaid: true },
+                200,
+              );
             }
 
             let createdSubscription: typeof subscription.$inferSelect;
             let createdInvoice: typeof invoice.$inferSelect;
             await db.transaction(async (tx) => {
-              [createdInvoice] = await tx.insert(invoice).values({
-                id: invoiceId,
-                userId: session.user.id,
-                amount,
-                status: "paid",
-                dueDate,
-                invoiceSource: "checkout",
-                ...invoiceValues,
-              }).returning();
-              [createdSubscription] = await tx.insert(subscription).values({
-                id: subscriptionId,
-                userId: session.user.id,
-                bundleId: bundleRow?.id ?? body.bundleId ?? null,
-                planId: planRow?.id ?? body.planId ?? null,
-                name,
-                status: "active",
-                amount,
-                interval,
-                currentPeriodStart: issuedAt,
-                currentPeriodEnd,
-              }).returning();
+              [createdInvoice] = await tx
+                .insert(invoice)
+                .values({
+                  id: invoiceId,
+                  userId: session.user.id,
+                  amount,
+                  status: "paid",
+                  dueDate,
+                  invoiceSource: "checkout",
+                  ...invoiceValues,
+                })
+                .returning();
+              [createdSubscription] = await tx
+                .insert(subscription)
+                .values({
+                  id: subscriptionId,
+                  userId: session.user.id,
+                  bundleId: bundleRow?.id ?? body.bundleId ?? null,
+                  planId: planRow?.id ?? body.planId ?? null,
+                  name,
+                  status: "active",
+                  amount,
+                  interval,
+                  minimumTermMonths: selectedMinimumTermMonths,
+                  minimumTermEndsAt: selectedMinimumTermMonths
+                    ? addMonths(issuedAt, selectedMinimumTermMonths)
+                    : null,
+                  currentPeriodStart: issuedAt,
+                  currentPeriodEnd,
+                  requiredAgreementTemplateId: agreementRequirement?.template.id ?? null,
+                })
+                .returning();
               await tx.insert(invoiceItem).values([
                 {
                   id: makeId("invitem"),
@@ -6909,6 +9131,8 @@ echo "CloudMonkey agent installed."
                   quantity: 1,
                   unitPrice: originalAmount,
                   amount: originalAmount,
+                  recurring: frequencyRecurring(selectedBillingFrequency),
+                  interval,
                 },
                 {
                   id: makeId("invitem"),
@@ -6921,13 +9145,21 @@ echo "CloudMonkey agent installed."
               ]);
             });
 
+            await signSelectedAgreement(createdSubscription!.id);
+
             await recordAudit({
               actorUserId: session.user.id,
               action: "subscription.coupon.activated",
               entityType: "subscription",
               entityId: createdSubscription!.id,
               message: `Coupon subscription activated for ${name}`,
-              metadata: { coupon: coupon.code, percentOff: coupon.percentOff, originalAmount, amount, invoiceId: createdInvoice!.id },
+              metadata: {
+                coupon: coupon.code,
+                percentOff: coupon.percentOff,
+                originalAmount,
+                amount,
+                invoiceId: createdInvoice!.id,
+              },
             });
 
             sendEmail({
@@ -6945,7 +9177,16 @@ echo "CloudMonkey agent installed."
               idempotencyKey: `coupon:${invoiceId}:activated`,
             }).catch((error) => console.error("Coupon activation email failed:", error));
 
-            return json({ invoice: createdInvoice!, subscription: createdSubscription!, coupon, discounted: true, alreadyPaid: true }, 201);
+            return json(
+              {
+                invoice: createdInvoice!,
+                subscription: createdSubscription!,
+                coupon,
+                discounted: true,
+                alreadyPaid: true,
+              },
+              201,
+            );
           }
 
           if (isTrialPlan) {
@@ -6955,22 +9196,36 @@ echo "CloudMonkey agent installed."
 
             if (pendingSubscription) {
               if (existingInvoice) {
-                await db.update(invoice).set({
-                  status: "cancelled",
-                  updatedAt: new Date(),
-                }).where(eq(invoice.id, existingInvoice.id));
+                await db
+                  .update(invoice)
+                  .set({
+                    status: "cancelled",
+                    updatedAt: new Date(),
+                  })
+                  .where(eq(invoice.id, existingInvoice.id));
               }
-              const [updatedTrialSubscription] = await db.update(subscription).set({
-                planId: planRow?.id ?? body.planId ?? null,
-                bundleId: null,
-                name,
-                status: "trialing",
-                amount: 0,
-                interval,
-                currentPeriodStart: new Date(),
-                currentPeriodEnd: trialPeriodEnd,
-                updatedAt: new Date(),
-              }).where(eq(subscription.id, pendingSubscription.id)).returning();
+              const [updatedTrialSubscription] = await db
+                .update(subscription)
+                .set({
+                  planId: planRow?.id ?? body.planId ?? null,
+                  bundleId: null,
+                  name,
+                  status: "trialing",
+                  amount: 0,
+                  interval,
+                  minimumTermMonths: selectedMinimumTermMonths,
+                  minimumTermEndsAt: selectedMinimumTermMonths
+                    ? addMonths(new Date(), selectedMinimumTermMonths)
+                    : null,
+                  currentPeriodStart: new Date(),
+                  currentPeriodEnd: trialPeriodEnd,
+                  requiredAgreementTemplateId: agreementRequirement?.template.id ?? null,
+                  updatedAt: new Date(),
+                })
+                .where(eq(subscription.id, pendingSubscription.id))
+                .returning();
+
+              await signSelectedAgreement(updatedTrialSubscription.id);
 
               await recordAudit({
                 actorUserId: session.user.id,
@@ -6981,24 +9236,37 @@ echo "CloudMonkey agent installed."
                 metadata: { trialDays, planId: planRow?.id ?? body.planId ?? null },
               });
 
-              return json({
-                subscription: updatedTrialSubscription,
-                trialing: true,
-              }, 200);
+              return json(
+                {
+                  subscription: updatedTrialSubscription,
+                  trialing: true,
+                },
+                200,
+              );
             }
 
-            const [createdTrialSubscription] = await db.insert(subscription).values({
-              id: trialSubscriptionId,
-              userId: session.user.id,
-              bundleId: null,
-              planId: planRow?.id ?? body.planId ?? null,
-              name,
-              status: "trialing",
-              amount: 0,
-              interval,
-              currentPeriodStart: new Date(),
-              currentPeriodEnd: trialPeriodEnd,
-            }).returning();
+            const [createdTrialSubscription] = await db
+              .insert(subscription)
+              .values({
+                id: trialSubscriptionId,
+                userId: session.user.id,
+                bundleId: null,
+                planId: planRow?.id ?? body.planId ?? null,
+                name,
+                status: "trialing",
+                amount: 0,
+                interval,
+                minimumTermMonths: selectedMinimumTermMonths,
+                minimumTermEndsAt: selectedMinimumTermMonths
+                  ? addMonths(new Date(), selectedMinimumTermMonths)
+                  : null,
+                currentPeriodStart: new Date(),
+                currentPeriodEnd: trialPeriodEnd,
+                requiredAgreementTemplateId: agreementRequirement?.template.id ?? null,
+              })
+              .returning();
+
+            await signSelectedAgreement(createdTrialSubscription.id);
 
             await recordAudit({
               actorUserId: session.user.id,
@@ -7009,21 +9277,28 @@ echo "CloudMonkey agent installed."
               metadata: { trialDays, planId: planRow?.id ?? body.planId ?? null },
             });
 
-            return json({
-              subscription: createdTrialSubscription,
-              trialing: true,
-            }, 200);
+            return json(
+              {
+                subscription: createdTrialSubscription,
+                trialing: true,
+              },
+              200,
+            );
           }
 
           if (pendingSubscription && existingInvoice?.paystackUrl) {
-            return json({
-              subscription: pendingSubscription,
-              invoice: existingInvoice,
-              authorization_url: existingInvoice.paystackUrl,
-              access_code: null,
-              reference: existingInvoice.paystackReference,
-              alreadyPending: true,
-            }, 200);
+            await signSelectedAgreement(pendingSubscription.id);
+            return json(
+              {
+                subscription: pendingSubscription,
+                invoice: existingInvoice,
+                authorization_url: existingInvoice.paystackUrl,
+                access_code: null,
+                reference: existingInvoice.paystackReference,
+                alreadyPending: true,
+              },
+              200,
+            );
           }
 
           const invoiceId = pendingSubscription?.id ?? makeId("inv");
@@ -7035,7 +9310,11 @@ echo "CloudMonkey agent installed."
           const issuedAt = new Date();
           const settings = await getWorkspaceSettings();
           const workspaceBillingSnapshot = JSON.stringify(getWorkspaceBillingDetails(settings));
-          const invoiceNumber = `INV-${issuedAt.getFullYear()}-${invoiceId.replace(/^inv[_-]?/i, "").replace(/[^a-z0-9]/gi, "").slice(-6).toUpperCase()}`;
+          const invoiceNumber = `INV-${issuedAt.getFullYear()}-${invoiceId
+            .replace(/^inv[_-]?/i, "")
+            .replace(/[^a-z0-9]/gi, "")
+            .slice(-6)
+            .toUpperCase()}`;
           const invoiceValues = {
             invoiceNumber,
             issuedAt,
@@ -7068,8 +9347,13 @@ echo "CloudMonkey agent installed."
                 status: "pending",
                 amount,
                 interval,
+                minimumTermMonths: selectedMinimumTermMonths,
+                minimumTermEndsAt: selectedMinimumTermMonths
+                  ? addMonths(issuedAt, selectedMinimumTermMonths)
+                  : null,
                 currentPeriodStart: new Date(),
                 currentPeriodEnd,
+                requiredAgreementTemplateId: agreementRequirement?.template.id ?? null,
               });
               await tx.insert(invoiceItem).values({
                 id: makeId("invitem"),
@@ -7078,6 +9362,8 @@ echo "CloudMonkey agent installed."
                 quantity: 1,
                 unitPrice: amount,
                 amount,
+                recurring: frequencyRecurring(selectedBillingFrequency),
+                interval,
               });
             });
           } else if (!existingInvoice) {
@@ -7096,6 +9382,8 @@ echo "CloudMonkey agent installed."
               quantity: 1,
               unitPrice: amount,
               amount,
+              recurring: frequencyRecurring(selectedBillingFrequency),
+              interval,
             });
           }
 
@@ -7112,34 +9400,55 @@ echo "CloudMonkey agent installed."
               callbackUrl,
             });
           } catch (error) {
-            await db.update(invoice).set({
-              status: "cancelled",
-              updatedAt: new Date(),
-            }).where(eq(invoice.id, invoiceId));
-            await db.update(subscription).set({
-              status: "cancelled",
-              updatedAt: new Date(),
-            }).where(eq(subscription.id, subscriptionId));
+            await db
+              .update(invoice)
+              .set({
+                status: "cancelled",
+                updatedAt: new Date(),
+              })
+              .where(eq(invoice.id, invoiceId));
+            await db
+              .update(subscription)
+              .set({
+                status: "cancelled",
+                updatedAt: new Date(),
+              })
+              .where(eq(subscription.id, subscriptionId));
             throw error;
           }
 
-          const [updatedInvoice] = await db.update(invoice).set({
-            paystackReference: payment.data.reference,
-            paystackUrl: payment.data.authorization_url,
-            updatedAt: new Date(),
-          }).where(eq(invoice.id, invoiceId)).returning();
+          const [updatedInvoice] = await db
+            .update(invoice)
+            .set({
+              paystackReference: payment.data.reference,
+              paystackUrl: payment.data.authorization_url,
+              updatedAt: new Date(),
+            })
+            .where(eq(invoice.id, invoiceId))
+            .returning();
 
-          const [updatedSubscription] = await db.update(subscription).set({
-            status: "pending",
-            planId: planRow?.id ?? body.planId ?? null,
-            bundleId: bundleRow?.id ?? body.bundleId ?? null,
-            name,
-            amount,
-            interval,
-            currentPeriodStart: new Date(),
-            currentPeriodEnd,
-            updatedAt: new Date(),
-          }).where(eq(subscription.id, subscriptionId)).returning();
+          const [updatedSubscription] = await db
+            .update(subscription)
+            .set({
+              status: "pending",
+              planId: planRow?.id ?? body.planId ?? null,
+              bundleId: bundleRow?.id ?? body.bundleId ?? null,
+              name,
+              amount,
+              interval,
+              minimumTermMonths: selectedMinimumTermMonths,
+              minimumTermEndsAt: selectedMinimumTermMonths
+                ? addMonths(issuedAt, selectedMinimumTermMonths)
+                : null,
+              currentPeriodStart: new Date(),
+              currentPeriodEnd,
+              requiredAgreementTemplateId: agreementRequirement?.template.id ?? null,
+              updatedAt: new Date(),
+            })
+            .where(eq(subscription.id, subscriptionId))
+            .returning();
+
+          await signSelectedAgreement(updatedSubscription.id);
 
           await recordAudit({
             actorUserId: session.user.id,
@@ -7169,13 +9478,16 @@ echo "CloudMonkey agent installed."
             idempotencyKey: `invoice:${invoiceId}:created`,
           }).catch((error) => console.error("Invoice email failed:", error));
 
-          return json({
-            invoice: updatedInvoice,
-            subscription: updatedSubscription,
-            authorization_url: payment.data.authorization_url,
-            access_code: payment.data.access_code,
-            reference: payment.data.reference,
-          }, 201);
+          return json(
+            {
+              invoice: updatedInvoice,
+              subscription: updatedSubscription,
+              authorization_url: payment.data.authorization_url,
+              access_code: payment.data.access_code,
+              reference: payment.data.reference,
+            },
+            201,
+          );
         } catch (error: any) {
           return json({ error: error.message, issues: error.issues }, error.status ?? 500);
         }
@@ -7183,106 +9495,17 @@ echo "CloudMonkey agent installed."
 
       const rows = await db.query.subscription.findMany({
         where: eq(subscription.userId, session.user.id),
-        with: { plan: { with: { service: true, features: true } }, bundle: { with: { features: true } } },
+        with: {
+          plan: { with: { service: true, features: true } },
+          bundle: { with: { features: true } },
+        },
         orderBy: (subscription, { desc }) => [desc(subscription.createdAt)],
       });
       return json(rows);
     }
 
     if (url.pathname.startsWith("/api/user/website-onboarding")) {
-      const { session, response } = await requireSession(request);
-      if (response) return response;
-
-      if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
-
-      try {
-        const body = await parseBody(request, websiteOnboardingSchema);
-        const activeSubscription = await db.query.subscription.findFirst({
-          where: eq(subscription.id, body.subscriptionId),
-          with: { plan: { with: { service: true, features: true } }, bundle: { with: { features: true } } },
-        });
-
-        if (!activeSubscription || activeSubscription.userId !== session.user.id) {
-          return json({ error: "Subscription not found" }, 404);
-        }
-        if (!isWebsitePlanId(activeSubscription.planId)) {
-          return json({ error: "This wizard is only for website and ecommerce plans" }, 400);
-        }
-        if (!["active", "trialing"].includes(activeSubscription.status)) {
-          return json({ error: "Payment or trial activation is required before onboarding can be submitted" }, 402);
-        }
-
-        const productType = activeSubscription.planId ? "plan" : "bundle";
-        const productId = activeSubscription.planId ?? activeSubscription.bundleId ?? activeSubscription.id;
-        const existingSubmission = await db.query.onboardingSubmission.findFirst({
-          where: eq(onboardingSubmission.subscriptionId, activeSubscription.id),
-        });
-        const submittedAt = new Date();
-        const submissionValues = {
-          userId: session.user.id,
-          subscriptionId: activeSubscription.id,
-          productType,
-          productId,
-          status: "submitted",
-          answers: JSON.stringify(body.answers),
-          submittedAt,
-          updatedAt: new Date(),
-        };
-        const [savedSubmission] = existingSubmission
-          ? await db.update(onboardingSubmission).set(submissionValues).where(eq(onboardingSubmission.id, existingSubmission.id)).returning()
-          : await db.insert(onboardingSubmission).values({
-              id: makeId("onboard"),
-              ...submissionValues,
-            }).returning();
-
-        const subscriptionInvoice = await db.query.invoice.findFirst({
-          where: eq(invoice.id, activeSubscription.id),
-        });
-        const websiteProject = await createWebsiteProjectFromOnboarding({
-          userId: session.user.id,
-          subscription: activeSubscription,
-          invoiceId: subscriptionInvoice?.id ?? null,
-          answers: body.answers,
-        });
-
-        const settings = await getWorkspaceSettings();
-        const adminEmail = settings?.adminNotificationEmail ?? process.env.ADMIN_NOTIFICATION_EMAIL;
-        if (adminEmail) {
-          sendEmail({
-            template: "onboarding_received",
-            to: adminEmail,
-            subject: `Website onboarding submitted: ${websiteProject.businessName || activeSubscription.name}`,
-            data: {
-              customerEmail: session.user.email,
-              firstName: "team",
-              subscriptionName: activeSubscription.name,
-              primaryCtaText: "Open website projects",
-              primaryCtaUrl: `${new URL(request.url).origin}/dashboard/website-projects`,
-            },
-            idempotencyKey: `website-onboarding:${savedSubmission.id}:notification`,
-          }).catch((error) => console.error("Website onboarding notification failed:", error));
-        }
-
-        await recordAudit({
-          actorUserId: session.user.id,
-          action: "website_onboarding.submitted",
-          entityType: "onboarding_submission",
-          entityId: savedSubmission.id,
-          message: `Website onboarding submitted for ${activeSubscription.name}`,
-          metadata: { subscriptionId: activeSubscription.id, websiteId: websiteProject.id },
-        });
-
-        return json({
-          submission: savedSubmission,
-          website: {
-            ...websiteProject,
-            onboardingAnswers: safeJsonParse(websiteProject.onboardingAnswers),
-            provisioningPlan: safeJsonParse(websiteProject.provisioningPlan),
-          },
-        }, 201);
-      } catch (error: any) {
-        return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-      }
+      return websiteHandlers.handleUserWebsiteOnboarding(request);
     }
 
     if (url.pathname.startsWith("/api/user/onboarding")) {
@@ -7315,7 +9538,10 @@ echo "CloudMonkey agent installed."
 
           const activeSubscription = await db.query.subscription.findFirst({
             where: eq(subscription.id, body.subscriptionId),
-            with: { plan: { with: { service: true, features: true } }, bundle: { with: { features: true } } },
+            with: {
+              plan: { with: { service: true, features: true } },
+              bundle: { with: { features: true } },
+            },
           });
 
           if (!activeSubscription || activeSubscription.userId !== session.user.id) {
@@ -7323,11 +9549,15 @@ echo "CloudMonkey agent installed."
           }
 
           if (activeSubscription.status !== "active") {
-            return json({ error: "Payment must be confirmed before onboarding can be submitted" }, 402);
+            return json(
+              { error: "Payment must be confirmed before onboarding can be submitted" },
+              402,
+            );
           }
 
           const productType = activeSubscription.planId ? "plan" : "bundle";
-          const productId = activeSubscription.planId ?? activeSubscription.bundleId ?? activeSubscription.id;
+          const productId =
+            activeSubscription.planId ?? activeSubscription.bundleId ?? activeSubscription.id;
           const existing = await db.query.onboardingSubmission.findFirst({
             where: eq(onboardingSubmission.subscriptionId, activeSubscription.id),
           });
@@ -7347,11 +9577,18 @@ echo "CloudMonkey agent installed."
           };
 
           const [savedSubmission] = existing
-            ? await db.update(onboardingSubmission).set(submissionValues).where(eq(onboardingSubmission.id, existing.id)).returning()
-            : await db.insert(onboardingSubmission).values({
-                id: submissionId,
-                ...submissionValues,
-              }).returning();
+            ? await db
+                .update(onboardingSubmission)
+                .set(submissionValues)
+                .where(eq(onboardingSubmission.id, existing.id))
+                .returning()
+            : await db
+                .insert(onboardingSubmission)
+                .values({
+                  id: submissionId,
+                  ...submissionValues,
+                })
+                .returning();
 
           const workflowPayload = {
             user: {
@@ -7381,7 +9618,8 @@ echo "CloudMonkey agent installed."
             },
           };
           const settings = await getWorkspaceSettings();
-          const adminEmail = settings?.adminNotificationEmail ?? process.env.ADMIN_NOTIFICATION_EMAIL;
+          const adminEmail =
+            settings?.adminNotificationEmail ?? process.env.ADMIN_NOTIFICATION_EMAIL;
 
           try {
             const n8nResponse = await sendN8nWorkflow({
@@ -7389,11 +9627,15 @@ echo "CloudMonkey agent installed."
               data: workflowPayload,
               idempotencyKey: `onboarding:${savedSubmission.id}:${activeSubscription.id}`,
             });
-            const [sentSubmission] = await db.update(onboardingSubmission).set({
-              status: "sent_to_n8n",
-              n8nResponse: JSON.stringify(n8nResponse),
-              updatedAt: new Date(),
-            }).where(eq(onboardingSubmission.id, savedSubmission.id)).returning();
+            const [sentSubmission] = await db
+              .update(onboardingSubmission)
+              .set({
+                status: "sent_to_n8n",
+                n8nResponse: JSON.stringify(n8nResponse),
+                updatedAt: new Date(),
+              })
+              .where(eq(onboardingSubmission.id, savedSubmission.id))
+              .returning();
 
             await recordAudit({
               actorUserId: session.user.id,
@@ -7422,11 +9664,15 @@ echo "CloudMonkey agent installed."
 
             return json({ submission: sentSubmission, n8nStatus: "sent" }, 201);
           } catch (n8nError: any) {
-            const [failedSubmission] = await db.update(onboardingSubmission).set({
-              status: "n8n_failed",
-              n8nResponse: n8nError.message,
-              updatedAt: new Date(),
-            }).where(eq(onboardingSubmission.id, savedSubmission.id)).returning();
+            const [failedSubmission] = await db
+              .update(onboardingSubmission)
+              .set({
+                status: "n8n_failed",
+                n8nResponse: n8nError.message,
+                updatedAt: new Date(),
+              })
+              .where(eq(onboardingSubmission.id, savedSubmission.id))
+              .returning();
 
             await recordAudit({
               actorUserId: session.user.id,
@@ -7438,7 +9684,10 @@ echo "CloudMonkey agent installed."
               metadata: { subscriptionId: activeSubscription.id, error: n8nError.message },
             });
 
-            return json({ submission: failedSubmission, n8nStatus: "failed", error: n8nError.message }, 202);
+            return json(
+              { submission: failedSubmission, n8nStatus: "failed", error: n8nError.message },
+              202,
+            );
           }
         } catch (error: any) {
           return json({ error: error.message, issues: error.issues }, error.status ?? 500);
@@ -7455,11 +9704,14 @@ echo "CloudMonkey agent installed."
       if (request.method === "POST") {
         try {
           const body = await parseBody(request, agentSchema.omit({ userId: true }));
-          const [created] = await db.insert(aiAgent).values({
-            id: makeId("agent"),
-            userId: session.user.id,
-            ...body,
-          }).returning();
+          const [created] = await db
+            .insert(aiAgent)
+            .values({
+              id: makeId("agent"),
+              userId: session.user.id,
+              ...body,
+            })
+            .returning();
           await recordAudit({
             actorUserId: session.user.id,
             action: "agent.created",
@@ -7513,269 +9765,7 @@ echo "CloudMonkey agent installed."
     }
 
     if (url.pathname.startsWith("/api/user/support-chat")) {
-      const { session, response } = await requireSession(request);
-      if (response) return response;
-
-      const uploadMatch = url.pathname.match(/^\/api\/user\/support-chat\/uploads\/([^/]+)$/);
-      if (uploadMatch && request.method === "GET") {
-        const attachmentId = decodeURIComponent(uploadMatch[1]);
-        const attachment = await db.query.supportChatAttachment.findFirst({
-          where: eq(supportChatAttachment.id, attachmentId),
-        });
-        if (!attachment || attachment.userId !== session.user.id) return json({ error: "Attachment not found" }, 404);
-        const fileStat = await stat(attachment.storagePath).catch(() => null);
-        if (!fileStat?.isFile()) return json({ error: "Attachment file not found" }, 404);
-        return new Response(await readFile(attachment.storagePath), {
-          headers: {
-            "Content-Type": attachment.mimeType,
-            "Content-Length": String(attachment.sizeBytes),
-            "Content-Disposition": `inline; filename="${sanitizeFileName(attachment.fileName)}"`,
-          },
-        });
-      }
-
-      if (url.pathname === "/api/user/support-chat/uploads" && request.method === "POST") {
-        try {
-          const formData = await request.formData();
-          const requestedSessionId = typeof formData.get("sessionId") === "string" ? String(formData.get("sessionId")) : null;
-          let chatSession = requestedSessionId
-            ? await db.query.supportChatSession.findFirst({ where: eq(supportChatSession.id, requestedSessionId) })
-            : null;
-          if (chatSession && chatSession.userId !== session.user.id) return json({ error: "Chat session not found" }, 404);
-          if (!chatSession) {
-            [chatSession] = await db.insert(supportChatSession).values({
-              id: makeId("chatsession"),
-              userId: session.user.id,
-              status: "open",
-            }).returning();
-          }
-
-          const rawFiles = [...formData.getAll("files"), ...formData.getAll("file")];
-          const files = rawFiles.filter((file): file is File => file instanceof File);
-          if (!files.length) return json({ error: "No files uploaded" }, 400);
-          if (files.length > 4) return json({ error: "Upload up to 4 files at a time" }, 400);
-
-          await mkdir(CHAT_UPLOAD_DIR, { recursive: true });
-          const saved = [];
-          for (const file of files) {
-            const kind = getAttachmentKind(file.type);
-            if (!kind) return json({ error: `Unsupported file type: ${file.type || "unknown"}` }, 400);
-            if (file.size > maxBytesForAttachment(kind)) {
-              return json({ error: `${kind === "image" ? "Image" : "Audio"} upload is too large` }, 413);
-            }
-
-            const attachmentId = makeId("chatatt");
-            const extension = path.extname(file.name || "") || (kind === "image" ? ".bin" : ".webm");
-            const storagePath = path.join(CHAT_UPLOAD_DIR, `${attachmentId}${extension}`);
-            await writeFile(storagePath, Buffer.from(await file.arrayBuffer()));
-            const [attachment] = await db.insert(supportChatAttachment).values({
-              id: attachmentId,
-              sessionId: chatSession.id,
-              userId: session.user.id,
-              kind,
-              mimeType: file.type,
-              fileName: sanitizeFileName(file.name || `${kind}${extension}`),
-              sizeBytes: file.size,
-              storagePath,
-              metadata: JSON.stringify({ originalName: file.name || null }),
-            }).returning();
-            saved.push(attachmentDto(attachment));
-          }
-
-          return json({ session: chatSession, attachments: saved }, 201);
-        } catch (error: any) {
-          return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-        }
-      }
-
-      if (request.method === "POST") {
-        try {
-          const body = await parseBody(request, supportChatSchema);
-          let chatSession = body.sessionId
-            ? await db.query.supportChatSession.findFirst({ where: eq(supportChatSession.id, body.sessionId) })
-            : null;
-          if (chatSession && chatSession.userId !== session.user.id) {
-            return json({ error: "Chat session not found" }, 404);
-          }
-          if (!chatSession) {
-            [chatSession] = await db.insert(supportChatSession).values({
-              id: makeId("chatsession"),
-              userId: session.user.id,
-              status: "open",
-            }).returning();
-          }
-
-          const userMessage = await db.insert(supportChatMessage).values({
-            id: makeId("chatmsg"),
-            sessionId: chatSession.id,
-            userId: session.user.id,
-            role: "user",
-            body: body.message,
-          }).returning();
-
-          const [createdUserMessage] = userMessage;
-          const attachments = body.attachmentIds.length
-            ? await db.query.supportChatAttachment.findMany({
-                where: eq(supportChatAttachment.sessionId, chatSession.id),
-              })
-            : [];
-          const selectedAttachments = attachments.filter((attachment) =>
-            body.attachmentIds.includes(attachment.id) && attachment.userId === session.user.id
-          );
-          if (body.attachmentIds.length !== selectedAttachments.length) {
-            return json({ error: "One or more attachments were not found" }, 400);
-          }
-          for (const attachment of selectedAttachments) {
-            await db.update(supportChatAttachment).set({
-              messageId: createdUserMessage.id,
-              metadata: JSON.stringify({
-                ...(safeJsonParse(attachment.metadata) ?? {}),
-                attachedToMessageAt: new Date().toISOString(),
-              }),
-            }).where(eq(supportChatAttachment.id, attachment.id));
-          }
-
-          const crmContext = await getSupportCrmContext(session.user.id);
-          const ragContext = await retrieveSupportKnowledge({
-            userId: session.user.id,
-            message: body.message,
-            context: crmContext,
-          });
-          let aiResult: ReturnType<typeof normalizeSupportAgentResponse>;
-          const attachmentPayload = selectedAttachments.map(attachmentDto);
-          try {
-            aiResult = await sendN8nSupportChat({
-              sessionId: chatSession.id,
-              message: body.message,
-              user: {
-                id: session.user.id,
-                name: session.user.name ?? null,
-                email: session.user.email ?? null,
-              },
-              context: crmContext,
-              ragContext,
-              attachments: attachmentPayload,
-              clientCapabilities: body.clientCapabilities,
-              idempotencyKey: `support-chat:${chatSession.id}:${Date.now()}`,
-            });
-            if (aiResult.toolCalls.length) {
-              const toolResults = await executeSupportToolCalls(session.user.id, aiResult.toolCalls);
-              aiResult = await sendN8nSupportChat({
-                sessionId: chatSession.id,
-                message: body.message,
-                user: {
-                  id: session.user.id,
-                  name: session.user.name ?? null,
-                  email: session.user.email ?? null,
-                },
-                context: crmContext,
-                ragContext,
-                attachments: attachmentPayload,
-                toolResults,
-                clientCapabilities: body.clientCapabilities,
-                event: "support.chat.tool_results",
-                idempotencyKey: `support-chat-tools:${chatSession.id}:${Date.now()}`,
-              });
-            }
-          } catch (error: any) {
-            const shouldEscalate = shouldCreateEmergencyFallbackTicket(body.message);
-            aiResult = {
-              reply: shouldEscalate
-                ? "I could not reach the AI assistant, so I have created a support ticket for the CloudMonkey team."
-                : "I could not reach the AI assistant right now. You can try again in a moment or open a support ticket from the support page.",
-              intent: shouldEscalate ? "support" : "general",
-              createTicket: shouldEscalate,
-              toolCalls: [],
-              suggestedActions: shouldEscalate ? [] : [{ label: "Open support", href: "/dashboard/support" }],
-              subject: body.message.slice(0, 80),
-              description: body.message,
-              priority: "medium",
-              category: "general",
-              error: error.message,
-            };
-          }
-
-          const reply = String(aiResult?.reply ?? aiResult?.message ?? "I have logged this for the CloudMonkey team.");
-          const shouldCreateTicket = aiResult?.createTicket === true;
-          let ticket = chatSession.ticketId
-            ? await db.query.supportTicket.findFirst({ where: eq(supportTicket.id, chatSession.ticketId) })
-            : null;
-
-          if (shouldCreateTicket && !ticket) {
-            const subject = String(aiResult?.ticket?.subject ?? aiResult?.subject ?? body.message).slice(0, 120) || "AI support request";
-            const description = String(aiResult?.ticket?.description ?? aiResult?.description ?? body.message);
-            const priority = aiResult?.ticket?.priority ?? aiResult?.priority;
-            const [createdTicket] = await db.insert(supportTicket).values({
-              id: makeId("ticket"),
-              userId: session.user.id,
-              subject,
-              description,
-              priority: priority && ["low", "medium", "high", "urgent"].includes(priority) ? priority : "medium",
-              status: ["open", "pending", "resolved", "closed"].includes(aiResult?.status) ? aiResult.status : "open",
-              category: String(aiResult?.ticket?.category ?? aiResult?.category ?? "support"),
-              source: "ai_chat",
-              aiSessionId: chatSession.id,
-              lastCustomerMessageAt: new Date(),
-            }).returning();
-            ticket = createdTicket;
-            await db.update(supportChatSession).set({
-              ticketId: createdTicket.id,
-              summary: aiResult?.summary ? String(aiResult.summary) : subject,
-              updatedAt: new Date(),
-            }).where(eq(supportChatSession.id, chatSession.id));
-          } else if (ticket) {
-            await db.update(supportTicket).set({
-              lastCustomerMessageAt: new Date(),
-              updatedAt: new Date(),
-            }).where(eq(supportTicket.id, ticket.id));
-          }
-
-          if (ticket && aiResult?.internalNote) {
-            await db.insert(supportTicketComment).values({
-              id: makeId("comment"),
-              ticketId: ticket.id,
-              userId: session.user.id,
-              body: `[AI] ${String(aiResult.internalNote)}`,
-              isInternal: true,
-            });
-          }
-
-          const [assistantMessage] = await db.insert(supportChatMessage).values({
-            id: makeId("chatmsg"),
-            sessionId: chatSession.id,
-            userId: session.user.id,
-            role: "assistant",
-            body: reply,
-            metadata: JSON.stringify(aiResult ?? {}),
-          }).returning();
-          await db.update(supportChatSession).set({ updatedAt: new Date() }).where(eq(supportChatSession.id, chatSession.id));
-          await storeSupportLearning({
-            userId: session.user.id,
-            sessionId: chatSession.id,
-            ticketId: ticket?.id ?? null,
-            message: body.message,
-            reply,
-            intent: aiResult.intent,
-            summary: aiResult.summary,
-            createTicket: shouldCreateTicket,
-          });
-
-          return json({
-            session: await db.query.supportChatSession.findFirst({ where: eq(supportChatSession.id, chatSession.id) }),
-            reply,
-            ticket,
-            messages: [createdUserMessage, assistantMessage],
-            attachments: selectedAttachments.map(attachmentDto),
-            suggestedActions: aiResult.suggestedActions,
-            intent: aiResult.intent,
-            audioReplyText: aiResult.audioReplyText,
-          });
-        } catch (error: any) {
-          return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-        }
-      }
-
-      return json({ error: "Method not allowed" }, 405);
+      return supportChatHandlers.handleUserSupportChat(request);
     }
 
     if (url.pathname.startsWith("/api/user/tickets")) {
@@ -7791,15 +9781,22 @@ echo "CloudMonkey agent installed."
             where: eq(supportTicket.id, ticketId),
             with: { comments: true },
           });
-          if (!ticket || ticket.userId !== session.user.id) return json({ error: "Ticket not found" }, 404);
-          const [created] = await db.insert(supportTicketComment).values({
-            id: makeId("comment"),
-            ticketId,
-            userId: session.user.id,
-            body: body.body,
-            isInternal: false,
-          }).returning();
-          await db.update(supportTicket).set({ updatedAt: new Date() }).where(eq(supportTicket.id, ticketId));
+          if (!ticket || ticket.userId !== session.user.id)
+            return json({ error: "Ticket not found" }, 404);
+          const [created] = await db
+            .insert(supportTicketComment)
+            .values({
+              id: makeId("comment"),
+              ticketId,
+              userId: session.user.id,
+              body: body.body,
+              isInternal: false,
+            })
+            .returning();
+          await db
+            .update(supportTicket)
+            .set({ updatedAt: new Date() })
+            .where(eq(supportTicket.id, ticketId));
           await recordAudit({
             actorUserId: session.user.id,
             action: "ticket.comment.created",
@@ -7818,7 +9815,8 @@ echo "CloudMonkey agent installed."
           where: eq(supportTicket.id, ticketId),
           with: { comments: true },
         });
-        if (!ticket || ticket.userId !== session.user.id) return json({ error: "Ticket not found" }, 404);
+        if (!ticket || ticket.userId !== session.user.id)
+          return json({ error: "Ticket not found" }, 404);
         return json({
           ...ticket,
           comments: ticket.comments.filter((comment) => !comment.isInternal),
@@ -7832,12 +9830,18 @@ echo "CloudMonkey agent installed."
             return json({ error: "Customer ticket creation is disabled" }, 403);
           }
 
-          const body = await parseBody(request, ticketSchema.omit({ userId: true, assignedToUserId: true }));
-          const [created] = await db.insert(supportTicket).values({
-            id: makeId("ticket"),
-            userId: session.user.id,
-            ...body,
-          }).returning();
+          const body = await parseBody(
+            request,
+            ticketSchema.omit({ userId: true, assignedToUserId: true }),
+          );
+          const [created] = await db
+            .insert(supportTicket)
+            .values({
+              id: makeId("ticket"),
+              userId: session.user.id,
+              ...body,
+            })
+            .returning();
           await recordAudit({
             actorUserId: session.user.id,
             action: "ticket.created",
@@ -7845,7 +9849,8 @@ echo "CloudMonkey agent installed."
             entityId: created.id,
             message: `Support ticket opened: ${created.subject}`,
           });
-          const adminEmail = settings?.adminNotificationEmail ?? process.env.ADMIN_NOTIFICATION_EMAIL;
+          const adminEmail =
+            settings?.adminNotificationEmail ?? process.env.ADMIN_NOTIFICATION_EMAIL;
           if (adminEmail) {
             sendN8nEmail({
               template: "support_notification",
@@ -7873,69 +9878,130 @@ echo "CloudMonkey agent installed."
         with: { comments: true },
         orderBy: (supportTicket, { desc }) => [desc(supportTicket.updatedAt)],
       });
-      return json(rows.map((ticket) => ({
-        ...ticket,
-        comments: ticket.comments.filter((comment) => !comment.isInternal),
-      })));
+      return json(
+        rows.map((ticket) => ({
+          ...ticket,
+          comments: ticket.comments.filter((comment) => !comment.isInternal),
+        })),
+      );
     }
 
-    if (url.pathname.startsWith("/api/admin/leads")) {
-      const session = await auth.api.getSession({ headers: request.headers });
-      if (!isAdmin(session)) return new Response("Unauthorized", { status: 401 });
+    if (url.pathname.startsWith("/api/proposals")) {
+      const origin = new URL(request.url).origin;
+      const parts = url.pathname.split("/").filter(Boolean);
+      const token = parts[2];
+      const action = parts[3];
+      if (!token) return json({ error: "Proposal token is required" }, 400);
 
-      const leads = await db.query.lead.findMany({
-        orderBy: (lead, { desc }) => [desc(lead.createdAt)],
-      });
-      return new Response(JSON.stringify(leads), { headers: { "Content-Type": "application/json" } });
-    }
+      const document = await fetchProposalDocument(decodeURIComponent(token), true);
+      if (!document)
+        return new Response(
+          renderProposalResultHtml({
+            title: "Proposal not found",
+            message: "This proposal link is invalid or no longer available.",
+          }),
+          { status: 404, headers: { "content-type": "text/html; charset=utf-8" } },
+        );
 
-    if (url.pathname.startsWith("/api/admin/onboarding")) {
-      const { response } = await requireAdmin(request);
-      if (response) return response;
+      if (request.method === "GET") {
+        const publicUrl = proposalUrl(origin, document.proposal.publicToken) ?? undefined;
+        const workspaceBilling = getWorkspaceBillingDetails(await getWorkspaceSettings());
+        return new Response(renderProposalHtml({ ...document, publicUrl, workspaceBilling }), {
+          headers: { "content-type": "text/html; charset=utf-8" },
+        });
+      }
 
-      const rows = await db.query.onboardingSubmission.findMany({
-        with: { user: true, subscription: true },
-        orderBy: (onboardingSubmission, { desc }) => [desc(onboardingSubmission.createdAt)],
-      });
-      return json(rows);
+      if (action === "approve" && request.method === "POST") {
+        if (document.proposal.status === "void") {
+          return new Response(
+            renderProposalResultHtml({
+              title: "Proposal unavailable",
+              message:
+                "This proposal has been voided. Please contact CloudMonkey for an updated proposal.",
+            }),
+            { status: 409, headers: { "content-type": "text/html; charset=utf-8" } },
+          );
+        }
+        if (document.proposal.expiresAt && document.proposal.expiresAt < new Date()) {
+          return new Response(
+            renderProposalResultHtml({
+              title: "Proposal expired",
+              message:
+                "This proposal has expired. Please contact CloudMonkey for updated pricing and service terms.",
+            }),
+            { status: 410, headers: { "content-type": "text/html; charset=utf-8" } },
+          );
+        }
+
+        const approvedAt = new Date();
+        await db
+          .update(proposal)
+          .set({
+            status: document.proposal.status === "converted" ? "converted" : "approved",
+            approvedAt: document.proposal.approvedAt ?? approvedAt,
+            approvalIp:
+              request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+              request.headers.get("cf-connecting-ip") ??
+              null,
+            approvalUserAgent: request.headers.get("user-agent"),
+            updatedAt: approvedAt,
+          })
+          .where(eq(proposal.id, document.proposal.id));
+
+        let conversion:
+          | Awaited<ReturnType<typeof createProposalInvoice>>
+          | { invoice: null; created: false; requiresRegistration: true } = {
+          invoice: null,
+          created: false,
+          requiresRegistration: true,
+        };
+        try {
+          conversion = await createProposalInvoice({ proposalId: document.proposal.id, origin });
+        } catch (error) {
+          console.error("Proposal invoice conversion failed:", error);
+        }
+
+        await recordAudit({
+          actorUserId: document.proposal.customerUserId ?? null,
+          action: "proposal.approved",
+          entityType: "proposal",
+          entityId: document.proposal.id,
+          message: `Proposal ${document.proposal.proposalNumber ?? document.proposal.id} approved`,
+          metadata: {
+            invoiceId: conversion.invoice?.id ?? null,
+            requiresRegistration: conversion.requiresRegistration,
+          },
+        });
+
+        if (conversion.invoice) {
+          const invoiceUrl = `${origin}/dashboard/billing/invoices/${encodeURIComponent(conversion.invoice.id)}`;
+          return new Response(
+            renderProposalResultHtml({
+              title: "Proposal approved",
+              message:
+                "Your proposal has been approved and an invoice has been generated against your CloudMonkey profile.",
+              invoiceUrl,
+            }),
+            { headers: { "content-type": "text/html; charset=utf-8" } },
+          );
+        }
+
+        return new Response(
+          renderProposalResultHtml({
+            title: "Proposal approved",
+            message:
+              "Your approval has been recorded. To generate the invoice against your profile, register or sign in using the same email address as this proposal.",
+            registerUrl: `${origin}/auth/sign-up`,
+          }),
+          { headers: { "content-type": "text/html; charset=utf-8" } },
+        );
+      }
+
+      return json({ error: "Method not allowed" }, 405);
     }
 
     if (url.pathname.startsWith("/api/invoices")) {
-      const session = await auth.api.getSession({ headers: request.headers });
-      if (!session) return new Response("Unauthorized", { status: 401 });
-      const parts = url.pathname.split("/").filter(Boolean);
-      const invoiceId = parts[2];
-
-      if (invoiceId) {
-        const origin = `${url.protocol}//${url.host}`;
-        const payload = await getInvoiceDocumentPayload(decodeURIComponent(invoiceId), session, origin);
-        if (!payload) return json({ error: "Invoice not found" }, 404);
-
-        if (parts[3] === "pdf") {
-          try {
-            const pdf = await renderInvoicePdf(payload.document);
-            return new Response(pdf, {
-              headers: {
-                "Content-Type": "application/pdf",
-                "Content-Disposition": `attachment; filename="${payload.document.invoice.invoiceNumber}.pdf"`,
-              },
-            });
-          } catch (error: any) {
-            console.error("Invoice PDF failed:", error);
-            return json({ error: error.message || "Failed to generate PDF" }, 500);
-          }
-        }
-
-        return json(payload);
-      }
-
-      const userInvoices = await db.query.invoice.findMany({
-        where: eq(invoice.userId, session.user.id),
-        orderBy: (invoice, { desc }) => [desc(invoice.createdAt)],
-      });
-      return new Response(JSON.stringify(userInvoices.filter((row) => row.status !== "draft")), {
-        headers: { "Content-Type": "application/json" },
-      });
+      return billingHandlers.handleInvoices(request);
     }
 
     if (url.pathname.startsWith("/api/user/vultr") && request.method === "POST") {
@@ -7956,14 +10022,25 @@ echo "CloudMonkey agent installed."
         }
 
         switch (action) {
-          case "start": await startInstance(instanceId); break;
-          case "stop": await stopInstance(instanceId); break;
-          case "reboot": await rebootInstance(instanceId); break;
-          case "reinstall": await reinstallInstance(instanceId); break;
-          default: return new Response("Invalid action", { status: 400 });
+          case "start":
+            await startInstance(instanceId);
+            break;
+          case "stop":
+            await stopInstance(instanceId);
+            break;
+          case "reboot":
+            await rebootInstance(instanceId);
+            break;
+          case "reinstall":
+            await reinstallInstance(instanceId);
+            break;
+          default:
+            return new Response("Invalid action", { status: 400 });
         }
 
-        return new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { "Content-Type": "application/json" },
+        });
       } catch (error) {
         console.error(error);
         return new Response(JSON.stringify({ error: "Action failed" }), { status: 500 });
@@ -7981,2574 +10058,128 @@ echo "CloudMonkey agent installed."
     }
 
     if (url.pathname.startsWith("/api/user/domain-orders")) {
-      const { session, response } = await requireSession(request);
-      if (response) return response;
-
-      if (request.method === "GET") {
-        const rows = await db.query.domainOrder.findMany({
-          where: eq(domainOrder.userId, session.user.id),
-          with: { invoice: true, subscription: true, plan: true },
-          orderBy: (domainOrder, { desc }) => [desc(domainOrder.createdAt)],
-        });
-        return json(rows);
-      }
-
-      if (request.method === "POST") {
-        try {
-          const body = await parseBody(request, domainOrderSchema);
-          const domainName = body.domainName.trim().toLowerCase();
-          const email = session.user.email ?? "";
-          if (!email) return json({ error: "User email is required for checkout" }, 400);
-
-          const domainPlan = await db.query.servicePlan.findFirst({
-            where: eq(servicePlan.id, body.domainPlanId),
-            with: { service: true },
-          });
-          if (!domainPlan || domainPlan.service?.id !== "domains") {
-            return json({ error: "Valid domain plan is required" }, 400);
-          }
-
-          const addonPlans = [];
-          for (const planId of body.addonPlanIds ?? []) {
-            const plan = await db.query.servicePlan.findFirst({
-              where: eq(servicePlan.id, planId),
-              with: { service: true },
-            });
-            if (plan) addonPlans.push(plan);
-          }
-
-          const domainAmount = parseInt(domainPlan.priceZar ?? "0", 10);
-          const addonAmount = addonPlans.reduce((total, plan) => total + parseInt(plan.priceZar ?? "0", 10), 0);
-          const amount = domainAmount + addonAmount;
-          if (amount <= 0) return json({ error: "Domain checkout requires a payable price" }, 400);
-
-          const invoiceId = makeId("inv");
-          const subscriptionId = invoiceId;
-          const orderId = makeId("domainorder");
-          const issuedAt = new Date();
-          const dueDate = new Date();
-          dueDate.setDate(dueDate.getDate() + 7);
-          const billingPeriodEnd = new Date(issuedAt);
-          billingPeriodEnd.setFullYear(billingPeriodEnd.getFullYear() + 1);
-          const settings = await getWorkspaceSettings();
-          const invoiceNumber = `INV-${issuedAt.getFullYear()}-${invoiceId.replace(/^inv[_-]?/i, "").replace(/[^a-z0-9]/gi, "").slice(-6).toUpperCase()}`;
-          const name = `Domain registration: ${domainName}`;
-          const callbackUrl = `${new URL(request.url).origin}/dashboard/domains/new?payment=return&subscription=${encodeURIComponent(subscriptionId)}&domainOrder=${encodeURIComponent(orderId)}`;
-
-          await db.transaction(async (tx) => {
-            await tx.insert(invoice).values({
-              id: invoiceId,
-              userId: session.user.id,
-              invoiceNumber,
-              invoiceSource: "domain",
-              amount,
-              status: "pending",
-              dueDate,
-              issuedAt,
-              billingPeriodStart: issuedAt,
-              billingPeriodEnd,
-              currency: "ZAR",
-              vatRateBps: 0,
-              customerName: session.user.name ?? null,
-              customerEmail: email,
-              workspaceBillingSnapshot: JSON.stringify(getWorkspaceBillingDetails(settings)),
-              notes: settings?.billingInvoiceNotes ?? null,
-            });
-            await tx.insert(subscription).values({
-              id: subscriptionId,
-              userId: session.user.id,
-              planId: domainPlan.id,
-              name,
-              status: "pending",
-              amount,
-              interval: "year",
-              currentPeriodStart: issuedAt,
-              currentPeriodEnd: billingPeriodEnd,
-            });
-            await tx.insert(invoiceItem).values({
-              id: makeId("invitem"),
-              invoiceId,
-              description: `${domainName} - ${domainPlan.name}`,
-              quantity: 1,
-              unitPrice: domainAmount,
-              amount: domainAmount,
-            });
-            for (const plan of addonPlans) {
-              const planAmount = parseInt(plan.priceZar ?? "0", 10);
-              await tx.insert(invoiceItem).values({
-                id: makeId("invitem"),
-                invoiceId,
-                description: `${plan.service?.name ?? "Service"} - ${plan.name}`,
-                quantity: 1,
-                unitPrice: planAmount,
-                amount: planAmount,
-              });
-            }
-            await tx.insert(domainOrder).values({
-              id: orderId,
-              userId: session.user.id,
-              domainName,
-              domainPlanId: domainPlan.id,
-              addonPlanIds: JSON.stringify(addonPlans.map((plan) => plan.id)),
-              invoiceId,
-              subscriptionId,
-              status: "pending_payment",
-            });
-          });
-
-          let payment: Awaited<ReturnType<typeof initializePayment>>;
-          try {
-            payment = await initializePayment({
-              email,
-              amountCents: amount,
-              invoiceId,
-              subscriptionId,
-              userId: session.user.id,
-              planId: domainPlan.id,
-              callbackUrl,
-            });
-          } catch (error) {
-            await db.update(invoice).set({ status: "cancelled", updatedAt: new Date() }).where(eq(invoice.id, invoiceId));
-            await db.update(subscription).set({ status: "cancelled", updatedAt: new Date() }).where(eq(subscription.id, subscriptionId));
-            await db.update(domainOrder).set({ status: "cancelled", updatedAt: new Date() }).where(eq(domainOrder.id, orderId));
-            throw error;
-          }
-
-          const [updatedInvoice] = await db.update(invoice).set({
-            paystackReference: payment.data.reference,
-            paystackUrl: payment.data.authorization_url,
-            updatedAt: new Date(),
-          }).where(eq(invoice.id, invoiceId)).returning();
-
-          await recordAudit({
-            actorUserId: session.user.id,
-            action: "domain_order.checkout.started",
-            entityType: "domain_order",
-            entityId: orderId,
-            message: `Domain checkout started for ${domainName}`,
-            metadata: { invoiceId, reference: payment.data.reference, addonPlanIds: addonPlans.map((plan) => plan.id) },
-          });
-
-          sendEmail({
-            template: "invoice_created",
-            to: email,
-            subject: `CloudMonkey invoice ${updatedInvoice.invoiceNumber ?? updatedInvoice.id}`,
-            data: {
-              firstName: session.user.name,
-              customerName: session.user.name,
-              invoiceId,
-              invoiceNumber: updatedInvoice.invoiceNumber ?? invoiceId,
-              productName: name,
-              subscriptionName: name,
-              totalDue: formatEmailMoney(updatedInvoice.amount, updatedInvoice.currency ?? "ZAR"),
-              dueDate: formatEmailDate(updatedInvoice.dueDate),
-              primaryCtaText: "View invoice",
-              primaryCtaUrl: `${new URL(request.url).origin}/dashboard/billing/invoices/${encodeURIComponent(invoiceId)}`,
-            },
-            idempotencyKey: `domain-order:${orderId}:invoice`,
-          }).catch((error) => console.error("Domain invoice email failed:", error));
-
-          return json({
-            order: await db.query.domainOrder.findFirst({ where: eq(domainOrder.id, orderId) }),
-            invoice: updatedInvoice,
-            subscriptionId,
-            authorization_url: payment.data.authorization_url,
-            access_code: payment.data.access_code,
-            reference: payment.data.reference,
-          }, 201);
-        } catch (error: any) {
-          return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-        }
-      }
-
-      return json({ error: "Method not allowed" }, 405);
+      return domainsHandlers.handleUserDomainOrders(request);
     }
 
     if (url.pathname.startsWith("/api/user/domains/dns")) {
-      const session = await auth.api.getSession({ headers: request.headers });
-      if (!session) return new Response("Unauthorized", { status: 401 });
-
-      const domainName = url.searchParams.get("domain");
-      if (!domainName) return new Response("Domain required", { status: 400 });
-
-      // Verify ownership
-      const ownership = await db.query.registeredDomain.findFirst({
-        where: eq(registeredDomain.id, domainName),
-      });
-
-      if (!ownership || (ownership.userId !== session.user.id && !isAdmin(session))) {
-        return new Response("Forbidden", { status: 403 });
-      }
-
-      const parts = domainName.split(".");
-      const sld = parts[0];
-      const tld = parts.slice(1).join(".");
-      const apiKey = process.env.DOMAINS_CO_ZA_API_KEY;
-
-      if (request.method === "GET") {
-        try {
-          const response = await fetch(`https://api.domains.co.za/api/domain/dns?sld=${sld}&tld=${tld}&key=${apiKey}`);
-          const data = await response.json();
-          return new Response(JSON.stringify(data), { headers: { "Content-Type": "application/json" } });
-        } catch (error) {
-          return new Response(JSON.stringify({ error: "Failed to fetch DNS" }), { status: 500 });
-        }
-      }
-
-      if (request.method === "POST") {
-        try {
-          const body = await request.json();
-          const response = await fetch(`https://api.domains.co.za/api/domain/dns/entry?key=${apiKey}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sld, tld, ...body }),
-          });
-          const data = await response.json();
-          return new Response(JSON.stringify(data), { headers: { "Content-Type": "application/json" } });
-        } catch (error) {
-          return new Response(JSON.stringify({ error: "Failed to add record" }), { status: 500 });
-        }
-      }
-
-      if (request.method === "DELETE") {
-        const dnsId = url.searchParams.get("dnsId");
-        try {
-          const response = await fetch(`https://api.domains.co.za/api/domain/dns/entry?sld=${sld}&tld=${tld}&dnsId=${dnsId}&key=${apiKey}`, {
-            method: "DELETE",
-          });
-          const data = await response.json();
-          return new Response(JSON.stringify(data), { headers: { "Content-Type": "application/json" } });
-        } catch (error) {
-          return new Response(JSON.stringify({ error: "Failed to delete record" }), { status: 500 });
-        }
-      }
+      return domainsHandlers.handleUserDomainsDns(request);
     }
 
     if (url.pathname.startsWith("/api/user/domains/info")) {
-      const session = await auth.api.getSession({ headers: request.headers });
-      if (!session) return new Response("Unauthorized", { status: 401 });
-
-      const domainName = url.searchParams.get("domain");
-      if (!domainName) return new Response("Domain required", { status: 400 });
-
-      // Verify ownership
-      const ownership = await db.query.registeredDomain.findFirst({
-        where: eq(registeredDomain.id, domainName),
-      });
-
-      if (!ownership || (ownership.userId !== session.user.id && !isAdmin(session))) {
-        return new Response("Forbidden", { status: 403 });
-      }
-
-      const parts = domainName.split(".");
-      const sld = parts[0];
-      const tld = parts.slice(1).join(".");
-      const apiKey = process.env.DOMAINS_CO_ZA_API_KEY;
-
-      try {
-        const response = await fetch(`https://api.domains.co.za/api/domain/info?sld=${sld}&tld=${tld}&key=${apiKey}`);
-        const data = await response.json();
-        return new Response(JSON.stringify(data), { headers: { "Content-Type": "application/json" } });
-      } catch (error) {
-        return new Response(JSON.stringify({ error: "Failed to fetch domain info" }), { status: 500 });
-      }
+      return domainsHandlers.handleUserDomainsInfo(request);
     }
 
     if (url.pathname.startsWith("/api/user/domains")) {
-      const session = await auth.api.getSession({ headers: request.headers });
-      if (!session) return new Response("Unauthorized", { status: 401 });
-
-      const domains = await db.query.registeredDomain.findMany({
-        where: eq(registeredDomain.userId, session.user.id),
-      });
-      return new Response(JSON.stringify(domains), {
-        headers: { "Content-Type": "application/json" },
-      });
+      return domainsHandlers.handleUserDomains(request);
     }
 
     if (url.pathname.startsWith("/api/user/websites/")) {
-      const { session, response } = await requireSession(request);
-      if (response) return response;
-
-      const parts = url.pathname.split("/").filter(Boolean);
-      const websiteId = parts[3];
-      const subresource = parts[4];
-      if (!websiteId) return json({ error: "Website id is required" }, 400);
-
-      if (request.method === "GET" && !subresource) {
-        const detail = await getUserWebsiteDetail(session.user.id, websiteId);
-        if (!detail) return json({ error: "Website not found" }, 404);
-        return json(detail);
-      }
-
-      if (subresource === "design-options" && parts[5] === "generate" && request.method === "POST") {
-        try {
-          const detail = await getUserWebsiteDetail(session.user.id, websiteId);
-          if (!detail?.store) return json({ error: "Website store not found" }, 404);
-
-          await db.update(website).set({
-            aiGenerationStatus: "design_generating",
-            updatedAt: new Date(),
-          }).where(eq(website.id, websiteId));
-
-          const n8nResult = await sendN8nWebsiteDesignPreviews({
-            website: {
-              id: detail.id,
-              siteType: detail.siteType,
-              businessName: detail.businessName,
-              name: detail.name,
-              industry: detail.industry,
-              domain: detail.domain,
-              temporaryDomain: detail.temporaryDomain,
-              status: detail.status,
-            },
-            onboardingAnswers: detail.onboardingAnswers,
-            provisioningPlan: detail.provisioningPlan,
-            generationContext: getWebsiteDesignGenerationContext(detail.siteType),
-            user: {
-              id: session.user.id,
-              name: session.user.name,
-              email: session.user.email,
-            },
-            idempotencyKey: `website-design-${websiteId}-${Date.now()}`,
-          });
-
-          const options = Array.isArray((n8nResult as any).options) ? (n8nResult as any).options.slice(0, 4) : [];
-          if (!options.length) throw new Error("No design options were returned");
-
-          await db.delete(websiteDesignOption).where(eq(websiteDesignOption.websiteId, websiteId));
-          const saved = await db.insert(websiteDesignOption).values(options.map((option: any, index: number) => ({
-            id: makeId("design"),
-            websiteId,
-            userId: session.user.id,
-            styleLabel: String(option.styleLabel || `Concept ${index + 1}`),
-            imageUrl: option.imageUrl || null,
-            thumbnailUrl: option.thumbnailUrl || option.imageUrl || null,
-            designManifest: JSON.stringify(option.designManifest || option),
-            promptVersion: String((n8nResult as any).workflow || "cloudmonkey-website-design-previews"),
-            tokenCost: Number(option.tokenCost || 0),
-            imageCost: Number(option.imageCost || 0),
-          }))).returning();
-
-          const [updatedSite] = await db.update(website).set({
-            aiGenerationStatus: "awaiting_design_selection",
-            status: "awaiting_design_selection",
-            updatedAt: new Date(),
-          }).where(eq(website.id, websiteId)).returning();
-
-          await recordAudit({
-            actorUserId: session.user.id,
-            action: "website.design_options.generated",
-            entityType: "website",
-            entityId: websiteId,
-            message: `Design previews generated for ${detail.businessName || detail.domain}`,
-            metadata: { workflow: (n8nResult as any).workflow, optionCount: saved.length },
-          });
-
-          return json({
-            website: updatedSite,
-            n8n: { ok: (n8nResult as any).ok ?? true, workflow: (n8nResult as any).workflow },
-            designOptions: saved.map((option) => ({
-              ...option,
-              designManifest: safeJsonParse(option.designManifest),
-            })),
-          });
-        } catch (error: any) {
-          await db.update(website).set({
-            aiGenerationStatus: "failed",
-            updatedAt: new Date(),
-          }).where(eq(website.id, websiteId));
-          return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-        }
-      }
-
-      if (subresource === "design-options" && parts[6] === "select" && request.method === "POST") {
-        try {
-          const designOptionId = parts[5];
-          if (!designOptionId) return json({ error: "Design option id is required" }, 400);
-
-          const detail = await getUserWebsiteDetail(session.user.id, websiteId);
-          if (!detail?.store) return json({ error: "Website store not found" }, 404);
-
-          const selectedOption = await db.query.websiteDesignOption.findFirst({
-            where: eq(websiteDesignOption.id, designOptionId),
-          });
-          if (!selectedOption || selectedOption.websiteId !== websiteId || selectedOption.userId !== session.user.id) {
-            return json({ error: "Design option not found" }, 404);
-          }
-
-          const selectedAt = new Date();
-          const designManifest = safeJsonParse(selectedOption.designManifest) ?? {};
-          const buildManifest = {
-            websiteId,
-            selectedDesignOptionId: designOptionId,
-            styleLabel: selectedOption.styleLabel,
-            designManifest,
-            siteType: detail.siteType,
-            businessName: detail.businessName,
-            temporaryDomain: detail.temporaryDomain,
-            baseRepo: detail.siteType === "ecommerce" ? "cloudmonkey-commerce-template" : "cloudmonkey-website-template",
-            createdAt: selectedAt.toISOString(),
-          };
-
-          await db.update(websiteDesignOption)
-            .set({ selectedAt: null })
-            .where(eq(websiteDesignOption.websiteId, websiteId));
-          const [updatedOption] = await db.update(websiteDesignOption)
-            .set({ selectedAt })
-            .where(eq(websiteDesignOption.id, designOptionId))
-            .returning();
-          const [updatedSite] = await db.update(website).set({
-            selectedDesignOptionId: designOptionId,
-            buildManifest: JSON.stringify(buildManifest),
-            baseRepo: buildManifest.baseRepo,
-            aiGenerationStatus: "design_selected",
-            status: "design_selected",
-            updatedAt: selectedAt,
-          }).where(eq(website.id, websiteId)).returning();
-
-          await recordAudit({
-            actorUserId: session.user.id,
-            action: "website.design_option.selected",
-            entityType: "website",
-            entityId: websiteId,
-            message: `Design option selected for ${detail.businessName || detail.domain}`,
-            metadata: { designOptionId, styleLabel: selectedOption.styleLabel },
-          });
-
-          return json({
-            website: {
-              ...updatedSite,
-              buildManifest,
-            },
-            designOption: {
-              ...updatedOption,
-              designManifest,
-            },
-          });
-        } catch (error: any) {
-          return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-        }
-      }
-
-      if (subresource === "provision" && request.method === "POST") {
-        return json({ error: "CloudMonkey admins provision managed website runtimes after design approval" }, 403);
-      }
-
-      if (subresource === "products" && request.method === "POST") {
-        try {
-          const detail = await getUserWebsiteDetail(session.user.id, websiteId);
-          if (!detail?.store) return json({ error: "Website store not found" }, 404);
-          if (detail.siteType !== "ecommerce") return json({ error: "Products are only available for ecommerce stores" }, 400);
-
-          const body = await parseBody(request, storeProductCreateSchema);
-          if (detail.containerStatus === "running" && detail.temporaryDomain) {
-            const created = await createMedusaProductForWebsite(detail as typeof website.$inferSelect, body);
-            await recordAudit({
-              actorUserId: session.user.id,
-              action: "store.medusa_product.created",
-              entityType: "website",
-              entityId: websiteId,
-              message: `${body.title} added to ${detail.businessName || detail.domain} through Medusa`,
-              metadata: { websiteId, storeId: detail.store.id, engine: "medusa" },
-            });
-            return json(created, 201);
-          }
-
-          const productId = makeId("storeprod");
-          const slug = `${slugifySiteName(body.title)}-${crypto.randomBytes(2).toString("hex")}`;
-          const priceCents = Math.round(body.price * 100);
-
-          const [createdProduct] = await db.insert(storeProduct).values({
-            id: productId,
-            storeId: detail.store.id,
-            userId: session.user.id,
-            title: body.title,
-            slug,
-            description: body.description,
-            sku: body.sku || null,
-            status: body.status,
-            price: priceCents,
-            trackInventory: body.trackInventory,
-          }).returning();
-
-          const [createdVariant] = await db.insert(storeProductVariant).values({
-            id: makeId("storevar"),
-            productId,
-            storeId: detail.store.id,
-            sku: body.sku || null,
-            title: "Default",
-            price: priceCents,
-            inventoryQuantity: body.inventoryQuantity,
-            status: body.status === "archived" ? "archived" : "active",
-          }).returning();
-
-          await recordAudit({
-            actorUserId: session.user.id,
-            action: "store.product.created",
-            entityType: "store_product",
-            entityId: productId,
-            message: `${body.title} added to ${detail.businessName || detail.domain}`,
-            metadata: { websiteId, storeId: detail.store.id },
-          });
-
-          return json({ ...createdProduct, variants: [createdVariant] }, 201);
-        } catch (error: any) {
-          return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-        }
-      }
-
-      return json({ error: "Method not allowed" }, 405);
+      return websiteHandlers.handleUserWebsites(request);
     }
 
     if (url.pathname === "/api/user/websites") {
-      const { session, response } = await requireSession(request);
-      if (response) return response;
-
-      if (request.method === "POST") {
-        try {
-          const body = await parseBody(request, userWebsiteCreateSchema);
-          const now = new Date();
-          const trialEndsAt = addDays(now, 7);
-          const graceEndsAt = addDays(trialEndsAt, 30);
-          const baseSlug = slugifySiteName(body.preferredSlug || body.businessName);
-          const slug = `${baseSlug}-${crypto.randomBytes(2).toString("hex")}`;
-          const temporaryDomain = `${slug}.cloudmonkey.co.za`;
-          const websiteId = makeId("web");
-          const storeId = makeId("store");
-          const onboardingAnswers = {
-            businessName: body.businessName,
-            businessDescription: body.businessDescription,
-            industry: body.industry,
-            targetCustomers: body.targetCustomers,
-            whatsapp: body.whatsapp,
-            email: body.email || null,
-            productCount: body.productCount,
-            needsInventory: body.needsInventory,
-            needsDelivery: body.needsDelivery,
-            needsPos: body.needsPos,
-          };
-          const databaseRecord = body.siteType === "ecommerce"
-            ? buildStoreDatabaseRecord({
-                websiteId,
-                storeId,
-                userId: session.user.id,
-              })
-            : null;
-          const provisioningPlan = buildWebsiteProvisioningPlan({
-            websiteId,
-            storeId,
-            temporaryDomain,
-            siteType: body.siteType,
-            database: databaseRecord ?? undefined,
-          });
-          const baseRepo = body.siteType === "ecommerce" ? "cloudmonkey-commerce-template" : "cloudmonkey-website-template";
-
-          const [createdWebsite] = await db.insert(website).values({
-            id: websiteId,
-            userId: session.user.id,
-            domain: temporaryDomain,
-            plan: "trial",
-            status: "onboarding",
-            siteType: body.siteType,
-            name: body.businessName,
-            businessName: body.businessName,
-            businessDescription: body.businessDescription,
-            industry: body.industry,
-            temporaryDomain,
-            primaryDomain: temporaryDomain,
-            onboardingAnswers: JSON.stringify(onboardingAnswers),
-            provisioningPlan: JSON.stringify(provisioningPlan),
-            aiGenerationStatus: "not_started",
-            containerStatus: "not_provisioned",
-            baseRepo,
-            trialStartedAt: now,
-            trialEndsAt,
-            graceEndsAt,
-            terminationScheduledAt: graceEndsAt,
-          }).returning();
-
-          const [createdStore] = await db.insert(websiteStore).values({
-            id: storeId,
-            websiteId,
-            userId: session.user.id,
-            name: body.businessName,
-            siteType: body.siteType,
-            status: "trial",
-            paymentMode: "cloudmonkey_gateway",
-            trialStartedAt: now,
-            trialEndsAt,
-            terminationScheduledAt: graceEndsAt,
-          }).returning();
-
-          const [createdDatabase] = databaseRecord
-            ? await db.insert(websiteStoreDatabase).values(databaseRecord).returning()
-            : [null];
-          const [createdDomain] = await db.insert(websiteDomain).values({
-            id: makeId("webdomain"),
-            websiteId,
-            userId: session.user.id,
-            domain: temporaryDomain,
-            type: "temporary",
-            status: "reserved",
-            dnsTarget: "wildcard.cloudmonkey.co.za",
-            sslStatus: "pending",
-            isPrimary: true,
-          }).returning();
-
-          if (body.siteType === "ecommerce") {
-            await db.insert(websitePluginInstall).values([
-              {
-                id: makeId("webplugin"),
-                websiteId,
-                storeId,
-                userId: session.user.id,
-                pluginKey: "cloudmonkey-paystack-gateway",
-                status: "planned",
-                config: JSON.stringify({ transactionFeeBps: 700, currency: "ZAR" }),
-              },
-              {
-                id: makeId("webplugin"),
-                websiteId,
-                storeId,
-                userId: session.user.id,
-                pluginKey: "basic-seo",
-                status: "planned",
-                config: JSON.stringify({ sitemap: true, robots: true }),
-              },
-            ]);
-          }
-
-          await recordAudit({
-            actorUserId: session.user.id,
-            action: "website.created",
-            entityType: "website",
-            entityId: websiteId,
-            message: `${body.businessName} ${body.siteType === "ecommerce" ? "ecommerce runtime created with dedicated SQL container" : "static website runtime created"}`,
-            metadata: {
-              siteType: body.siteType,
-              temporaryDomain,
-              databaseContainer: databaseRecord?.containerName ?? null,
-            },
-          });
-
-          return json({
-            ...createdWebsite,
-            onboardingAnswers,
-            provisioningPlan,
-            store: {
-              ...createdStore,
-              database: createdDatabase ? {
-                id: createdDatabase.id,
-                engine: createdDatabase.engine,
-                version: createdDatabase.version,
-                host: createdDatabase.host,
-                port: createdDatabase.port,
-                databaseName: createdDatabase.databaseName,
-                username: createdDatabase.username,
-                containerName: createdDatabase.containerName,
-                volumeName: createdDatabase.volumeName,
-                status: createdDatabase.status,
-                backupStatus: createdDatabase.backupStatus,
-              } : null,
-            },
-            domains: [createdDomain],
-            plugins: body.siteType === "ecommerce" ? [
-              { pluginKey: "cloudmonkey-paystack-gateway", status: "planned" },
-              { pluginKey: "basic-seo", status: "planned" },
-            ] : [],
-          }, 201);
-        } catch (error: any) {
-          return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-        }
-      }
-
-      if (request.method !== "GET") {
-        return json({ error: "Method not allowed" }, 405);
-      }
-
-      return json(await getUserWebsiteDashboardRows(session.user.id));
-    }
-
-    if (url.pathname.startsWith("/api/webhooks/paystack")) {
-      return handlePaystackWebhook(request);
-    }
-
-    if (url.pathname.startsWith("/api/domains/check")) {
-      return handleDomainsCheck(request);
-    }
-
-    if (url.pathname.startsWith("/api/admin/server-agents/enrollment") && request.method === "POST") {
-      const { session, response } = await requireAdmin(request);
-      if (response) return response;
-
-      try {
-        const body = await parseBody(request, agentEnrollmentRequestSchema);
-        const instance = await db.query.vultrInstance.findFirst({
-          where: eq(vultrInstance.id, body.instanceId),
-        });
-        if (!instance) return json({ error: "CloudMonkey VPS server is not assigned in CloudMonkey" }, 404);
-
-        const enrollmentToken = `cm_enroll_${crypto.randomBytes(32).toString("base64url")}`;
-        const existingAgent = await db.query.serverAgent.findFirst({
-          where: eq(serverAgent.instanceId, instance.id),
-          orderBy: (serverAgent, { desc }) => [desc(serverAgent.createdAt)],
-        });
-        const agentId = existingAgent?.id ?? makeId("agent");
-        const [agent] = await db.insert(serverAgent).values({
-          id: agentId,
-          instanceId: instance.id,
-          userId: instance.userId,
-          name: body.name ?? instance.label ?? instance.id,
-          status: "pending",
-          enrollmentTokenHash: sha256(enrollmentToken),
-          config: JSON.stringify(getAgentConfig()),
-        }).onConflictDoUpdate({
-          target: serverAgent.id,
-          set: {
-            enrollmentTokenHash: sha256(enrollmentToken),
-            status: "pending",
-            updatedAt: new Date(),
-          },
-        }).returning();
-
-        await recordAudit({
-          actorUserId: session.user.id,
-          action: "server_agent.enrollment_created",
-          entityType: "server_agent",
-          entityId: agent.id,
-          message: `Server agent enrollment token created for ${instance.label || instance.id}`,
-          metadata: { instanceId: instance.id },
-        });
-
-        const installCommand = `curl -fsSL https://cloudmonkey.co.za/install-agent.sh | sudo CM_ENROLLMENT_TOKEN='${enrollmentToken}' bash`;
-        return json({
-          agent,
-          enrollmentToken,
-          installCommand,
-          expiresHint: "Token is one-time use. Regenerate if it is exposed before enrollment.",
-        }, 201);
-      } catch (error: any) {
-        return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-      }
-    }
-
-    if (url.pathname.startsWith("/api/admin/platform-matrix")) {
-      const { response } = await requireAdmin(request);
-      if (response) return response;
-
-      const apiKey = process.env.DOMAINS_CO_ZA_API_KEY;
-      const [usersResult, localDomainsResult, localServersResult, localAgentsResult, providerDomainsResult, vultrInstancesResult, vultrPlansResult] = await Promise.allSettled([
-        db.query.user.findMany(),
-        db.query.registeredDomain.findMany(),
-        db.query.vultrInstance.findMany(),
-        db.query.serverAgent.findMany(),
-        apiKey
-          ? fetch(`https://api.domains.co.za/api/domain/list?key=${apiKey}`).then(async (providerResponse) => {
-              if (!providerResponse.ok) {
-                throw new Error(`Domains API returned ${providerResponse.status}`);
-              }
-              return providerResponse.json();
-            })
-          : Promise.reject(new Error("Domains API key is not configured")),
-        listInstances(),
-        listPlans(),
-      ]);
-
-      const users = usersResult.status === "fulfilled" ? usersResult.value : [];
-      const localDomains = localDomainsResult.status === "fulfilled" ? localDomainsResult.value : [];
-      const localServers = localServersResult.status === "fulfilled" ? localServersResult.value : [];
-      const localAgents = localAgentsResult.status === "fulfilled" ? localAgentsResult.value : [];
-      const providerDomains = providerDomainsResult.status === "fulfilled"
-        ? normalizeProviderDomains(providerDomainsResult.value)
-        : [];
-      const vultrInstances = vultrInstancesResult.status === "fulfilled" ? vultrInstancesResult.value : [];
-      const vultrPlans = vultrPlansResult.status === "fulfilled" ? vultrPlansResult.value : [];
-
-      const localDomainMap = getAssignedUserMap(localDomains, (row) => row.id.toLowerCase());
-      const localServerMap = getAssignedUserMap(localServers, (row) => row.id);
-      const localAgentMap = new Map(localAgents.map((row) => [row.instanceId, row]));
-      const userMap = new Map(users.map((row) => [row.id, row]));
-      const seenProviderDomains = new Set(providerDomains.map((row) => row.domainName.toLowerCase()));
-
-      const domains = [
-        ...providerDomains.map((domainRow) => {
-          const assignment = localDomainMap.get(domainRow.domainName.toLowerCase());
-          return {
-            ...domainRow,
-            source: "domains.co.za",
-            assignment,
-            user: assignment ? userMap.get(assignment.userId) ?? null : null,
-          };
-        }),
-        ...localDomains
-          .filter((domainRow) => !seenProviderDomains.has(domainRow.id.toLowerCase()))
-          .map((domainRow) => ({
-            domainName: domainRow.id,
-            status: domainRow.status,
-            expiryDate: domainRow.expiryDate?.toISOString() ?? null,
-            source: "cloudmonkey",
-            raw: null,
-            assignment: domainRow,
-            user: userMap.get(domainRow.userId) ?? null,
-          })),
-      ].sort((a, b) => a.domainName.localeCompare(b.domainName));
-
-      const servers = vultrInstances.map((instance) => {
-        const assignment = localServerMap.get(instance.id);
-        return {
-          ...instance,
-          assignment,
-          user: assignment ? userMap.get(assignment.userId) ?? null : null,
-          agent: localAgentMap.get(instance.id) ?? null,
-        };
-      });
-
-      return json({
-        users,
-        domains,
-        servers,
-        vultrPlans,
-        localDomains,
-        localServers,
-        errors: {
-          users: usersResult.status === "rejected" ? usersResult.reason.message : null,
-          localDomains: localDomainsResult.status === "rejected" ? localDomainsResult.reason.message : null,
-          localServers: localServersResult.status === "rejected" ? localServersResult.reason.message : null,
-          localAgents: localAgentsResult.status === "rejected" ? localAgentsResult.reason.message : null,
-          domainsProvider: providerDomainsResult.status === "rejected" ? providerDomainsResult.reason.message : null,
-          vultrInstances: vultrInstancesResult.status === "rejected" ? vultrInstancesResult.reason.message : null,
-          vultrPlans: vultrPlansResult.status === "rejected" ? vultrPlansResult.reason.message : null,
-        },
-      });
-    }
-
-    if (url.pathname.startsWith("/api/admin/affiliates/payouts") && request.method === "POST") {
-      const { session, response } = await requireAdmin(request);
-      if (response) return response;
-
-      try {
-        const body = await parseBody(request, payoutMarkPaidSchema);
-        const rows = await db.query.affiliateCommission.findMany({
-          where: eq(affiliateCommission.affiliateId, body.affiliateId),
-        });
-        const selected = rows.filter((row) => body.commissionIds.includes(row.id) && ["approved", "payable"].includes(row.status));
-        if (selected.length !== body.commissionIds.length) return json({ error: "Only approved or payable commissions can be paid" }, 400);
-        const totalAmount = selected.reduce((sum, row) => sum + row.commissionAmount, 0);
-        if (totalAmount < 25000) return json({ error: "Payout total is below the R250 minimum threshold" }, 400);
-
-        const now = new Date();
-        const periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
-        const [payout] = await db.insert(affiliatePayout).values({
-          id: makeId("affpay"),
-          affiliateId: body.affiliateId,
-          payoutPeriodStart: periodStart,
-          payoutPeriodEnd: now,
-          totalAmount,
-          payoutReference: body.payoutReference ?? null,
-          status: "paid",
-          paidAt: now,
-          adminId: session.user.id,
-          notes: body.notes ?? null,
-        }).returning();
-
-        for (const commissionRow of selected) {
-          await db.update(affiliateCommission).set({
-            status: "paid",
-            paidAt: now,
-            updatedAt: now,
-            adminNotes: body.notes ?? commissionRow.adminNotes,
-          }).where(eq(affiliateCommission.id, commissionRow.id));
-        }
-
-        await recordAudit({
-          actorUserId: session.user.id,
-          action: "affiliate.payout.paid",
-          entityType: "affiliate_payout",
-          entityId: payout.id,
-          message: `Affiliate payout marked paid for ${formatEmailMoney(totalAmount)}`,
-          metadata: { affiliateId: body.affiliateId, commissionIds: body.commissionIds },
-        });
-
-        return json({ payout });
-      } catch (error: any) {
-        return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-      }
-    }
-
-    if (url.pathname.startsWith("/api/admin/affiliates/manual-attribution") && request.method === "POST") {
-      const { session, response } = await requireAdmin(request);
-      if (response) return response;
-
-      try {
-        const body = await parseBody(request, manualAttributionSchema);
-        const [affiliateRow, customer] = await Promise.all([
-          db.query.affiliate.findFirst({ where: eq(affiliate.id, body.affiliateId) }),
-          db.query.user.findFirst({ where: eq(user.id, body.customerId) }),
-        ]);
-        if (!affiliateRow) return json({ error: "Affiliate not found" }, 404);
-        if (!customer) return json({ error: "Customer not found" }, 404);
-        const rule = getAffiliateTierRule(affiliateRow.tier);
-        const [referral] = await db.insert(affiliateReferral).values({
-          id: makeId("affref"),
-          affiliateId: affiliateRow.id,
-          referralCode: affiliateRow.referralCode,
-          customerId: customer.id,
-          attributionType: "manual",
-          attributionModel: "manual_admin",
-          status: "signup",
-          signedUpAt: new Date(),
-          tierAtSignup: affiliateRow.tier,
-          commissionTypeAtSignup: affiliateRow.commissionType ?? rule.commissionType,
-          commissionRateBpsAtSignup: affiliateRow.commissionRateBps ?? rule.commissionRateBps,
-          recurringDurationMonthsAtSignup: affiliateRow.recurringDurationMonths ?? rule.recurringDurationMonths,
-        }).returning();
-
-        await recordAudit({
-          actorUserId: session.user.id,
-          action: "affiliate.referral.manually_attributed",
-          entityType: "affiliate_referral",
-          entityId: referral.id,
-          message: `Customer ${customer.email} manually attributed to ${affiliateRow.email}`,
-          level: "warning",
-          metadata: { reason: body.reason },
-        });
-
-        return json({ referral }, 201);
-      } catch (error: any) {
-        return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-      }
-    }
-
-    if (url.pathname.startsWith("/api/admin/affiliates/commissions/")) {
-      const { session, response } = await requireAdmin(request);
-      if (response) return response;
-
-      const commissionId = url.pathname.split("/").filter(Boolean)[4];
-      if (request.method === "PUT") {
-        try {
-          const body = await parseBody(request, commissionActionSchema);
-          const existing = await db.query.affiliateCommission.findFirst({ where: eq(affiliateCommission.id, commissionId) });
-          if (!existing) return json({ error: "Commission not found" }, 404);
-          const now = new Date();
-          const [updated] = await db.update(affiliateCommission).set({
-            status: body.status,
-            commissionAmount: body.commissionAmount ?? existing.commissionAmount,
-            approvedAt: body.status === "approved" || body.status === "payable" ? now : existing.approvedAt,
-            payableAt: body.status === "payable" ? now : existing.payableAt,
-            paidAt: body.status === "paid" ? now : existing.paidAt,
-            cancelledAt: body.status === "cancelled" || body.status === "reversed" ? now : existing.cancelledAt,
-            adminNotes: body.adminNotes ?? existing.adminNotes,
-            updatedAt: now,
-          }).where(eq(affiliateCommission.id, commissionId)).returning();
-
-          await recordAudit({
-            actorUserId: session.user.id,
-            action: "affiliate.commission.updated",
-            entityType: "affiliate_commission",
-            entityId: commissionId,
-            message: `Affiliate commission changed to ${body.status}`,
-            metadata: { adminNotes: body.adminNotes ?? null },
-          });
-
-          return json({ commission: updated });
-        } catch (error: any) {
-          return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-        }
-      }
-    }
-
-    if (url.pathname.startsWith("/api/admin/affiliates")) {
-      const { session, response } = await requireAdmin(request);
-      if (response) return response;
-      const parts = url.pathname.split("/").filter(Boolean);
-      const isAffiliateCollection = parts.length === 3;
-      const affiliateId = parts.length === 4 ? parts[3] : null;
-
-      if (isAffiliateCollection && request.method === "GET") {
-        const [affiliates, referrals, commissions, payouts, flags, users] = await Promise.all([
-          db.query.affiliate.findMany({ orderBy: (affiliate, { desc }) => [desc(affiliate.createdAt)] }),
-          db.query.affiliateReferral.findMany({ orderBy: (affiliateReferral, { desc }) => [desc(affiliateReferral.createdAt)] }),
-          db.query.affiliateCommission.findMany({ orderBy: (affiliateCommission, { desc }) => [desc(affiliateCommission.createdAt)] }),
-          db.query.affiliatePayout.findMany({ orderBy: (affiliatePayout, { desc }) => [desc(affiliatePayout.createdAt)] }),
-          db.query.affiliateFraudFlag.findMany({ orderBy: (affiliateFraudFlag, { desc }) => [desc(affiliateFraudFlag.createdAt)] }),
-          db.query.user.findMany(),
-        ]);
-        return json({
-          affiliates: affiliates.map((row) => ({
-            ...sanitizeAffiliate(row, url.origin, true),
-            summary: affiliateSummary({
-              referrals: referrals.filter((item) => item.affiliateId === row.id),
-              commissions: commissions.filter((item) => item.affiliateId === row.id),
-            }),
-            openFlags: flags.filter((item) => item.affiliateId === row.id && item.status === "open").length,
-          })),
-          referrals,
-          commissions,
-          payouts,
-          flags,
-          users: users.map((row) => ({ id: row.id, name: row.name, email: row.email, role: row.role })),
-        });
-      }
-
-      if (isAffiliateCollection && request.method === "POST") {
-        try {
-          const body = await parseBody(request, adminAffiliateCreateSchema);
-          const email = body.email.toLowerCase();
-          const existing = await db.query.affiliate.findFirst({ where: eq(affiliate.email, email) });
-          if (existing) return json({ error: "Affiliate already exists" }, 409);
-          const rule = getAffiliateTierRule(body.tier);
-          const [created] = await db.insert(affiliate).values({
-            id: makeId("aff"),
-            fullName: body.fullName,
-            email,
-            tier: body.tier,
-            status: "approved",
-            referralCode: await generateUniqueReferralCode(body.fullName || email),
-            commissionType: rule.commissionType,
-            commissionRateBps: body.commissionRateBps ?? rule.commissionRateBps,
-            recurringDurationMonths: rule.recurringDurationMonths,
-            termsAcceptedAt: new Date(),
-            approvedAt: new Date(),
-            notes: body.notes ?? null,
-          }).returning();
-          await recordAudit({
-            actorUserId: session.user.id,
-            action: "affiliate.invited",
-            entityType: "affiliate",
-            entityId: created.id,
-            message: `Affiliate invited/created for ${email}`,
-          });
-          return json({ affiliate: sanitizeAffiliate(created, url.origin, true) }, 201);
-        } catch (error: any) {
-          return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-        }
-      }
-
-      if (affiliateId && request.method === "PUT") {
-        try {
-          const body = await parseBody(request, adminAffiliateUpdateSchema);
-          const existing = await db.query.affiliate.findFirst({ where: eq(affiliate.id, affiliateId) });
-          if (!existing) return json({ error: "Affiliate not found" }, 404);
-          const nextTier = body.tier ?? normalizeAffiliateTier(existing.tier);
-          const rule = getAffiliateTierRule(nextTier);
-          const nextStatus = body.status ?? existing.status;
-          const [updated] = await db.update(affiliate).set({
-            status: nextStatus,
-            tier: nextTier,
-            commissionType: rule.commissionType,
-            commissionRateBps: body.commissionRateBps ?? rule.commissionRateBps,
-            recurringDurationMonths: rule.recurringDurationMonths,
-            notes: body.notes ?? existing.notes,
-            approvedAt: nextStatus === "approved" || nextStatus === "active" ? existing.approvedAt ?? new Date() : existing.approvedAt,
-            rejectedAt: nextStatus === "rejected" ? new Date() : existing.rejectedAt,
-            suspendedAt: nextStatus === "suspended" ? new Date() : existing.suspendedAt,
-            updatedAt: new Date(),
-          }).where(eq(affiliate.id, affiliateId)).returning();
-          await recordAudit({
-            actorUserId: session.user.id,
-            action: "affiliate.updated",
-            entityType: "affiliate",
-            entityId: affiliateId,
-            message: `Affiliate ${updated.email} updated`,
-            metadata: body,
-          });
-          return json({ affiliate: sanitizeAffiliate(updated, url.origin, true) });
-        } catch (error: any) {
-          return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-        }
-      }
-
-      return json({ error: "Affiliate route not found" }, 404);
-    }
-
-    if (url.pathname.startsWith("/api/admin/vultr")) {
-      const session = await auth.api.getSession({ headers: request.headers });
-      if (!isAdmin(session)) return new Response("Unauthorized", { status: 401 });
-
-      try {
-        const instances = await listInstances();
-        return new Response(JSON.stringify(instances), { headers: { "Content-Type": "application/json" } });
-      } catch (error) {
-        return new Response(JSON.stringify({ error: "Failed to fetch CloudMonkey VPS servers" }), { status: 500 });
-      }
-    }
-
-    if (url.pathname.startsWith("/api/admin/domains")) {
-      const session = await auth.api.getSession({ headers: request.headers });
-      if (!isAdmin(session)) return new Response("Unauthorized", { status: 401 });
-
-      const apiKey = process.env.DOMAINS_CO_ZA_API_KEY;
-      try {
-        const response = await fetch(`https://api.domains.co.za/api/domain/list?key=${apiKey}`);
-        const data = await response.json();
-        return new Response(JSON.stringify(data), { headers: { "Content-Type": "application/json" } });
-      } catch (error) {
-        return new Response(JSON.stringify({ error: "Failed to fetch domains" }), { status: 500 });
-      }
-    }
-
-    if (url.pathname.startsWith("/api/public/pricing")) {
-      try {
-        const categories = await db.query.serviceCategory.findMany({
-          with: {
-            services: {
-              with: {
-                plans: {
-                  with: {
-                    features: true
-                  }
-                }
-              }
-            }
-          }
-        });
-
-        const bundles = await db.query.bundle.findMany({
-          with: {
-            features: true
-          }
-        });
-
-        const publicCategories = categories.map((category) => ({
-          ...category,
-          services: category.services.filter((serviceRow) => serviceRow.id !== "vultr"),
-        }));
-
-        return new Response(JSON.stringify({ categories: publicCategories, bundles }), { headers: { "Content-Type": "application/json" } });
-      } catch (error) {
-        console.error("Pricing fetch error:", error);
-        return new Response(JSON.stringify({ error: "Failed to fetch pricing" }), { status: 500 });
-      }
-    }
-
-    if (url.pathname.startsWith("/api/admin/products") && request.method === "PUT") {
-      const session = await auth.api.getSession({ headers: request.headers });
-      if (!isAdmin(session)) return new Response("Unauthorized", { status: 401 });
-
-      try {
-        const body = await request.json();
-        const { id, name, tagline, priceZar } = body;
-        const nextPrice = priceZar === "" || priceZar == null ? null : (parseFloat(priceZar) * 100).toString();
-
-        const [updated] = await db.update(servicePlan)
-          .set({ name, tagline, priceZar: nextPrice })
-          .where(eq(servicePlan.id, id))
-          .returning();
-        await recordAudit({
-          actorUserId: session.user.id,
-          action: "product.updated",
-          entityType: "service_plan",
-          entityId: id,
-          message: `Product updated: ${updated?.name ?? name}`,
-        });
-
-        return new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json" } });
-      } catch (error) {
-        return new Response(JSON.stringify({ error: "Failed to update product" }), { status: 500 });
-      }
-    }
-
-    if (url.pathname.startsWith("/api/admin/products")) {
-      const session = await auth.api.getSession({ headers: request.headers });
-      if (!isAdmin(session)) return new Response("Unauthorized", { status: 401 });
-
-      try {
-        const plans = await db.query.servicePlan.findMany({
-          with: { service: true }
-        });
-        return new Response(JSON.stringify(plans), { headers: { "Content-Type": "application/json" } });
-      } catch (error) {
-        return new Response(JSON.stringify({ error: "Failed to fetch products" }), { status: 500 });
-      }
-    }
-
-    if (url.pathname.startsWith("/api/admin/manual-invoices")) {
-      const { session, response } = await requireAdmin(request);
-      if (response) return response;
-      const parts = url.pathname.split("/").filter(Boolean);
-      const invoiceId = parts[3];
-      const action = parts[4];
-
-      if (request.method === "GET") {
-        const userId = url.searchParams.get("userId");
-        const rows = await db.query.invoice.findMany({
-          where: userId ? eq(invoice.userId, userId) : undefined,
-          orderBy: (invoice, { desc }) => [desc(invoice.createdAt)],
-        });
-        return json(rows.filter((row) => row.invoiceSource === "manual"));
-      }
-
-      if (invoiceId && action === "void" && request.method === "POST") {
-        try {
-          const body = await parseBody(request, invoiceVoidSchema);
-          const existing = await db.query.invoice.findFirst({ where: eq(invoice.id, invoiceId) });
-          if (!existing || existing.invoiceSource !== "manual") return json({ error: "Invoice not found" }, 404);
-          if (existing.status === "void") return json({ invoice: existing });
-          if (existing.status === "paid") return json({ error: "Paid invoices cannot be voided" }, 409);
-
-          const [updated] = await db.update(invoice).set({
-            status: "void",
-            paystackUrl: null,
-            updatedAt: new Date(),
-          }).where(eq(invoice.id, invoiceId)).returning();
-
-          const linkedSubscription = await db.query.subscription.findFirst({ where: eq(subscription.id, invoiceId) });
-          if (linkedSubscription && linkedSubscription.status !== "active") {
-            await db.update(subscription).set({
-              status: "cancelled",
-              updatedAt: new Date(),
-            }).where(eq(subscription.id, invoiceId));
-          }
-
-          await recordAudit({
-            actorUserId: session.user.id,
-            action: "manual_invoice.voided",
-            entityType: "invoice",
-            entityId: invoiceId,
-            message: `Manual invoice voided: ${existing.invoiceNumber ?? invoiceId}`,
-            metadata: { reason: body.reason ?? null },
-          });
-          return json({ invoice: updated });
-        } catch (error: any) {
-          return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-        }
-      }
-
-      if (!invoiceId && request.method === "POST") {
-        try {
-          const body = await parseBody(request, manualInvoiceSchema);
-          const targetUser = await db.query.user.findFirst({ where: eq(user.id, body.userId) });
-          if (!targetUser) return json({ error: "User not found" }, 404);
-          const selectedPlan = body.planId
-            ? await db.query.servicePlan.findFirst({
-                where: eq(servicePlan.id, body.planId),
-                with: { service: true },
-              })
-            : null;
-          const isWebsiteOrEcommercePlan = Boolean(
-            selectedPlan?.id?.startsWith("web-")
-              || selectedPlan?.id?.startsWith("ecom-")
-              || ["websites", "ecommerce"].includes(selectedPlan?.service?.id ?? ""),
-          );
-          if (isWebsiteOrEcommercePlan) {
-            if (!body.websitePackageType) {
-              return json({ error: "Choose whether this package is a website or ecommerce store" }, 400);
-            }
-            const expectedPrefix = body.websitePackageType === "ecommerce" ? "ecom-" : "web-";
-            if (!selectedPlan?.id?.startsWith(expectedPrefix)) {
-              return json({ error: `Choose a ${body.websitePackageType} plan for this package` }, 400);
-            }
-          }
-
-          const settings = await getWorkspaceSettings();
-          const issuedAt = new Date();
-          const billingPeriodStart = body.billingPeriodStart ? new Date(body.billingPeriodStart) : issuedAt;
-          const dueDate = body.dueDate ? new Date(body.dueDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-          const billingPeriodEnd = body.billingPeriodEnd ? new Date(body.billingPeriodEnd) : (() => {
-            const end = new Date(billingPeriodStart);
-            end.setMonth(end.getMonth() + (body.interval === "year" ? 12 : 1));
-            return end;
-          })();
-          const createdId = makeId("inv");
-          const invoiceNumber = `INV-${issuedAt.getFullYear()}-${createdId.replace(/^inv[_-]?/i, "").replace(/[^a-z0-9]/gi, "").slice(-6).toUpperCase()}`;
-
-          const [created] = await db.transaction(async (tx) => {
-            const [createdInvoice] = await tx.insert(invoice).values({
-              id: createdId,
-              userId: body.userId,
-              invoiceNumber,
-              invoiceSource: "manual",
-              amount: body.amount,
-              status: "draft",
-              dueDate,
-              issuedAt,
-              billingPeriodStart,
-              billingPeriodEnd,
-              currency: "ZAR",
-              vatRateBps: 0,
-              customerName: targetUser.name,
-              customerEmail: targetUser.email,
-              customerCompany: body.customerCompany ?? null,
-              customerAddress: body.customerAddress ?? null,
-              customerVatNumber: body.customerVatNumber ?? null,
-              workspaceBillingSnapshot: JSON.stringify(getWorkspaceBillingDetails(settings)),
-              notes: body.notes ?? settings?.billingInvoiceNotes ?? null,
-            }).returning();
-            await tx.insert(invoiceItem).values({
-              id: makeId("invitem"),
-              invoiceId: createdId,
-              description: body.name,
-              quantity: 1,
-              unitPrice: body.amount,
-              amount: body.amount,
-            });
-            if (body.planId || body.bundleId) {
-              await tx.insert(subscription).values({
-                id: createdId,
-                userId: body.userId,
-                planId: body.planId ?? null,
-                bundleId: body.bundleId ?? null,
-                name: body.name,
-                status: "pending",
-                amount: body.amount,
-                interval: body.interval,
-                currentPeriodStart: billingPeriodStart,
-                currentPeriodEnd: billingPeriodEnd,
-              }).onConflictDoUpdate({
-                target: subscription.id,
-                set: {
-                  planId: body.planId ?? null,
-                  bundleId: body.bundleId ?? null,
-                  name: body.name,
-                  status: "pending",
-                  amount: body.amount,
-                  interval: body.interval,
-                  currentPeriodStart: billingPeriodStart,
-                  currentPeriodEnd: billingPeriodEnd,
-                  updatedAt: new Date(),
-                },
-              });
-            }
-            return [createdInvoice];
-          });
-
-          await recordAudit({
-            actorUserId: session.user.id,
-            action: "manual_invoice.created",
-            entityType: "invoice",
-            entityId: created.id,
-            message: `Manual invoice draft created for ${targetUser.email}`,
-            metadata: { userId: body.userId, amount: body.amount, planId: body.planId ?? null, websitePackageType: body.websitePackageType ?? null },
-          });
-          return json(created, 201);
-        } catch (error: any) {
-          return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-        }
-      }
-
-      if (invoiceId && request.method === "PUT") {
-        try {
-          const body = await parseBody(request, manualInvoiceSchema.partial().extend({ userId: z.string().min(1) }));
-          const existing = await db.query.invoice.findFirst({ where: eq(invoice.id, invoiceId) });
-          if (!existing || existing.invoiceSource !== "manual") return json({ error: "Invoice not found" }, 404);
-          if (existing.status !== "draft") return json({ error: "Only draft manual invoices can be edited" }, 409);
-
-          const updateValues: Partial<typeof invoice.$inferInsert> = {
-            amount: body.amount ?? existing.amount,
-            billingPeriodStart: body.billingPeriodStart ? new Date(body.billingPeriodStart) : existing.billingPeriodStart,
-            dueDate: body.dueDate ? new Date(body.dueDate) : existing.dueDate,
-            billingPeriodEnd: body.billingPeriodEnd ? new Date(body.billingPeriodEnd) : existing.billingPeriodEnd,
-            customerCompany: body.customerCompany ?? existing.customerCompany,
-            customerAddress: body.customerAddress ?? existing.customerAddress,
-            customerVatNumber: body.customerVatNumber ?? existing.customerVatNumber,
-            notes: body.notes ?? existing.notes,
-            updatedAt: new Date(),
-          };
-          const [updated] = await db.update(invoice).set(updateValues).where(eq(invoice.id, invoiceId)).returning();
-          if (body.name || body.amount) {
-            const existingItem = await db.query.invoiceItem.findFirst({ where: eq(invoiceItem.invoiceId, invoiceId) });
-            if (existingItem) {
-              await db.update(invoiceItem).set({
-                description: body.name ?? existingItem.description,
-                unitPrice: body.amount ?? existingItem.unitPrice,
-                amount: body.amount ?? existingItem.amount,
-              }).where(eq(invoiceItem.id, existingItem.id));
-            }
-          }
-          return json(updated);
-        } catch (error: any) {
-          return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-        }
-      }
-
-      if (invoiceId && action === "publish" && request.method === "POST") {
-        try {
-          const existing = await db.query.invoice.findFirst({ where: eq(invoice.id, invoiceId) });
-          if (!existing || existing.invoiceSource !== "manual") return json({ error: "Invoice not found" }, 404);
-          if (existing.status !== "draft") return json({ error: "Invoice is already published" }, 409);
-          const targetUser = await db.query.user.findFirst({ where: eq(user.id, existing.userId) });
-          if (!targetUser?.email) return json({ error: "Customer email is required" }, 400);
-          const item = await db.query.invoiceItem.findFirst({ where: eq(invoiceItem.invoiceId, invoiceId) });
-          const name = item?.description ?? existing.invoiceNumber ?? "Manual CloudMonkey invoice";
-          const callbackUrl = `${new URL(request.url).origin}/dashboard/billing/invoices/${encodeURIComponent(invoiceId)}`;
-          const payment = await initializePayment({
-            email: targetUser.email,
-            amountCents: existing.amount,
-            invoiceId,
-            subscriptionId: invoiceId,
-            userId: existing.userId,
-            callbackUrl,
-          });
-
-          await db.transaction(async (tx) => {
-            const existingSubscription = await db.query.subscription.findFirst({ where: eq(subscription.id, invoiceId) });
-            await tx.insert(subscription).values({
-              id: invoiceId,
-              userId: existing.userId,
-              planId: existingSubscription?.planId ?? null,
-              bundleId: existingSubscription?.bundleId ?? null,
-              name,
-              status: "pending",
-              amount: existing.amount,
-              interval: existingSubscription?.interval ?? "month",
-              currentPeriodStart: existing.billingPeriodStart ?? new Date(),
-              currentPeriodEnd: existing.billingPeriodEnd,
-            }).onConflictDoUpdate({
-              target: subscription.id,
-              set: {
-                name,
-                status: "pending",
-                amount: existing.amount,
-                interval: existingSubscription?.interval ?? "month",
-                currentPeriodStart: existing.billingPeriodStart ?? new Date(),
-                currentPeriodEnd: existing.billingPeriodEnd,
-                updatedAt: new Date(),
-              },
-            });
-            await tx.update(invoice).set({
-              status: "pending",
-              publishedAt: new Date(),
-              paystackReference: payment.data.reference,
-              paystackUrl: payment.data.authorization_url,
-              updatedAt: new Date(),
-            }).where(eq(invoice.id, invoiceId));
-          });
-
-          await recordAudit({
-            actorUserId: session.user.id,
-            action: "manual_invoice.published",
-            entityType: "invoice",
-            entityId: invoiceId,
-            message: `Manual invoice published for ${targetUser.email}`,
-            metadata: { reference: payment.data.reference },
-          });
-
-          const updated = await db.query.invoice.findFirst({ where: eq(invoice.id, invoiceId) });
-          return json({ invoice: updated, authorization_url: payment.data.authorization_url, reference: payment.data.reference });
-        } catch (error: any) {
-          return json({ error: error.message }, 500);
-        }
-      }
-
-      if (invoiceId && action === "email" && request.method === "POST") {
-        try {
-          const existing = await db.query.invoice.findFirst({ where: eq(invoice.id, invoiceId) });
-          if (!existing || existing.invoiceSource !== "manual") return json({ error: "Invoice not found" }, 404);
-          if (existing.status === "draft") return json({ error: "Publish the invoice before emailing it" }, 409);
-          if (!existing.paystackUrl) return json({ error: "Invoice does not have a payment link yet" }, 409);
-          const targetUser = await db.query.user.findFirst({ where: eq(user.id, existing.userId) });
-          if (!targetUser?.email) return json({ error: "Customer email is required" }, 400);
-          const item = await db.query.invoiceItem.findFirst({ where: eq(invoiceItem.invoiceId, invoiceId) });
-
-          await sendEmail({
-            template: "invoice_created",
-            to: targetUser.email,
-            subject: `CloudMonkey invoice ${existing.invoiceNumber ?? existing.id}`,
-            data: {
-              firstName: targetUser.name,
-              customerName: targetUser.name,
-              invoiceId,
-              invoiceNumber: existing.invoiceNumber ?? invoiceId,
-              productName: item?.description ?? "CloudMonkey services",
-              subscriptionName: item?.description ?? "CloudMonkey services",
-              totalDue: formatEmailMoney(existing.amount, existing.currency ?? "ZAR"),
-              dueDate: formatEmailDate(existing.dueDate),
-              primaryCtaText: "View and pay invoice",
-              primaryCtaUrl: `${new URL(request.url).origin}/dashboard/billing/invoices/${encodeURIComponent(invoiceId)}`,
-            },
-            idempotencyKey: `manual-invoice:${invoiceId}:email:${Date.now()}`,
-          });
-
-          const [updated] = await db.update(invoice).set({
-            emailedAt: new Date(),
-            updatedAt: new Date(),
-          }).where(eq(invoice.id, invoiceId)).returning();
-          await recordAudit({
-            actorUserId: session.user.id,
-            action: "manual_invoice.emailed",
-            entityType: "invoice",
-            entityId: invoiceId,
-            message: `Manual invoice emailed to ${targetUser.email}`,
-          });
-          return json(updated);
-        } catch (error: any) {
-          return json({ error: error.message }, 500);
-        }
-      }
-
-      return json({ error: "Method not allowed" }, 405);
-    }
-
-    if (url.pathname.startsWith("/api/admin/subscriptions")) {
-      const { session, response } = await requireAdmin(request);
-      if (response) return response;
-
-      if (request.method === "POST") {
-        try {
-          const body = await parseBody(request, subscriptionSchema);
-          const [created] = await db.insert(subscription).values({
-            id: makeId("sub"),
-            ...body,
-            currentPeriodEnd: body.currentPeriodEnd ? new Date(body.currentPeriodEnd) : null,
-          }).returning();
-          await recordAudit({
-            actorUserId: session.user.id,
-            action: "subscription.created",
-            entityType: "subscription",
-            entityId: created.id,
-            message: `Subscription created for ${created.name}`,
-          });
-          return json(created, 201);
-        } catch (error: any) {
-          return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-        }
-      }
-
-      const rows = await db.query.subscription.findMany({
-        with: { user: true, plan: true, bundle: true },
-        orderBy: (subscription, { desc }) => [desc(subscription.createdAt)],
-      });
-      return json(rows);
-    }
-
-    if (url.pathname.startsWith("/api/admin/server-n8n")) {
-      const { session, response } = await requireAdmin(request);
-      if (response) return response;
-
-      if (url.pathname.endsWith("/sync") && request.method === "POST") {
-        try {
-          const body = await parseBody(request, n8nSyncSchema);
-          const integration = await db.query.serverN8nIntegration.findFirst({
-            where: eq(serverN8nIntegration.instanceId, body.instanceId),
-            orderBy: (serverN8nIntegration, { desc }) => [desc(serverN8nIntegration.updatedAt)],
-          });
-          if (!integration) return json({ error: "n8n integration is not configured for this server" }, 404);
-
-          try {
-            const result = await syncN8nWorkflows(integration);
-            await recordAudit({
-              actorUserId: session.user.id,
-              action: "n8n.synced",
-              entityType: "server_n8n_integration",
-              entityId: integration.id,
-              message: `n8n workflows synced for ${integration.baseUrl}`,
-            });
-            return json(result);
-          } catch (syncError: any) {
-            const [updated] = await db.update(serverN8nIntegration).set({
-              status: "error",
-              lastError: syncError.message,
-              lastSyncAt: new Date(),
-              updatedAt: new Date(),
-            }).where(eq(serverN8nIntegration.id, integration.id)).returning();
-            return json({ integration: sanitizeN8nIntegration(updated), workflows: [], error: syncError.message }, 202);
-          }
-        } catch (error: any) {
-          return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-        }
-      }
-
-      if (request.method === "POST") {
-        try {
-          const body = await parseBody(request, n8nIntegrationSchema);
-          const instance = await db.query.vultrInstance.findFirst({
-            where: eq(vultrInstance.id, body.instanceId),
-          });
-          if (!instance) return json({ error: "Server not found" }, 404);
-
-          const existing = await db.query.serverN8nIntegration.findFirst({
-            where: eq(serverN8nIntegration.instanceId, body.instanceId),
-          });
-          const values = {
-            instanceId: body.instanceId,
-            userId: instance.userId,
-            baseUrl: body.baseUrl.replace(/\/+$/, ""),
-            apiKeySecret: encryptSecret(body.apiKey),
-            status: "configured",
-            lastError: null,
-            updatedAt: new Date(),
-          };
-          const [saved] = existing
-            ? await db.update(serverN8nIntegration).set(values).where(eq(serverN8nIntegration.id, existing.id)).returning()
-            : await db.insert(serverN8nIntegration).values({
-              id: makeId("n8n"),
-              ...values,
-            }).returning();
-
-          await recordAudit({
-            actorUserId: session.user.id,
-            action: "n8n.configured",
-            entityType: "server_n8n_integration",
-            entityId: saved.id,
-            message: `n8n integration configured for ${saved.baseUrl}`,
-          });
-          return json({ integration: sanitizeN8nIntegration(saved) }, existing ? 200 : 201);
-        } catch (error: any) {
-          return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-        }
-      }
-
-      return json({ error: "Method not allowed" }, 405);
-    }
-
-    if (url.pathname === "/api/admin/customers" && request.method === "GET") {
-      const { response } = await requireAdmin(request);
-      if (response) return response;
-
-      const [
-        users,
-        subscriptions,
-        invoices,
-        registeredDomains,
-        domainOrders,
-        servers,
-        websites,
-        stores,
-        storeDatabases,
-        websiteDomains,
-        agents,
-        tickets,
-        affiliates,
-      ] = await Promise.all([
-        db.query.user.findMany({ orderBy: (user, { desc }) => [desc(user.createdAt)] }),
-        db.query.subscription.findMany({ orderBy: (subscription, { desc }) => [desc(subscription.createdAt)] }),
-        db.query.invoice.findMany({ orderBy: (invoice, { desc }) => [desc(invoice.createdAt)] }),
-        db.query.registeredDomain.findMany(),
-        db.query.domainOrder.findMany({ orderBy: (domainOrder, { desc }) => [desc(domainOrder.createdAt)] }),
-        db.query.vultrInstance.findMany({ orderBy: (vultrInstance, { desc }) => [desc(vultrInstance.createdAt)] }),
-        db.query.website.findMany({ orderBy: (website, { desc }) => [desc(website.createdAt)] }),
-        db.query.websiteStore.findMany(),
-        db.query.websiteStoreDatabase.findMany(),
-        db.query.websiteDomain.findMany(),
-        db.query.aiAgent.findMany({ orderBy: (aiAgent, { desc }) => [desc(aiAgent.createdAt)] }),
-        db.query.supportTicket.findMany({ orderBy: (supportTicket, { desc }) => [desc(supportTicket.updatedAt)] }),
-        db.query.affiliate.findMany(),
-      ]);
-
-      const activeStatuses = new Set(["active", "online", "running", "live_trial", "trial", "paid", "approved"]);
-      const warningStatuses = new Set(["pending", "pending_payment", "trial", "live_trial", "past_due", "open"]);
-      const badStatuses = new Set(["failed", "suspended", "cancelled", "canceled", "terminated", "expired", "rejected"]);
-
-      const customers = users.map((customer) => {
-        const userSubscriptions = subscriptions.filter((row) => row.userId === customer.id);
-        const userInvoices = invoices.filter((row) => row.userId === customer.id);
-        const userRegisteredDomains = registeredDomains.filter((row) => row.userId === customer.id);
-        const userDomainOrders = domainOrders.filter((row) => row.userId === customer.id);
-        const userServers = servers.filter((row) => row.userId === customer.id);
-        const userWebsites = websites.filter((row) => row.userId === customer.id);
-        const userStores = stores.filter((row) => row.userId === customer.id);
-        const userWebsiteDomains = websiteDomains.filter((row) => row.userId === customer.id);
-        const userAgents = agents.filter((row) => row.userId === customer.id);
-        const userTickets = tickets.filter((row) => row.userId === customer.id);
-        const userAffiliate = affiliates.find((row) => row.userId === customer.id || row.email.toLowerCase() === customer.email.toLowerCase()) ?? null;
-        const userStoreIds = new Set(userStores.map((row) => row.id));
-        const userDatabases = storeDatabases.filter((row) => row.userId === customer.id || userStoreIds.has(row.storeId));
-
-        const serviceItems = [
-          ...userSubscriptions.map((row) => ({
-            id: row.id,
-            type: "subscription",
-            label: row.name,
-            status: row.status,
-            amount: row.amount,
-            interval: row.interval,
-            currentPeriodEnd: row.currentPeriodEnd,
-          })),
-          ...userRegisteredDomains.map((row) => ({
-            id: row.id,
-            type: "domain",
-            label: row.id,
-            status: row.status,
-            expiryDate: row.expiryDate,
-            autoRenew: row.autoRenew,
-          })),
-          ...userDomainOrders.map((row) => ({
-            id: row.id,
-            type: "domain_order",
-            label: row.domainName,
-            status: row.status,
-            invoiceId: row.invoiceId,
-            subscriptionId: row.subscriptionId,
-          })),
-          ...userServers.map((row) => ({
-            id: row.id,
-            type: "server",
-            label: row.label || row.mainIp || row.id,
-            status: row.status,
-            powerStatus: row.powerStatus,
-            mainIp: row.mainIp,
-            region: row.region,
-            ram: row.ram,
-            disk: row.disk,
-          })),
-          ...userWebsites.map((row) => {
-            const store = userStores.find((storeRow) => storeRow.websiteId === row.id) ?? null;
-            const database = store ? userDatabases.find((databaseRow) => databaseRow.storeId === store.id) ?? null : null;
-            return {
-              id: row.id,
-              type: row.siteType === "ecommerce" ? "ecommerce" : "website",
-              label: row.businessName || row.name || row.temporaryDomain || row.domain,
-              status: row.status,
-              siteType: row.siteType,
-              temporaryDomain: row.temporaryDomain,
-              primaryDomain: row.primaryDomain,
-              containerStatus: row.containerStatus,
-              aiGenerationStatus: row.aiGenerationStatus,
-              trialEndsAt: row.trialEndsAt,
-              store: store ? {
-                id: store.id,
-                status: store.status,
-                paymentMode: store.paymentMode,
-                database: database ? {
-                  id: database.id,
-                  containerName: database.containerName,
-                  databaseName: database.databaseName,
-                  status: database.status,
-                  backupStatus: database.backupStatus,
-                } : null,
-              } : null,
-              domains: userWebsiteDomains.filter((domain) => domain.websiteId === row.id).map((domain) => ({
-                domain: domain.domain,
-                type: domain.type,
-                status: domain.status,
-                sslStatus: domain.sslStatus,
-              })),
-            };
-          }),
-          ...userAgents.map((row) => ({
-            id: row.id,
-            type: "ai_agent",
-            label: row.name,
-            status: row.status,
-            provider: row.provider,
-            model: row.model,
-            lastRunAt: row.lastRunAt,
-          })),
-          ...(userAffiliate ? [{
-            id: userAffiliate.id,
-            type: "affiliate",
-            label: userAffiliate.fullName,
-            status: userAffiliate.status,
-            tier: userAffiliate.tier,
-            referralCode: userAffiliate.referralCode,
-          }] : []),
-        ];
-
-        const openTickets = userTickets.filter((ticket) => !["closed", "resolved"].includes(ticket.status)).length;
-        const unpaidInvoices = userInvoices.filter((row) => ["pending", "overdue"].includes(row.status));
-        const statusValues = serviceItems.flatMap((item: any) => [item.status, item.containerStatus, item.store?.status, item.store?.database?.status].filter(Boolean));
-        const activeServices = statusValues.filter((status) => activeStatuses.has(String(status))).length;
-        const warningServices = statusValues.filter((status) => warningStatuses.has(String(status))).length;
-        const problemServices = statusValues.filter((status) => badStatuses.has(String(status))).length;
-        const billingStatus = unpaidInvoices.some((row) => row.status === "overdue")
-          ? "overdue"
-          : unpaidInvoices.length
-            ? "pending"
-            : userSubscriptions.some((row) => row.status === "active")
-              ? "active"
-              : "none";
-
-        return {
-          id: customer.id,
-          name: customer.name,
-          email: customer.email,
-          role: customer.role,
-          emailVerified: customer.emailVerified,
-          createdAt: customer.createdAt,
-          updatedAt: customer.updatedAt,
-          summary: {
-            totalServices: serviceItems.length,
-            activeServices,
-            warningServices,
-            problemServices,
-            openTickets,
-            billingStatus,
-            unpaidInvoiceCount: unpaidInvoices.length,
-            unpaidInvoiceAmount: unpaidInvoices.reduce((sum, row) => sum + row.amount, 0),
-          },
-          services: {
-            items: serviceItems,
-            subscriptions: userSubscriptions,
-            invoices: userInvoices.slice(0, 10),
-            registeredDomains: userRegisteredDomains,
-            domainOrders: userDomainOrders,
-            servers: userServers,
-            websites: userWebsites,
-            stores: userStores,
-            storeDatabases: userDatabases.map((row) => ({
-              id: row.id,
-              storeId: row.storeId,
-              websiteId: row.websiteId,
-              engine: row.engine,
-              version: row.version,
-              host: row.host,
-              port: row.port,
-              databaseName: row.databaseName,
-              username: row.username,
-              containerName: row.containerName,
-              status: row.status,
-              backupStatus: row.backupStatus,
-            })),
-            websiteDomains: userWebsiteDomains,
-            agents: userAgents,
-            tickets: userTickets.slice(0, 10),
-            affiliate: userAffiliate,
-          },
-        };
-      });
-
-      return json({
-        customers,
-        summary: {
-          totalCustomers: customers.length,
-          totalServices: customers.reduce((sum, row) => sum + row.summary.totalServices, 0),
-          activeServices: customers.reduce((sum, row) => sum + row.summary.activeServices, 0),
-          problemServices: customers.reduce((sum, row) => sum + row.summary.problemServices, 0),
-          openTickets: customers.reduce((sum, row) => sum + row.summary.openTickets, 0),
-          unpaidInvoiceAmount: customers.reduce((sum, row) => sum + row.summary.unpaidInvoiceAmount, 0),
-        },
-      });
-    }
-
-    if (url.pathname.startsWith("/api/admin/agents")) {
-      const { session, response } = await requireAdmin(request);
-      if (response) return response;
-
-      if (request.method === "POST") {
-        try {
-          const body = await parseBody(request, agentSchema.extend({ userId: z.string().min(1) }));
-          const [created] = await db.insert(aiAgent).values({
-            id: makeId("agent"),
-            ...body,
-          }).returning();
-          await recordAudit({
-            actorUserId: session.user.id,
-            action: "agent.created",
-            entityType: "ai_agent",
-            entityId: created.id,
-            message: `AI agent created: ${created.name}`,
-          });
-
-          const owner = await db.query.user.findFirst({ where: eq(user.id, created.userId) });
-          try {
-            const n8nResponse = await sendN8nAgentProvisioning({
-              agent: created,
-              user: {
-                id: owner?.id ?? created.userId,
-                name: owner?.name ?? null,
-                email: owner?.email ?? null,
-              },
-              idempotencyKey: `agent:${created.id}`,
-            });
-            await recordAudit({
-              actorUserId: session.user.id,
-              action: "agent.provisioning.sent",
-              entityType: "ai_agent",
-              entityId: created.id,
-              message: `Agent provisioning workflow accepted ${created.name}`,
-              metadata: { n8n: n8nResponse },
-            });
-            return json({ agent: created, n8nStatus: "sent", n8nResponse }, 201);
-          } catch (n8nError: any) {
-            await recordAudit({
-              actorUserId: session.user.id,
-              action: "agent.provisioning_failed",
-              entityType: "ai_agent",
-              entityId: created.id,
-              message: `Agent created but provisioning workflow failed for ${created.name}`,
-              level: "error",
-              metadata: { error: n8nError.message },
-            });
-            return json({ agent: created, n8nStatus: "failed", error: n8nError.message }, 202);
-          }
-        } catch (error: any) {
-          return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-        }
-      }
-
-      const rows = await db.query.aiAgent.findMany({
-        with: { user: true },
-        orderBy: (aiAgent, { desc }) => [desc(aiAgent.createdAt)],
-      });
-      const discovered = await getDetectedAgentRows(session.user.id, true);
-      return json([...rows, ...discovered]);
-    }
-
-    if (url.pathname.startsWith("/api/admin/tickets")) {
-      const { session, response } = await requireAdmin(request);
-      if (response) return response;
-      const parts = url.pathname.split("/").filter(Boolean);
-      const ticketId = parts[3];
-
-      if (ticketId && parts[4] === "comments" && request.method === "POST") {
-        try {
-          const body = await parseBody(request, ticketCommentSchema);
-          const ticket = await db.query.supportTicket.findFirst({ where: eq(supportTicket.id, ticketId) });
-          if (!ticket) return json({ error: "Ticket not found" }, 404);
-          const [created] = await db.insert(supportTicketComment).values({
-            id: makeId("comment"),
-            ticketId,
-            userId: session.user.id,
-            body: body.body,
-            isInternal: body.isInternal,
-          }).returning();
-          await db.update(supportTicket).set({ updatedAt: new Date() }).where(eq(supportTicket.id, ticketId));
-          await recordAudit({
-            actorUserId: session.user.id,
-            action: "ticket.comment.created",
-            entityType: "support_ticket",
-            entityId: ticketId,
-            message: `Comment added to ticket ${ticket.subject}`,
-          });
-          return json(created, 201);
-        } catch (error: any) {
-          return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-        }
-      }
-
-      if (ticketId && request.method === "PUT") {
-        try {
-          const body = await parseBody(request, ticketSchema.partial());
-          const [updated] = await db.update(supportTicket).set({
-            ...body,
-            updatedAt: new Date(),
-          }).where(eq(supportTicket.id, ticketId)).returning();
-          if (!updated) return json({ error: "Ticket not found" }, 404);
-          await recordAudit({
-            actorUserId: session.user.id,
-            action: "ticket.updated",
-            entityType: "support_ticket",
-            entityId: updated.id,
-            message: `Ticket updated: ${updated.subject}`,
-          });
-          return json(updated);
-        } catch (error: any) {
-          return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-        }
-      }
-
-      if (request.method === "POST") {
-        try {
-          const body = await parseBody(request, ticketSchema.extend({ userId: z.string().min(1) }));
-          const [created] = await db.insert(supportTicket).values({
-            id: makeId("ticket"),
-            ...body,
-          }).returning();
-          await recordAudit({
-            actorUserId: session.user.id,
-            action: "ticket.created",
-            entityType: "support_ticket",
-            entityId: created.id,
-            message: `Support ticket opened: ${created.subject}`,
-          });
-          return json(created, 201);
-        } catch (error: any) {
-          return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-        }
-      }
-
-      if (ticketId) {
-        const row = await db.query.supportTicket.findFirst({
-          where: eq(supportTicket.id, ticketId),
-          with: { user: true, assignee: true, comments: true },
-        });
-        return row ? json(row) : json({ error: "Ticket not found" }, 404);
-      }
-
-      const rows = await db.query.supportTicket.findMany({
-        with: { user: true, assignee: true, comments: true },
-        orderBy: (supportTicket, { desc }) => [desc(supportTicket.updatedAt)],
-      });
-      return json(rows);
-    }
-
-    if (url.pathname.startsWith("/api/admin/audit-logs")) {
-      const { response } = await requireAdmin(request);
-      if (response) return response;
-      const rows = await db.query.auditLog.findMany({
-        orderBy: (auditLog, { desc }) => [desc(auditLog.createdAt)],
-      });
-      return json(rows);
-    }
-
-    if (url.pathname.startsWith("/api/admin/settings")) {
-      const { session, response } = await requireAdmin(request);
-      if (response) return response;
-
-      if (request.method === "PUT") {
-        try {
-          const body = await parseBody(request, settingsSchema);
-          const [updated] = await db.insert(workspaceSettings).values({
-            id: "default",
-            ...body,
-          }).onConflictDoUpdate({
-            target: workspaceSettings.id,
-            set: { ...body, updatedAt: new Date() },
-          }).returning();
-          await recordAudit({
-            actorUserId: session.user.id,
-            action: "settings.updated",
-            entityType: "workspace_settings",
-            entityId: "default",
-            message: "Workspace settings updated",
-          });
-          return json(updated);
-        } catch (error: any) {
-          return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-        }
-      }
-
-      return json(await getWorkspaceSettings());
+      return websiteHandlers.handleUserWebsites(request);
     }
 
     if (url.pathname.startsWith("/api/admin/website-runtime-servers")) {
-      const { session, response } = await requireAdmin(request);
-      if (response) return response;
-
-      const runtimeParts = url.pathname.split("/").filter(Boolean);
-      const runtimeId = runtimeParts[3];
-      const runtimeAction = runtimeParts[4];
-      if (runtimeId && runtimeAction === "health" && request.method === "GET") {
-        const runtime = await db.query.websiteRuntimeServer.findFirst({ where: eq(websiteRuntimeServer.id, runtimeId) });
-        if (!runtime) return json({ error: "Runtime server not found" }, 404);
-        if (!runtime.provisionerUrl) return json({ error: "Runtime server has no provisioner URL" }, 400);
-        try {
-          const healthResponse = await fetch(`${runtime.provisionerUrl.replace(/\/+$/, "")}/health`);
-          const text = await healthResponse.text();
-          let payload: unknown = text;
-          try {
-            payload = JSON.parse(text);
-          } catch {
-            // Non-JSON health responses are still useful for diagnostics.
-          }
-          await db.update(websiteRuntimeServer).set({
-            status: healthResponse.ok ? "active" : runtime.status,
-            lastHealthCheckAt: new Date(),
-            lastError: healthResponse.ok ? null : `Health check failed: ${healthResponse.status}`,
-            updatedAt: new Date(),
-          }).where(eq(websiteRuntimeServer.id, runtime.id));
-          return json({ ok: healthResponse.ok, status: healthResponse.status, health: payload });
-        } catch (error: any) {
-          await db.update(websiteRuntimeServer).set({
-            lastHealthCheckAt: new Date(),
-            lastError: error.message,
-            updatedAt: new Date(),
-          }).where(eq(websiteRuntimeServer.id, runtime.id));
-          return json({ ok: false, error: error.message }, 502);
-        }
-      }
-
-      if (request.method === "POST" || request.method === "PUT") {
-        try {
-          const body = await parseBody(request, runtimeServerSchema);
-          const runtimeId = body.id ?? makeId("runtime");
-          const values = {
-            ...body,
-            id: runtimeId,
-            provisionerSecret: encryptSecret(body.provisionerSecret),
-            updatedAt: new Date(),
-          };
-          const [saved] = await db.insert(websiteRuntimeServer).values(values).onConflictDoUpdate({
-            target: websiteRuntimeServer.id,
-            set: {
-              provider: values.provider,
-              providerInstanceId: values.providerInstanceId,
-              profileName: values.profileName,
-              hostname: values.hostname,
-              publicIp: values.publicIp,
-              privateIp: values.privateIp,
-              provisionerUrl: values.provisionerUrl,
-              provisionerSecret: values.provisionerSecret,
-              ingressHostname: values.ingressHostname,
-              ingressIp: values.ingressIp,
-              dockerNetworkName: values.dockerNetworkName,
-              proxyMode: values.proxyMode,
-              region: values.region,
-              status: values.status,
-              cpuTotal: values.cpuTotal,
-              memoryTotalMb: values.memoryTotalMb,
-              diskTotalGb: values.diskTotalGb,
-              maxSiteCount: values.maxSiteCount,
-              lastError: null,
-              updatedAt: new Date(),
-            },
-          }).returning();
-          await recordAudit({
-            actorUserId: session.user.id,
-            action: "website_runtime_server.saved",
-            entityType: "website_runtime_server",
-            entityId: saved.id,
-            message: `Website runtime server saved: ${saved.hostname}`,
-          });
-          return json({ ...saved, provisionerSecret: "********" }, request.method === "POST" ? 201 : 200);
-        } catch (error: any) {
-          return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-        }
-      }
-
-      const rows = await db.query.websiteRuntimeServer.findMany({
-        orderBy: (websiteRuntimeServer, { desc }) => [desc(websiteRuntimeServer.updatedAt)],
-      });
-      return json(rows.map((row) => ({ ...row, provisionerSecret: row.provisionerSecret ? "********" : null })));
+      return websiteHandlers.handleAdminWebsiteRuntimeServers(request);
     }
 
     if (url.pathname.startsWith("/api/admin/website-projects")) {
-      const { session, response } = await requireAdmin(request);
-      if (response) return response;
+      return websiteHandlers.handleAdminWebsiteProjects(request);
+    }
 
-      const parts = url.pathname.split("/").filter(Boolean);
-      const websiteId = parts[3];
-      const action = parts[4];
-
-      const getProject = async (id: string) => {
-        const site = await db.query.website.findFirst({
-          where: eq(website.id, id),
-          with: { user: true, subscription: { with: { plan: true, bundle: true } }, invoice: true },
-        });
-        if (!site) return null;
-        const detail = await getUserWebsiteDetail(site.userId, site.id);
-        const submissions = await db.query.onboardingSubmission.findMany({
-          where: site.subscriptionId ? eq(onboardingSubmission.subscriptionId, site.subscriptionId) : eq(onboardingSubmission.userId, site.userId),
-          orderBy: (onboardingSubmission, { desc }) => [desc(onboardingSubmission.createdAt)],
-        });
-        const reviews = await db.query.websiteReviewRequest.findMany({
-          where: eq(websiteReviewRequest.websiteId, site.id),
-          orderBy: (websiteReviewRequest, { desc }) => [desc(websiteReviewRequest.createdAt)],
-        });
-        return {
-          ...detail,
-          user: site.user,
-          subscription: site.subscription,
-          invoice: site.invoice,
-          onboardingSubmissions: submissions.map((row) => ({ ...row, answers: safeJsonParse(row.answers) })),
-          reviewRequests: reviews,
-        };
-      };
-
-      if (!websiteId && request.method === "GET") {
-        const sites = await db.query.website.findMany({
-          with: { user: true, subscription: { with: { plan: true, bundle: true } }, invoice: true },
-          orderBy: (website, { desc }) => [desc(website.createdAt)],
-        });
-        const rows = sites
-          .filter((site) => isWebsitePlanId(site.subscription?.planId ?? site.plan) || site.siteType === "ecommerce" || site.siteType === "website")
-          .map((site) => ({
-            ...site,
-            onboardingAnswers: safeJsonParse(site.onboardingAnswers),
-            requirementManifest: safeJsonParse(site.requirementManifest),
-            buildManifest: safeJsonParse(site.buildManifest),
-            provisioningPlan: safeJsonParse(site.provisioningPlan),
-            user: site.user,
-            subscription: site.subscription,
-            invoice: site.invoice,
-            nextAction: !site.onboardingAnswers
-              ? "awaiting_onboarding"
-              : !site.selectedDesignOptionId
-                ? "upload_or_send_designs"
-                : site.containerStatus === "not_provisioned"
-                  ? "provision_runtime"
-                  : site.status === "staging_approved"
-                    ? "mark_live"
-                    : "review_staging",
-          }));
-        return json(rows);
-      }
-
-      if (!websiteId) return json({ error: "Website id is required" }, 400);
-
-      if (request.method === "GET" && !action) {
-        const project = await getProject(websiteId);
-        return project ? json(project) : json({ error: "Website project not found" }, 404);
-      }
-
-      const site = await db.query.website.findFirst({ where: eq(website.id, websiteId) });
-      if (!site) return json({ error: "Website project not found" }, 404);
-
-      if (action === "design-options" && request.method === "POST") {
-        try {
-          let styleLabel = "";
-          let notes = "";
-          let imageUrl = "";
-          let uploadMeta: Record<string, unknown> = {};
-          const contentType = request.headers.get("content-type") ?? "";
-          if (contentType.includes("multipart/form-data")) {
-            const form = await request.formData();
-            styleLabel = String(form.get("styleLabel") || form.get("label") || "Design option");
-            notes = String(form.get("notes") || "");
-            imageUrl = String(form.get("imageUrl") || "");
-            const file = form.get("image");
-            if (file instanceof File && file.size > 0) {
-              if (!ALLOWED_WEBSITE_DESIGN_TYPES.has(file.type)) return json({ error: "Unsupported design image type" }, 400);
-              if (file.size > WEBSITE_MAX_DESIGN_BYTES) return json({ error: "Design image is too large" }, 413);
-              const optionId = makeId("design");
-              const extension = path.extname(file.name || "") || `.${file.type.split("/")[1] || "bin"}`;
-              const storageDir = path.join(WEBSITE_UPLOAD_DIR, websiteId);
-              await mkdir(storageDir, { recursive: true });
-              const storagePath = path.join(storageDir, `${optionId}${extension}`);
-              await writeFile(storagePath, Buffer.from(await file.arrayBuffer()));
-              uploadMeta = {
-                optionId,
-                storagePath,
-                mimeType: file.type,
-                fileName: sanitizeFileName(file.name || `${optionId}${extension}`),
-                sizeBytes: file.size,
-              };
-              imageUrl = publicDesignImageUrl(optionId);
-            }
-          } else {
-            const body = await parseBody(request, adminDesignOptionSchema);
-            styleLabel = body.styleLabel;
-            notes = body.notes;
-            imageUrl = body.imageUrl || "";
-          }
-          const designOptionId = String(uploadMeta.optionId || makeId("design"));
-          const [created] = await db.insert(websiteDesignOption).values({
-            id: designOptionId,
-            websiteId,
-            userId: site.userId,
-            styleLabel,
-            imageUrl: imageUrl || null,
-            thumbnailUrl: imageUrl || null,
-            designManifest: JSON.stringify({
-              source: "admin_upload",
-              notes,
-              uploadedBy: session.user.id,
-              ...uploadMeta,
-            }),
-            promptVersion: "admin-upload",
-          }).returning();
-          await db.update(website).set({
-            status: "design_options_uploaded",
-            aiGenerationStatus: "awaiting_design_selection",
-            updatedAt: new Date(),
-          }).where(eq(website.id, websiteId));
-          await recordAudit({
-            actorUserId: session.user.id,
-            action: "website.design_option.uploaded",
-            entityType: "website",
-            entityId: websiteId,
-            message: `Design option uploaded for ${site.businessName || site.domain}`,
-            metadata: { designOptionId: created.id, styleLabel },
-          });
-          return json({ ...created, designManifest: safeJsonParse(created.designManifest) }, 201);
-        } catch (error: any) {
-          return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-        }
-      }
-
-      if (action === "send-design-email" && request.method === "POST") {
-        try {
-          const project = await getProject(websiteId);
-          if (!project?.designOptions?.length) return json({ error: "Upload at least one design option first" }, 400);
-          const { raw, hash } = createApprovalToken();
-          const expiresAt = addDays(new Date(), 14);
-          const reviewId = makeId("review");
-          await db.insert(websiteReviewRequest).values({
-            id: reviewId,
-            websiteId,
-            userId: site.userId,
-            type: "design",
-            status: "sent",
-            targetId: websiteId,
-            message: "Design choices sent for approval",
-          });
-          await db.insert(websiteApprovalToken).values({
-            id: makeId("webtoken"),
-            websiteId,
-            userId: site.userId,
-            tokenHash: hash,
-            actionType: "design_approval",
-            targetId: websiteId,
-            expiresAt,
-          });
-          await db.update(website).set({ status: "design_review_sent", updatedAt: new Date() }).where(eq(website.id, websiteId));
-          const approvalUrl = `${new URL(request.url).origin}/website-approval/${encodeURIComponent(raw)}`;
-          await sendEmail({
-            template: "generic",
-            to: project.user?.email ?? "",
-            subject: `Choose your CloudMonkey website design`,
-            data: {
-              firstName: project.user?.name,
-              emailTitle: "Your website designs are ready",
-              emailIntro: "Please review the design concepts and approve the direction CloudMonkey should build.",
-              emailBody: `Project: ${site.businessName || site.domain}\nTemporary domain: ${site.temporaryDomain || site.domain}`,
-              primaryCtaText: "Review designs",
-              primaryCtaUrl: approvalUrl,
-            },
-            idempotencyKey: `website:${websiteId}:design-review:${reviewId}`,
-          });
-          await db.update(websiteReviewRequest).set({
-            sentAt: new Date(),
-            updatedAt: new Date(),
-          }).where(eq(websiteReviewRequest.id, reviewId));
-          return json({ ok: true, approvalUrl, expiresAt });
-        } catch (error: any) {
-          return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-        }
-      }
-
-      if (action === "provision" && request.method === "POST") {
-        if (site.status !== "design_selected" && site.status !== "awaiting_provisioning") {
-          return json({ error: "Customer design approval is required before provisioning" }, 400);
-        }
-        try {
-          const result = await provisionWebsiteRuntime(site.userId, websiteId);
-          return json(result);
-        } catch (error: any) {
-          await db.update(website).set({ containerStatus: "failed", status: "failed", updatedAt: new Date() }).where(eq(website.id, websiteId));
-          return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-        }
-      }
-
-      if (action === "send-staging-email" && request.method === "POST") {
-        try {
-          const project = await getProject(websiteId);
-          if (!project) return json({ error: "Website project not found" }, 404);
-          if (site.containerStatus !== "running") {
-            return json({ error: "Provision the runtime before sending staging review" }, 409);
-          }
-          const { raw, hash } = createApprovalToken();
-          const expiresAt = addDays(new Date(), 14);
-          const reviewId = makeId("review");
-          await db.insert(websiteReviewRequest).values({
-            id: reviewId,
-            websiteId,
-            userId: site.userId,
-            type: "staging",
-            status: "sent",
-            targetId: websiteId,
-            message: "Staging review sent",
-          });
-          await db.insert(websiteApprovalToken).values({
-            id: makeId("webtoken"),
-            websiteId,
-            userId: site.userId,
-            tokenHash: hash,
-            actionType: "staging_review",
-            targetId: websiteId,
-            expiresAt,
-          });
-          await db.update(website).set({ status: "staging_review_sent", updatedAt: new Date() }).where(eq(website.id, websiteId));
-          const approvalUrl = `${new URL(request.url).origin}/website-approval/${encodeURIComponent(raw)}`;
-          await sendEmail({
-            template: "generic",
-            to: project.user?.email ?? "",
-            subject: `Review your CloudMonkey staging site`,
-            data: {
-              firstName: project.user?.name,
-              emailTitle: "Your staging site is ready",
-              emailIntro: "Please review the staging site and either approve it or send edit notes.",
-              emailBody: `Project: ${site.businessName || site.domain}\nStaging URL: https://${site.primaryDomain || site.temporaryDomain || site.domain}`,
-              primaryCtaText: "Review staging",
-              primaryCtaUrl: approvalUrl,
-            },
-            idempotencyKey: `website:${websiteId}:staging-review:${reviewId}`,
-          });
-          await db.update(websiteReviewRequest).set({
-            sentAt: new Date(),
-            updatedAt: new Date(),
-          }).where(eq(websiteReviewRequest.id, reviewId));
-          return json({ ok: true, approvalUrl, expiresAt });
-        } catch (error: any) {
-          return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-        }
-      }
-
-      if (action === "mark-live" && request.method === "POST") {
-        const now = new Date();
-        const [updated] = await db.update(website).set({
-          status: "active",
-          containerStatus: site.containerStatus === "not_provisioned" ? "running" : site.containerStatus,
-          updatedAt: now,
-        }).where(eq(website.id, websiteId)).returning();
-        await recordAudit({
-          actorUserId: session.user.id,
-          action: "website.marked_live",
-          entityType: "website",
-          entityId: websiteId,
-          message: `Website marked live: ${site.businessName || site.domain}`,
-        });
-        return json(updated);
-      }
-
-      return json({ error: "Method not allowed" }, 405);
+    if (url.pathname === "/api/admin/server-agents/enrollment") {
+      return agentsRuntimeHandlers.handleAdminServerAgentEnrollment(request);
     }
 
     if (url.pathname.startsWith("/api/admin/websites")) {
+      return websiteHandlers.handleAdminWebsites(request);
+    }
+
+    if (url.pathname.startsWith("/api/admin/manual-invoices")) {
+      return billingHandlers.handleAdminManualInvoices(request);
+    }
+
+    if (url.pathname.startsWith("/api/admin/invoices")) {
+      return billingHandlers.handleAdminInvoices(request);
+    }
+
+    if (url.pathname.startsWith("/api/admin/subscriptions")) {
+      return billingHandlers.handleAdminSubscriptions(request);
+    }
+
+    if (url.pathname === "/api/admin/domains/dns") {
+      return domainsHandlers.handleAdminDomainsDns(request);
+    }
+
+    if (url.pathname === "/api/admin/domains/info") {
+      return domainsHandlers.handleAdminDomainsInfo(request);
+    }
+
+    if (url.pathname === "/api/admin/assign-domain") {
+      return domainsHandlers.handleAdminAssignDomain(request);
+    }
+
+    if (url.pathname === "/api/admin/vultr") {
       const { session, response } = await requireAdmin(request);
       if (response) return response;
-
-      if (request.method === "POST") {
-        try {
-          const body = await parseBody(request, websiteSchema);
-          const [created] = await db.insert(website).values({
-            id: makeId("site"),
-            ...body,
-          }).returning();
-          await recordAudit({
-            actorUserId: session.user.id,
-            action: "website.created",
-            entityType: "website",
-            entityId: created.id,
-            message: `Website added: ${created.domain}`,
-          });
-          return json(created, 201);
-        } catch (error: any) {
-          return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-        }
-      }
-
-      const rows = await db.query.website.findMany({
-        with: { user: true },
-        orderBy: (website, { desc }) => [desc(website.createdAt)],
-      });
-      return json(rows);
-    }
-
-    if (url.pathname.startsWith("/api/admin/users/") && request.method === "GET") {
-      const { response } = await requireAdmin(request);
-      if (response) return response;
-      const userId = url.pathname.split("/").filter(Boolean)[3];
-      const row = await db.query.user.findFirst({ where: eq(user.id, userId) });
-      if (!row) return json({ error: "User not found" }, 404);
-      const [sessions, accounts, domains, servers, sites, agents, tickets, subs, invoices] = await Promise.all([
-        db.query.session.findMany({ where: eq(sessionTable.userId, userId) }),
-        db.query.account.findMany({ where: eq(account.userId, userId) }),
-        db.query.registeredDomain.findMany({ where: eq(registeredDomain.userId, userId) }),
-        db.query.vultrInstance.findMany({ where: eq(vultrInstance.userId, userId) }),
-        db.query.website.findMany({ where: eq(website.userId, userId) }),
-        db.query.aiAgent.findMany({ where: eq(aiAgent.userId, userId) }),
-        db.query.supportTicket.findMany({ where: eq(supportTicket.userId, userId) }),
-        db.query.subscription.findMany({ where: eq(subscription.userId, userId) }),
-        db.query.invoice.findMany({ where: eq(invoice.userId, userId), orderBy: (invoice, { desc }) => [desc(invoice.createdAt)] }),
-      ]);
-      return json({ user: row, sessions, accounts, domains, servers, websites: sites, agents, tickets, subscriptions: subs, invoices });
-    }
-
-    if (url.pathname.startsWith("/api/admin/users/role") && request.method === "PUT") {
-      const { session, response } = await requireAdmin(request);
-      if (response) return response;
-      try {
-        const body = await parseBody(request, roleUpdateSchema);
-        const [updated] = await db.update(user).set({
-          role: body.role,
-          updatedAt: new Date(),
-        }).where(eq(user.id, body.userId)).returning();
-        if (!updated) return json({ error: "User not found" }, 404);
-        await recordAudit({
-          actorUserId: session.user.id,
-          action: "user.role.updated",
-          entityType: "user",
-          entityId: updated.id,
-          message: `${updated.email} role changed to ${updated.role}`,
-        });
-        return json(updated);
-      } catch (error: any) {
-        return json({ error: error.message, issues: error.issues }, error.status ?? 500);
-      }
-    }
-
-    if (url.pathname.startsWith("/api/admin/users")) {
-      const session = await auth.api.getSession({ headers: request.headers });
-      if (!isAdmin(session)) return new Response("Unauthorized", { status: 401 });
-
-      const users = await db.query.user.findMany();
-      return new Response(JSON.stringify(users), { headers: { "Content-Type": "application/json" } });
-    }
-
-    if (url.pathname.startsWith("/api/admin/assign-domain") && request.method === "POST") {
-      const session = await auth.api.getSession({ headers: request.headers });
-      if (!isAdmin(session)) return new Response("Unauthorized", { status: 401 });
+      if (request.method === "GET") return json(await listInstances());
+      if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
       try {
-        const body = await request.json();
-        const expiryDate = parseProviderDate(body.expiryDate);
-        await db.insert(registeredDomain).values({
-          id: body.domainName,
-          userId: body.userId,
-          status: body.status || "active",
-          expiryDate: expiryDate ? new Date(expiryDate) : null,
-        }).onConflictDoUpdate({
-          target: registeredDomain.id,
-          set: {
-            userId: body.userId,
-            status: body.status || "active",
-            expiryDate: expiryDate ? new Date(expiryDate) : null,
-            updatedAt: new Date(),
-          }
-        });
+        const body = await parseBody(
+          request,
+          z.object({
+            instanceId: z.string().min(1),
+            action: z.enum(["start", "stop", "reboot"]),
+          }),
+        );
+        if (body.action === "start") await startInstance(body.instanceId);
+        if (body.action === "stop") await stopInstance(body.instanceId);
+        if (body.action === "reboot") await rebootInstance(body.instanceId);
         await recordAudit({
           actorUserId: session.user.id,
-          action: "domain.assigned",
-          entityType: "registered_domain",
-          entityId: body.domainName,
-          message: `Domain assigned: ${body.domainName}`,
-          metadata: { userId: body.userId },
-        });
-        return new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json" } });
-      } catch (error) {
-        console.error(error);
-        return new Response(JSON.stringify({ error: "Failed to assign domain" }), { status: 500 });
-      }
-    }
-
-    if (url.pathname.startsWith("/api/admin/assign-vultr") && request.method === "POST") {
-      const session = await auth.api.getSession({ headers: request.headers });
-      if (!isAdmin(session)) return new Response("Unauthorized", { status: 401 });
-
-      try {
-        const body = await request.json();
-        await db.insert(vultrInstance).values({
-          id: body.id,
-          userId: body.userId,
-          os: body.os,
-          ram: body.ram,
-          disk: body.disk,
-          mainIp: body.main_ip,
-          region: body.region,
-          status: body.status,
-          powerStatus: body.power_status,
-          label: body.label,
-        }).onConflictDoUpdate({
-          target: vultrInstance.id,
-          set: {
-            userId: body.userId,
-            os: body.os,
-            ram: body.ram,
-            disk: body.disk,
-            mainIp: body.main_ip,
-            region: body.region,
-            status: body.status,
-            powerStatus: body.power_status,
-            label: body.label,
-            updatedAt: new Date(),
-          }
-        });
-        await recordAudit({
-          actorUserId: session.user.id,
-          action: "server.assigned",
+          action: `copilot.vultr.${body.action}`,
           entityType: "vultr_instance",
-          entityId: body.id,
-          message: `Server assigned: ${body.label || body.id}`,
-          metadata: { userId: body.userId },
+          entityId: body.instanceId,
+          message: `Admin API requested Vultr ${body.action}`,
+          metadata: { source: "cloudmonkey_api" },
         });
-        return new Response(JSON.stringify({ success: true }), { headers: { "Content-Type": "application/json" } });
-      } catch (error) {
-        console.error(error);
-        return new Response(JSON.stringify({ error: "Failed to assign server" }), { status: 500 });
+        return json({ success: true, instanceId: body.instanceId, action: body.action });
+      } catch (error: any) {
+        return json({ error: error.message ?? "Vultr action failed" }, error.status ?? 502);
       }
+    }
+
+    if (url.pathname.startsWith("/api/admin/")) {
+      return adminHandlers.handleAdminRoot(request);
+    }
+
+    if (url.pathname === "/api/internal/admin/sql" && request.method === "POST") {
+      const { session, response } = await requireAdmin(request);
+      if (response) return response;
+      return internalToolsHandlers.handleSqlConsole(request, session);
+    }
+
+    if (url.pathname === "/api/internal/admin/send-reminder" && request.method === "POST") {
+      const { session, response } = await requireAdmin(request);
+      if (response) return response;
+      return internalToolsHandlers.handleSendReminder(request, session);
     }
 
     try {
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
-      return await normalizeCatastrophicSsrResponse(response);
+      return addSeoResponseHeaders(request, await normalizeCatastrophicSsrResponse(response));
     } catch (error) {
       console.error(error);
       return new Response(renderErrorPage(), {
         status: 500,
-        headers: { "content-type": "text/html; charset=utf-8" },
+        headers: {
+          "content-type": "text/html; charset=utf-8",
+          "X-Robots-Tag": "noindex, nofollow",
+        },
       });
     }
   },

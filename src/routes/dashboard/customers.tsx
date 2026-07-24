@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useAdminAccess } from "@/hooks/use-admin-access";
+import { formatDateUTC } from "@/lib/date-format";
 
 export const Route = createFileRoute("/dashboard/customers")({
   head: () => ({
@@ -413,6 +414,5 @@ function money(cents: number) {
 }
 
 function formatDate(value?: string | null) {
-  if (!value) return "not set";
-  return new Intl.DateTimeFormat("en-ZA", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(value));
+  return formatDateUTC(value);
 }

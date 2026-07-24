@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/dashboard/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAdminAccess } from "@/hooks/use-admin-access";
+import { formatDateTimeUTC } from "@/lib/date-format";
 
 export const Route = createFileRoute("/dashboard/activity-logs")({
   head: () => ({
@@ -62,7 +63,7 @@ function ActivityLogsPage() {
                 <div>
                   <div className="font-semibold text-foreground">{item.message}</div>
                   <div className="mt-1 text-sm text-muted-foreground">
-                    {item.action} · {new Date(item.createdAt).toLocaleString()}
+                    {item.action} · {formatDateTimeUTC(item.createdAt)}
                   </div>
                 </div>
               </div>

@@ -38,12 +38,21 @@ type PricingPlan = {
   id: string;
   name: string;
   priceZar?: string | null;
+  unit?: string | null;
+  billingType?: string | null;
+  billingFrequency?: string | null;
   service?: { id: string; name: string };
 };
 
 type PricingResponse = {
   categories?: Array<{ services?: Array<{ id: string; name: string; plans?: PricingPlan[] }> }>;
 };
+
+function frequencyLabel(item?: { billingFrequency?: string | null; billingType?: string | null; unit?: string | null } | null) {
+  if (item?.billingFrequency === "once_off" || item?.billingType === "once_off") return "once off";
+  if (item?.billingFrequency === "year" || String(item?.unit ?? "").toLowerCase().includes("year")) return "/ year";
+  return item?.unit || "/ month";
+}
 
 type Intake = {
   businessName: string;
@@ -397,9 +406,9 @@ function CheckoutPanel({
   isPending: boolean;
   isLoading: boolean;
 }) {
-  const selectedName = plan?.service?.name ? `${plan.service.name} - ${plan.name}` : plan?.name ?? selectedPlanId ?? "SEO and marketing package";
-  const rawPrice = plan?.priceZar ?? null;
-  const price = rawPrice ? `R ${(parseInt(rawPrice, 10) / 100).toFixed(2)} / month` : "Price loading";
+	  const selectedName = plan?.service?.name ? `${plan.service.name} - ${plan.name}` : plan?.name ?? selectedPlanId ?? "SEO and marketing package";
+	  const rawPrice = plan?.priceZar ?? null;
+	  const price = rawPrice ? `R ${(parseInt(rawPrice, 10) / 100).toFixed(2)} ${frequencyLabel(plan)}` : "Price loading";
 
   return (
     <Card className="rounded-lg border-[#dfe4ef] bg-white shadow-sm">

@@ -5,15 +5,18 @@ import { SectionHeading } from "@/components/site/SectionHeading";
 import { CtaBanner } from "@/components/site/CtaBanner";
 import { useCurrency } from "@/lib/currency";
 import { formatPrice, getCategory } from "@/lib/pricing";
+import { canonicalLink, ogUrl } from "@/lib/seo";
 
 export const Route = createFileRoute("/ai-agents")({
   head: () => ({
     meta: [
-      { title: "AI Agents — Purpose-built AI for every part of your business" },
-      { name: "description", content: "Marketing, Sales, Support, HR, Finance and Operations AI agents — specialised, secure, and ready to work alongside your team." },
+      { title: "Managed AI Agents for Business South Africa | CloudMonkey" },
+      { name: "description", content: "Managed AI agents for marketing, sales, support, HR, finance and operations, connected to approved business knowledge and workflows." },
       { property: "og:title", content: "CloudMonkey AI Agents" },
       { property: "og:description", content: "AI agents for every part of your business." },
+      ogUrl("/ai-agents"),
     ],
+    links: [canonicalLink("/ai-agents")],
   }),
   component: AgentsPage,
 });
@@ -86,7 +89,7 @@ const AGENT_DETAILS: Record<string, { outcome: string; examples: string[]; conne
 };
 
 function AgentsPage() {
-  const cat = getCategory("ai");
+  const cat = getCategory("addons");
   const agents = cat.services.find((s) => s.id === "ai-agents")!.plans;
   const { currency } = useCurrency();
   return (
@@ -211,7 +214,7 @@ function AgentsPage() {
                   <span className="text-xl font-bold text-foreground" style={{ fontFamily: "var(--font-display)" }}>{formatPrice(a.priceZar, currency)}</span>
                   <span className="ml-1 text-xs text-muted-foreground">{a.unit}</span>
                 </div>
-                <Link to="/auth/sign-up" search={{ plan: a.id }} className="text-sm font-semibold" style={{ color: "var(--ai)" }}>Learn more →</Link>
+                <Link to="/auth/sign-up" search={{ bundle: undefined, plan: a.id, coupon: undefined, ref: undefined }} className="text-sm font-semibold" style={{ color: "var(--ai)" }}>Learn more →</Link>
               </div>
             </div>
           ))}

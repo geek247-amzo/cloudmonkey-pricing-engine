@@ -8,7 +8,7 @@ export type DomainCheckResult = {
   planName?: string;
 };
 
-const DEFAULT_TLDS = ["co.za", "com", "io"] as const;
+const DEFAULT_TLDS = ["co.za", "com"] as const;
 
 export function normalizeDomainQuery(input: string) {
   const value = input.trim().toLowerCase().replace(/\s+/g, "");
@@ -32,7 +32,7 @@ export function getDomainTldsFromPlans(plans: { name: string }[] | undefined | n
   return mergeTlds(DEFAULT_TLDS, fromPlans);
 }
 
-export function buildDomainCandidates(input: string, tlds: string[]) {
+export function buildDomainCandidates(input: string, tlds: readonly string[]) {
   const normalized = normalizeDomainQuery(input);
   if (!normalized) {
     return [];
@@ -60,7 +60,7 @@ function extractTldFromName(name: string) {
   return match?.[1] ?? null;
 }
 
-function mergeTlds(primary: readonly string[], secondary: string[]) {
+function mergeTlds(primary: readonly string[], secondary: readonly string[]) {
   return dedupeStrings([...primary, ...secondary]);
 }
 

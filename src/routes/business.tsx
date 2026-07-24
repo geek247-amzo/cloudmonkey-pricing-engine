@@ -5,16 +5,19 @@ import mascot from "@/assets/cm-mascot.png";
 import { SectionHeading } from "@/components/site/SectionHeading";
 import { CtaBanner } from "@/components/site/CtaBanner";
 import { ServiceSection } from "@/components/site/ServiceSection";
-import { fetchPublicPricingCatalog } from "@/lib/pricing";
+import { CATEGORIES, fetchPublicPricingCatalog } from "@/lib/pricing";
+import { canonicalLink, ogUrl } from "@/lib/seo";
 
 export const Route = createFileRoute("/business")({
   head: () => ({
     meta: [
-      { title: "CloudMonkey Business — Your complete managed IT department" },
-      { name: "description", content: "Microsoft 365, Google Workspace, Hosted PBX, Managed IT and security — your entire IT department, managed by CloudMonkey." },
+      { title: "CloudMonkey Business — Voice, productivity, security, and managed support" },
+      { name: "description", content: "CloudMonkey Voice, Microsoft 365, Google Workspace, Managed IT and security — business technology managed by CloudMonkey." },
       { property: "og:title", content: "CloudMonkey Business" },
       { property: "og:description", content: "Your business. Fully optimized." },
+      ogUrl("/business"),
     ],
+    links: [canonicalLink("/business")],
   }),
   component: BusinessPage,
 });
@@ -22,7 +25,7 @@ export const Route = createFileRoute("/business")({
 const FEATURES = [
   { icon: Briefcase, title: "Microsoft 365 Management", desc: "Expert management and optimization of your Microsoft 365 environment." },
   { icon: Headphones, title: "IT Support & Helpdesk", desc: "Fast, friendly support that keeps your team productive." },
-  { icon: MessageCircle, title: "Business Communications", desc: "Reliable voice, video, and messaging that connects your team." },
+  { icon: MessageCircle, title: "Managed Voice", desc: "VoIP, hosted PBX, SIP trunks, routing, recording, apps, reporting, and call workflows." },
   { icon: Shield, title: "Security & Compliance", desc: "Protect your business with proactive security and compliance services." },
   { icon: Workflow, title: "Workflows & Automation", desc: "Automate repetitive work to save time and money." },
   { icon: BarChart3, title: "IT Strategy & Consulting", desc: "Strategic guidance and roadmaps aligned to your business goals." },
@@ -65,13 +68,13 @@ function TasksCard() {
   );
 }
 
-function SavingsCard() {
+function OperationsCard() {
   return (
     <div className="flex items-center justify-between gap-4 rounded-lg border border-[#e8edf1] bg-white/95 p-5 shadow-[0_18px_45px_rgba(9,39,19,0.12)] backdrop-blur">
       <div>
-        <div className="text-sm font-semibold text-[#17213a]">Cost Savings</div>
-        <div className="mt-4 text-3xl font-extrabold text-[var(--business)]">$120K</div>
-        <div className="mt-1 text-sm text-[#596273]">Annual savings</div>
+        <div className="text-sm font-semibold text-[#17213a]">Operational Focus</div>
+        <div className="mt-4 text-3xl font-extrabold text-[var(--business)]">Less admin</div>
+        <div className="mt-1 text-sm text-[#596273]">Fewer vendors to chase</div>
       </div>
       <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-[#d9f3df] text-[var(--business)]">
         <DollarSign className="h-8 w-8" />
@@ -85,7 +88,13 @@ function BusinessPage() {
     queryKey: ["public", "pricing"],
     queryFn: fetchPublicPricingCatalog,
   });
-  const cat = data?.categories.find((category) => category.id === "business");
+  const pricingCategories = data?.categories ?? CATEGORIES;
+  const businessCategoryIds = new Set(["voice", "addons", "quote-services"]);
+  const businessServices =
+    pricingCategories
+      .filter((category) => businessCategoryIds.has(category.id))
+      .flatMap((category) => category.services)
+      .filter((service) => ["pbx", "sip-trunks", "voice-intel", "voice-quote", "productivity", "security", "managed-it"].includes(service.id)) ?? [];
   return (
     <>
       <section className="relative isolate overflow-hidden bg-white">
@@ -106,17 +115,19 @@ function BusinessPage() {
               <span className="text-[var(--business)]">Fully optimized.</span>
             </h1>
             <p className="mt-8 max-w-lg text-lg leading-8 text-[#17213a]">
-              We manage the technology behind your business so you can focus on what you do best. From IT management to process automation, we drive efficiency, productivity, and growth.
+              Managed IT, Microsoft 365, Google Workspace, security, workflows, support, and voice services managed by one CloudMonkey team.
             </p>
             <div className="mt-10 flex flex-wrap gap-4">
               <Link
                 to="/auth/sign-up"
+                search={{ bundle: undefined, plan: undefined, coupon: undefined, ref: undefined }}
                 className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-[var(--business)] px-7 text-sm font-bold text-white shadow-[0_16px_30px_-18px_rgba(0,126,54,0.75)] transition-transform hover:-translate-y-0.5"
               >
-                Explore Business Solutions <ArrowRight className="h-4 w-4" />
+              Explore Business IT <ArrowRight className="h-4 w-4" />
               </Link>
               <Link
                 to="/auth/sign-up"
+                search={{ bundle: undefined, plan: undefined, coupon: undefined, ref: undefined }}
                 className="inline-flex min-h-12 items-center justify-center rounded-lg border border-[var(--business)] px-7 text-sm font-bold text-[var(--business)] transition-colors hover:bg-[var(--business-soft)]"
               >
                 Talk to an Expert
@@ -138,13 +149,13 @@ function BusinessPage() {
               <TasksCard />
             </div>
             <div className="absolute right-0 top-[28rem] z-20 hidden w-[min(50%,18rem)] sm:block">
-              <SavingsCard />
+              <OperationsCard />
             </div>
           </div>
           <div className="grid gap-3 sm:hidden">
             <ProductivityCard />
             <TasksCard />
-            <SavingsCard />
+            <OperationsCard />
           </div>
         </div>
       </section>
@@ -169,26 +180,30 @@ function BusinessPage() {
           <SectionHeading
             eyebrow="Business Services"
             accent="var(--business)"
-            title="Pick the services your team needs"
-            subtitle="Per-user, per-device, or all-in tiers — combine what you need into a single monthly invoice."
+            title="Pick the voice and business services your team needs"
+            subtitle="Hosted PBX, SIP trunks, managed productivity, security, and support can be combined into a single monthly invoice."
           />
         </div>
-        {isLoading ? (
-          <div className="mx-auto mt-12 max-w-7xl px-6 py-12 text-center text-muted-foreground">
-            <RefreshCcw className="mx-auto mb-3 h-6 w-6 animate-spin" />
-            Loading business catalog...
+        {isLoading && (
+          <div className="mx-auto mt-8 max-w-7xl px-6">
+            <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 text-center text-sm text-blue-800">
+              <RefreshCcw className="mr-2 inline h-4 w-4 animate-spin" />
+              Refreshing live business pricing. Crawlable fallback plans are shown below.
+            </div>
           </div>
-        ) : isError ? (
+        )}
+        {isError && (
           <div className="mx-auto mt-12 max-w-7xl px-6 py-12">
             <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-800">
-              <div className="font-semibold">Failed to load business pricing.</div>
+              <div className="font-semibold">Live business pricing did not load. Static catalog pricing is shown below.</div>
               <button type="button" onClick={() => refetch()} className="mt-2 font-semibold underline">
                 Try again
               </button>
             </div>
           </div>
-        ) : cat ? (
-          cat.services.map((s) => (
+        )}
+        {businessServices.length ? (
+          businessServices.map((s) => (
             <ServiceSection key={s.id} service={s} accent="business" ctaHref={(plan) => `/auth/sign-up?plan=${encodeURIComponent(plan.id)}`} />
           ))
         ) : (

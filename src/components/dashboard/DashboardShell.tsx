@@ -20,16 +20,18 @@ import {
   Server,
   Settings,
   ShieldCheck,
+  ShieldPlus,
   UserRound,
   WandSparkles,
+  Wallet,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useRouter } from "@tanstack/react-router";
 
 import logo from "@/assets/cm-logo.png";
 import mascot from "@/assets/cm-mascot.png";
-import { FloatingSupportChat } from "@/components/dashboard/FloatingSupportChat";
 import { authClient } from "@/lib/auth-client";
+import { signInPath } from "@/lib/auth-redirect";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -58,6 +60,7 @@ const businessNav = [
   { to: "/dashboard/intelligence", label: "Intelligence", icon: FolderKanban },
   { to: "/dashboard/intelligence-wizard", label: "SEO Wizard", icon: Search },
   { to: "/dashboard/billing", label: "Billing", icon: ReceiptText },
+  { to: "/dashboard/wallet", label: "Wallet", icon: Wallet },
   { to: "/dashboard/affiliates", label: "Affiliate Program", icon: HandCoins },
   { to: "/dashboard/reports", label: "Analytics", icon: BarChart3 },
   { to: "/dashboard/billing", label: "Invoices", icon: FileText },
@@ -67,10 +70,15 @@ const bottomNav = [{ to: "/dashboard/support", label: "Support", icon: LifeBuoy 
 
 const adminNav = [
   { to: "/dashboard/customers", label: "Customer Services", icon: UserRound },
+  { to: "/dashboard/server-status", label: "Server Status", icon: Server },
+  { to: "/dashboard/cloud-security", label: "Cloud Security", icon: ShieldPlus },
   { to: "/dashboard/website-projects", label: "Website Projects", icon: HardDrive },
   { to: "/dashboard/administration", label: "Platform Matrix", icon: ShieldCheck },
+  { to: "/dashboard/administration", search: { tab: "agent" }, label: "Admin Agent", icon: Bot },
+  { to: "/dashboard/wallet", label: "Wallet", icon: Wallet },
   { to: "/dashboard/affiliate-admin", label: "Affiliates", icon: HandCoins },
   { to: "/dashboard/crm", label: "CRM", icon: Headphones },
+  { to: "/dashboard/proposals", label: "Proposal Manager", icon: FileText },
   { to: "/dashboard/users", label: "Users", icon: UserRound },
   { to: "/dashboard/roles", label: "Roles", icon: ShieldCheck },
   { to: "/dashboard/activity-logs", label: "Activity Logs", icon: Cloud },
@@ -84,13 +92,26 @@ const mobileNav = [
   mainNav[2],
   cloudNav[0],
   cloudNav[1],
+  businessNav[2],
+  businessNav[3],
+  bottomNav[0],
+] as const;
+
+const adminMobileNav = [
+  mainNav[0],
+  adminNav[0],
+  adminNav[1],
+  adminNav[2],
+  adminNav[6],
   bottomNav[0],
 ] as const;
 
 export function DashboardShell({ children }: { children: ReactNode }) {
-  const { data: session } = authClient.useSession();
+  const router = useRouter();
+  const { data: session, isPending: isSessionPending } = authClient.useSession();
   const [isMounted, setIsMounted] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [requiresTwoFactorSetup, setRequiresTwoFactorSetup] = useState(false);
   const hydratedSession = isMounted ? session : null;
   const userName = hydratedSession?.user?.name || "User";
   const userEmail = hydratedSession?.user?.email || "";
@@ -101,9 +122,52 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   const isAdmin =
     hydratedSession?.user?.role === "admin" || hydratedSession?.user?.role === "owner";
 
+  async function handleSignOut() {
+    await authClient.signOut({
+      fetchOptions: {
+        onSuccess: () => {
+          window.location.assign("/auth/sign-in");
+        },
+      },
+    });
+  }
+
   useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (!isMounted || isSessionPending || session) return;
+    const callbackURL = `${window.location.pathname}${window.location.search}`;
+    window.location.replace(signInPath(callbackURL));
+  }, [isMounted, isSessionPending, session]);
+
+  useEffect(() => {
+    if (!isMounted || !session) return;
+    let cancelled = false;
+    fetch("/api/user/security-status")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((status) => {
+        if (cancelled) return;
+        const shouldSetup = Boolean(status?.requiresTwoFactorSetup);
+        setRequiresTwoFactorSetup(shouldSetup);
+        if (shouldSetup) router.navigate({ to: "/auth/two-factor/setup" });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [isMounted, router, session]);
+
+  if (!isMounted || isSessionPending || !session || requiresTwoFactorSetup) {
+    return (
+      <section className="flex min-h-screen items-center justify-center bg-[#f6f8fc] px-4 text-[#07102c]">
+        <div className="rounded-lg border border-[#dfe4ef] bg-white p-6 text-sm text-muted-foreground shadow-sm">
+          {requiresTwoFactorSetup ? "Preparing account security..." : "Checking secure session..."}
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="dashboard-zoom-shell min-h-screen overflow-x-clip bg-[#f6f8fc] text-[#07102c]">
@@ -136,23 +200,30 @@ export function DashboardShell({ children }: { children: ReactNode }) {
 
           <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
             <nav className="space-y-1">
-              {mainNav.map((item) => (
-                <SidebarLink key={`${item.label}-${item.to}`} item={item} />
-              ))}
-              <SidebarGroup label="Cloud" icon={Cloud} items={cloudNav} />
+              <SidebarLink item={mainNav[0]} />
+              {!isAdmin && (
+                <>
+                  {mainNav.slice(1).map((item) => (
+                    <SidebarLink key={`${item.label}-${item.to}`} item={item} />
+                  ))}
+                  <SidebarGroup label="Cloud" icon={Cloud} items={cloudNav} />
+                </>
+              )}
             </nav>
 
-            <div className="mt-6 border-t border-white/10 pt-5">
-              <div className="mb-2 flex items-center justify-between px-3 text-sm font-semibold text-white">
-                <span>Business</span>
-                <ChevronDown className="h-4 w-4 text-white/70" />
+            {!isAdmin && (
+              <div className="mt-6 border-t border-white/10 pt-5">
+                <div className="mb-2 flex items-center justify-between px-3 text-sm font-semibold text-white">
+                  <span>Business</span>
+                  <ChevronDown className="h-4 w-4 text-white/70" />
+                </div>
+                <nav className="space-y-1">
+                  {businessNav.map((item) => (
+                    <SidebarLink key={`${item.label}-${item.to}`} item={item} muted />
+                  ))}
+                </nav>
               </div>
-              <nav className="space-y-1">
-                {businessNav.map((item) => (
-                  <SidebarLink key={`${item.label}-${item.to}`} item={item} muted />
-                ))}
-              </nav>
-            </div>
+            )}
 
             {isAdmin && (
               <div className="mt-6 border-t border-white/10 pt-5">
@@ -175,9 +246,10 @@ export function DashboardShell({ children }: { children: ReactNode }) {
           </div>
 
           <div className="p-5">
-            <Link
-              to="/"
-              className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.045] p-3 text-white transition-colors hover:bg-white/8"
+            <button
+              type="button"
+              onClick={handleSignOut}
+              className="flex w-full items-center gap-3 rounded-lg border border-white/10 bg-white/[0.045] p-3 text-left text-white transition-colors hover:bg-white/8"
             >
               <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-white">
                 {hydratedSession?.user?.image ? (
@@ -192,10 +264,10 @@ export function DashboardShell({ children }: { children: ReactNode }) {
               </div>
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-bold">{userName}</div>
-                <div className="truncate text-xs text-white/58">{userEmail}</div>
+                <div className="truncate text-xs text-white/58">Sign out</div>
               </div>
               <ChevronRight className="h-4 w-4 text-white/60" />
-            </Link>
+            </button>
           </div>
         </aside>
 
@@ -246,30 +318,33 @@ export function DashboardShell({ children }: { children: ReactNode }) {
                           </div>
                         </div>
 
-                        <MobileNavSection
-                          title="Main"
-                          items={mainNav}
-                          onNavigate={() => setMobileMenuOpen(false)}
-                        />
-                        <MobileNavSection
-                          title="Cloud"
-                          items={cloudNav}
-                          onNavigate={() => setMobileMenuOpen(false)}
-                          nested
-                        />
-                        <MobileNavSection
-                          title="Business"
-                          items={businessNav}
-                          onNavigate={() => setMobileMenuOpen(false)}
-                          muted
-                        />
-                        {isAdmin && (
+                        {isAdmin ? (
                           <MobileNavSection
                             title="Administration"
-                            items={adminNav}
+                            items={[mainNav[0], ...adminNav]}
                             onNavigate={() => setMobileMenuOpen(false)}
                             muted
                           />
+                        ) : (
+                          <>
+                            <MobileNavSection
+                              title="Main"
+                              items={mainNav}
+                              onNavigate={() => setMobileMenuOpen(false)}
+                            />
+                            <MobileNavSection
+                              title="Cloud"
+                              items={cloudNav}
+                              onNavigate={() => setMobileMenuOpen(false)}
+                              nested
+                            />
+                            <MobileNavSection
+                              title="Business"
+                              items={businessNav}
+                              onNavigate={() => setMobileMenuOpen(false)}
+                              muted
+                            />
+                          </>
                         )}
                         <MobileNavSection
                           title="Support"
@@ -281,9 +356,10 @@ export function DashboardShell({ children }: { children: ReactNode }) {
 
                       <div className="border-t border-white/10 p-4">
                         <SheetClose asChild>
-                          <Link
-                            to="/"
-                            className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.045] p-3 text-white transition-colors hover:bg-white/8"
+                          <button
+                            type="button"
+                            onClick={handleSignOut}
+                            className="flex w-full items-center gap-3 rounded-lg border border-white/10 bg-white/[0.045] p-3 text-left text-white transition-colors hover:bg-white/8"
                           >
                             <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full bg-white">
                               {hydratedSession?.user?.image ? (
@@ -298,10 +374,10 @@ export function DashboardShell({ children }: { children: ReactNode }) {
                             </div>
                             <div className="min-w-0 flex-1">
                               <div className="truncate text-sm font-bold">{userName}</div>
-                              <div className="truncate text-xs text-white/58">{userEmail}</div>
+                              <div className="truncate text-xs text-white/58">Sign out</div>
                             </div>
                             <ChevronRight className="h-4 w-4 text-white/60" />
-                          </Link>
+                          </button>
                         </SheetClose>
                       </div>
                     </div>
@@ -315,7 +391,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
               </div>
             </div>
             <div className="mt-3 grid grid-cols-3 gap-2">
-              {mobileNav.map((item) => (
+              {(isAdmin ? adminMobileNav : mobileNav).map((item) => (
                 <Link
                   key={`${item.label}-${item.to}`}
                   to={item.to}
@@ -335,7 +411,6 @@ export function DashboardShell({ children }: { children: ReactNode }) {
           <main className="flex-1 min-w-0 overflow-x-clip px-4 py-5 sm:px-6 lg:px-9 lg:py-9 xl:px-10">
             <div className="mx-auto w-full min-w-0 max-w-[1536px]">{children}</div>
           </main>
-          {hydratedSession && <FloatingSupportChat />}
         </div>
       </div>
     </section>
@@ -365,6 +440,7 @@ function MobileNavSection({
           <SheetClose key={`${item.label}-${item.to}`} asChild>
             <Link
               to={item.to}
+              search={item.search}
               onClick={onNavigate}
               className={`flex h-11 items-center gap-3 rounded-lg text-[15px] font-medium text-white/78 transition-colors hover:bg-white/[0.07] hover:text-white ${
                 nested ? "px-6" : "px-3"
@@ -374,7 +450,9 @@ function MobileNavSection({
                   "flex h-11 items-center gap-3 rounded-lg bg-[#5d2fe8] px-3 text-[15px] font-semibold text-white shadow-[0_10px_28px_-16px_rgba(93,47,232,0.85)]",
               }}
             >
-              <item.icon className={`${nested ? "h-4 w-4" : "h-5 w-5"} ${muted ? "text-white/72" : ""}`} />
+              <item.icon
+                className={`${nested ? "h-4 w-4" : "h-5 w-5"} ${muted ? "text-white/72" : ""}`}
+              />
               <span className="min-w-0 flex-1 truncate">{item.label}</span>
             </Link>
           </SheetClose>
@@ -386,6 +464,7 @@ function MobileNavSection({
 
 type SidebarItem = {
   to: string;
+  search?: Record<string, unknown>;
   label: string;
   icon: typeof Home;
 };
@@ -427,6 +506,7 @@ function SidebarLink({
   return (
     <Link
       to={item.to}
+      search={item.search}
       className={`flex h-11 items-center gap-3 rounded-lg px-3 text-[15px] font-medium text-white/78 transition-colors hover:bg-white/[0.07] hover:text-white ${
         nested ? "text-sm" : ""
       }`}

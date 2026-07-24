@@ -16,6 +16,7 @@ import { CurrencyProvider } from "../lib/currency";
 import { Header } from "../components/site/Header";
 import { Footer } from "../components/site/Footer";
 import { DashboardShell } from "../components/dashboard/DashboardShell";
+import { GlobalChat } from "../components/GlobalChat";
 import logo from "../assets/cm-logo.png";
 
 function NotFoundComponent() {
@@ -110,10 +111,40 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 });
 
 function RootShell({ children }: { children: ReactNode }) {
+  const structuredData = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://cloudmonkey.co.za/#organization",
+        name: "CloudMonkey",
+        url: "https://cloudmonkey.co.za",
+        description:
+          "A South African managed cloud, website, business technology, voice, and AI services company.",
+        areaServed: [
+          { "@type": "Country", name: "South Africa" },
+          { "@type": "Country", name: "Kenya" },
+        ],
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://cloudmonkey.co.za/#website",
+        url: "https://cloudmonkey.co.za",
+        name: "CloudMonkey",
+        publisher: { "@id": "https://cloudmonkey.co.za/#organization" },
+        inLanguage: "en-ZA",
+      },
+    ],
+  };
+
   return (
     <html lang="en">
       <head>
         <HeadContent />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+        />
       </head>
       <body>
         {children}
@@ -147,6 +178,7 @@ function RootComponent() {
             {!isAppRoute && <Footer />}
           </div>
         )}
+        <GlobalChat />
       </CurrencyProvider>
     </QueryClientProvider>
   );

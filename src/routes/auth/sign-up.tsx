@@ -9,6 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { authClient } from "@/lib/auth-client";
+import { captchaFetchOptions, getRecaptchaToken } from "@/lib/recaptcha";
+import { canonicalLink } from "@/lib/seo";
+import { safeDashboardCallback } from "@/lib/auth-redirect";
+import { claimCaesarSession } from "@/lib/caesar-client";
 
 export const Route = createFileRoute("/auth/sign-up")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -16,9 +20,11 @@ export const Route = createFileRoute("/auth/sign-up")({
     plan: typeof search.plan === "string" ? search.plan : undefined,
     coupon: typeof search.coupon === "string" ? search.coupon : undefined,
     ref: typeof search.ref === "string" ? search.ref : undefined,
+    callbackURL: typeof search.callbackURL === "string" ? search.callbackURL : undefined,
   }),
   head: () => ({
     meta: [{ title: "Create account - CloudMonkey" }],
+    links: [canonicalLink("/auth/sign-up")],
   }),
   component: SignUpPage,
 });
@@ -39,7 +45,8 @@ function onboardingPathForPlan(planId?: string | null) {
 
 function SignUpPage() {
   const router = useRouter();
-  const { bundle, plan, coupon, ref } = Route.useSearch();
+  const { bundle, plan, coupon, ref, callbackURL } = Route.useSearch();
+  const returnTo = safeDashboardCallback(callbackURL);
   const { data: session, isPending: isSessionPending } = authClient.useSession();
   const [isMounted, setIsMounted] = useState(false);
   const [name, setName] = useState("");
@@ -95,8 +102,8 @@ function SignUpPage() {
       return;
     }
 
-    router.navigate({ to: "/dashboard" });
-  }, [bundle, isMounted, plan, isSessionPending, router, session]);
+    window.location.assign(returnTo);
+  }, [bundle, isMounted, plan, isSessionPending, returnTo, router, session]);
 
   const selectedProductLabel = plan ? "Selected service will go straight to checkout after registration." : bundle ? "Selected package will go straight to checkout after registration." : null;
 
@@ -109,16 +116,21 @@ function SignUpPage() {
 
     try {
       setIsLoading(true);
-      const { error } = await authClient.signUp.email({
-        email,
-        password,
-        name,
-      });
+      const recaptchaToken = await getRecaptchaToken();
+      const { error } = await authClient.signUp.email(
+        {
+          email,
+          password,
+          name,
+        },
+        captchaFetchOptions(recaptchaToken),
+      );
 
       if (error) {
         toast.error(error.message || "Failed to create account");
       } else {
         toast.success("Account created successfully");
+        await claimCaesarSession().catch(() => null);
         const referralCode = ref ?? localStorage.getItem("cloudmonkey:affiliate-ref");
         const referralCreatedAt = Number(localStorage.getItem("cloudmonkey:affiliate-ref-created-at") ?? 0);
         const referralIsFresh = referralCode && Date.now() - referralCreatedAt <= 60 * 24 * 60 * 60 * 1000;
@@ -179,7 +191,7 @@ function SignUpPage() {
           }
         }
 
-        router.navigate({ to: "/dashboard" });
+        window.location.assign(returnTo);
       }
     } catch (error) {
       toast.error("An unexpected error occurred");
@@ -209,11 +221,14 @@ function SignUpPage() {
       subtitle="Create a new account with email, Google, or Office 365 and set up your team-ready access structure."
       footer={
         <>
-          Already have access? <Link to="/auth/sign-in" className="font-medium text-foreground hover:underline">Sign in</Link>
+          Already have access? <Link to="/auth/sign-in" search={{ callbackURL: returnTo }} className="font-medium text-foreground hover:underline">Sign in</Link>
         </>
       }
     >
-      <ProviderButtons label="Create with" callbackURL="/auth/sso-callback" />
+      <ProviderButtons
+        label="Create with"
+        callbackURL={`/auth/sso-callback?callbackURL=${encodeURIComponent(returnTo)}`}
+      />
       <SectionDivider text="Or create with email" />
 
       <form className="grid gap-4" onSubmit={handleSignUp}>
@@ -284,7 +299,15 @@ function SignUpPage() {
         <label className="flex items-start gap-3 rounded-2xl border border-border/70 bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
           <input type="checkbox" className="mt-1 h-4 w-4 rounded border-border text-[var(--ai)] focus:ring-[var(--ai)]" required />
           <span>
-            I agree to the CloudMonkey terms and understand that Google and Microsoft connections can be linked later from account settings.
+            I agree to the{" "}
+            <Link to="/legal/terms" className="font-semibold text-foreground underline">
+              CloudMonkey Terms
+            </Link>{" "}
+            and{" "}
+            <Link to="/legal/privacy" className="font-semibold text-foreground underline">
+              Privacy Notice
+            </Link>
+            . I understand that Google and Microsoft connections can be linked later from account settings.
           </span>
         </label>
 

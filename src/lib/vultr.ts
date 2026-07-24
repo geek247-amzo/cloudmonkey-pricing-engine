@@ -1,3 +1,5 @@
+import { fetchIpv4 } from "./runtime-http";
+
 const VULTR_API_KEY = process.env.VULTR_API_KEY!;
 
 export interface VultrInstance {
@@ -25,7 +27,7 @@ export interface VultrPlan {
 }
 
 export async function listInstances(): Promise<VultrInstance[]> {
-  const response = await fetch("https://api.vultr.com/v2/instances", {
+  const response = await fetchIpv4("https://api.vultr.com/v2/instances", {
     method: "GET",
     headers: {
       Authorization: `Bearer ${VULTR_API_KEY}`,
@@ -43,7 +45,7 @@ export async function listInstances(): Promise<VultrInstance[]> {
 }
 
 export async function listPlans(): Promise<VultrPlan[]> {
-  const response = await fetch("https://api.vultr.com/v2/plans", {
+  const response = await fetchIpv4("https://api.vultr.com/v2/plans", {
     method: "GET",
     headers: {
       Authorization: `Bearer ${VULTR_API_KEY}`,
@@ -67,7 +69,7 @@ export async function createInstance(options: {
   label?: string;
   backups?: string;
 }) {
-  const response = await fetch("https://api.vultr.com/v2/instances", {
+  const response = await fetchIpv4("https://api.vultr.com/v2/instances", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${VULTR_API_KEY}`,
@@ -86,7 +88,7 @@ export async function createInstance(options: {
 }
 
 export async function getInstance(instanceId: string): Promise<VultrInstance> {
-  const response = await fetch(`https://api.vultr.com/v2/instances/${instanceId}`, {
+  const response = await fetchIpv4(`https://api.vultr.com/v2/instances/${instanceId}`, {
     method: "GET",
     headers: {
       Authorization: `Bearer ${VULTR_API_KEY}`,
@@ -102,31 +104,43 @@ export async function getInstance(instanceId: string): Promise<VultrInstance> {
 }
 
 export async function rebootInstance(instanceId: string) {
-  const response = await fetch(`https://api.vultr.com/v2/instances/${instanceId}/reboot`, {
+  const response = await fetchIpv4("https://api.vultr.com/v2/instances/reboot", {
     method: "POST",
-    headers: { Authorization: `Bearer ${VULTR_API_KEY}` },
+    headers: {
+      Authorization: `Bearer ${VULTR_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ instance_ids: [instanceId] }),
   });
   if (!response.ok) throw new Error(`Reboot failed: ${response.status}`);
 }
 
 export async function startInstance(instanceId: string) {
-  const response = await fetch(`https://api.vultr.com/v2/instances/${instanceId}/start`, {
+  const response = await fetchIpv4("https://api.vultr.com/v2/instances/start", {
     method: "POST",
-    headers: { Authorization: `Bearer ${VULTR_API_KEY}` },
+    headers: {
+      Authorization: `Bearer ${VULTR_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ instance_ids: [instanceId] }),
   });
   if (!response.ok) throw new Error(`Start failed: ${response.status}`);
 }
 
 export async function stopInstance(instanceId: string) {
-  const response = await fetch(`https://api.vultr.com/v2/instances/${instanceId}/halt`, {
+  const response = await fetchIpv4("https://api.vultr.com/v2/instances/halt", {
     method: "POST",
-    headers: { Authorization: `Bearer ${VULTR_API_KEY}` },
+    headers: {
+      Authorization: `Bearer ${VULTR_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ instance_ids: [instanceId] }),
   });
   if (!response.ok) throw new Error(`Stop failed: ${response.status}`);
 }
 
 export async function reinstallInstance(instanceId: string) {
-  const response = await fetch(`https://api.vultr.com/v2/instances/${instanceId}/reinstall`, {
+  const response = await fetchIpv4(`https://api.vultr.com/v2/instances/${instanceId}/reinstall`, {
     method: "POST",
     headers: { Authorization: `Bearer ${VULTR_API_KEY}` },
   });

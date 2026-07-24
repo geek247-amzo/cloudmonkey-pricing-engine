@@ -1,6 +1,17 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowRight, CheckCircle2, Globe, Loader2, Mail, Search, Server, ShoppingCart, Sparkles, TriangleAlert } from "lucide-react";
+import {
+  ArrowRight,
+  CheckCircle2,
+  Globe,
+  Loader2,
+  Mail,
+  Search,
+  Server,
+  ShoppingCart,
+  Sparkles,
+  TriangleAlert,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -9,7 +20,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { buildDomainCandidates, getDomainTldsFromPlans, normalizeDomainQuery, type DomainCheckResult } from "@/lib/domain-search";
+import {
+  buildDomainCandidates,
+  getDomainTldsFromPlans,
+  normalizeDomainQuery,
+  type DomainCheckResult,
+} from "@/lib/domain-search";
 
 export const Route = createFileRoute("/dashboard/domains/new")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -17,6 +33,7 @@ export const Route = createFileRoute("/dashboard/domains/new")({
     reference: typeof search.reference === "string" ? search.reference : undefined,
     subscription: typeof search.subscription === "string" ? search.subscription : undefined,
     domainOrder: typeof search.domainOrder === "string" ? search.domainOrder : undefined,
+    domain: typeof search.domain === "string" ? search.domain : undefined,
   }),
   head: () => ({
     meta: [{ title: "Add Domain - CloudMonkey Dashboard" }],
@@ -45,7 +62,7 @@ function extractTld(planName: string) {
 
 function AddDomainPage() {
   const search = Route.useSearch();
-  const [domain, setDomain] = useState("");
+  const [domain, setDomain] = useState(search.domain ?? "");
   const [isLoading, setIsLoading] = useState(false);
   const [results, setResults] = useState<DomainCheckResult[]>([]);
   const [selectedDomain, setSelectedDomain] = useState<DomainCheckResult | null>(null);
@@ -75,8 +92,9 @@ function AddDomainPage() {
   });
 
   const categories = pricing?.categories ?? [];
-  const cloudCategory = categories.find((c: any) => c.id === "cloud");
-  const businessCategory = categories.find((c: any) => c.id === "business");
+  const cloudCategory = categories.find((c: any) => c.id === "managed-cloud");
+  const addonCategory = categories.find((c: any) => c.id === "addons");
+  const voiceCategory = categories.find((c: any) => c.id === "voice");
   const domainService = cloudCategory?.services?.find((s: any) => s.id === "domains");
   const domainTlds = getDomainTldsFromPlans(domainService?.plans);
 
@@ -86,21 +104,33 @@ function AddDomainPage() {
       const tld = extractTld(plan.name);
       if (!map.has(tld)) map.set(tld, plan);
     }
-    const fallback = (domainService?.plans ?? []).find((plan: Plan) => extractTld(plan.name) === "custom") ?? domainService?.plans?.[0];
-    if (fallback && !map.has("custom")) map.set("custom", fallback);
     return map;
   }, [domainService?.plans]);
 
   const addonPlans = useMemo(() => {
-    const cloudServices = (cloudCategory?.services ?? []).filter((service: any) => ["websites", "hosting", "managed-infra", "openclaw"].includes(service.id));
-    const businessServices = (businessCategory?.services ?? []).filter((service: any) => ["m365", "gws"].includes(service.id));
-    return [...cloudServices, ...businessServices]
-      .flatMap((service: any) => (service.plans ?? []).slice(0, 2).map((plan: Plan) => ({ ...plan, service })))
+    const cloudServices = (cloudCategory?.services ?? []).filter((service: any) =>
+      ["websites", "hosting", "managed-infra", "openclaw"].includes(service.id),
+    );
+    const addonServices = (addonCategory?.services ?? []).filter((service: any) =>
+      ["productivity", "security"].includes(service.id),
+    );
+    const voiceServices = (voiceCategory?.services ?? []).filter((service: any) =>
+      ["pbx", "sip-trunks"].includes(service.id),
+    );
+    return [...cloudServices, ...addonServices, ...voiceServices]
+      .flatMap((service: any) =>
+        (service.plans ?? []).slice(0, 2).map((plan: Plan) => ({ ...plan, service })),
+      )
       .filter((plan: Plan) => parseInt(plan.priceZar ?? "0", 10) > 0);
-  }, [businessCategory?.services, cloudCategory?.services]);
+  }, [addonCategory?.services, cloudCategory?.services, voiceCategory?.services]);
 
   const selectedAddonPlans = addonPlans.filter((plan: Plan) => selectedAddons.includes(plan.id));
-  const total = (selectedDomain?.priceZar ?? 0) + selectedAddonPlans.reduce((sum: number, plan: Plan) => sum + parseInt(plan.priceZar ?? "0", 10), 0);
+  const total =
+    (selectedDomain?.priceZar ?? 0) +
+    selectedAddonPlans.reduce(
+      (sum: number, plan: Plan) => sum + parseInt(plan.priceZar ?? "0", 10),
+      0,
+    );
 
   const orderMutation = useMutation({
     mutationFn: async () => {
@@ -144,42 +174,50 @@ function AddDomainPage() {
     setSelectedDomain(null);
 
     try {
-      const checks = await Promise.all(candidates.map(async (candidate) => {
-        const plan = domainPlansByTld.get(candidate.tld) ?? domainPlansByTld.get("custom");
-        const res = await fetch(`/api/domains/check?domain=${encodeURIComponent(candidate.domain)}`);
-        const data = await res.json();
-        if (!res.ok || data.error) {
+      const checks = await Promise.all(
+        candidates.map(async (candidate) => {
+          const plan = domainPlansByTld.get(candidate.tld);
+          const res = await fetch(
+            `/api/public/domains/check?domain=${encodeURIComponent(candidate.domain)}`,
+          );
+          const data = await res
+            .json()
+            .catch(() => ({ error: "Invalid response from domain service" }));
+          if (!res.ok || data.error) {
+            return {
+              domain: candidate.domain,
+              tld: candidate.tld,
+              isAvailable: false,
+              message: data.error || "Failed to check domain",
+              priceZar: plan ? parseInt(plan.priceZar ?? "0", 10) : undefined,
+              planId: plan?.id,
+              planName: plan?.name,
+            };
+          }
+          const isAvailable = data.isAvailable === true || data.isAvailable === "true";
           return {
             domain: candidate.domain,
             tld: candidate.tld,
-            isAvailable: false,
-            message: data.error || "Failed to check domain",
+            isAvailable,
+            message: data.strMessage || (isAvailable ? "Available" : "Taken"),
             priceZar: plan ? parseInt(plan.priceZar ?? "0", 10) : undefined,
             planId: plan?.id,
             planName: plan?.name,
           };
-        }
-        const isAvailable = data.isAvailable === true || data.isAvailable === "true";
-        return {
-          domain: candidate.domain,
-          tld: candidate.tld,
-          isAvailable,
-          message: data.strMessage || (isAvailable ? "Available" : "Taken"),
-          priceZar: plan ? parseInt(plan.priceZar ?? "0", 10) : undefined,
-          planId: plan?.id,
-          planName: plan?.name,
-        };
-      }));
+        }),
+      );
       setResults(checks);
       const firstAvailable = checks.find((item) => item.isAvailable && item.planId);
       if (firstAvailable) setSelectedDomain(firstAvailable);
     } catch (error: any) {
-      setResults([{
-        domain: normalized.value,
-        tld: "co.za",
-        isAvailable: false,
-        message: error.message || "Domain availability is not configured",
-      }]);
+      setResults([
+        {
+          domain: normalized.value,
+          tld: "co.za",
+          isAvailable: false,
+          message: error.message || "Domain availability is not configured",
+        },
+      ]);
     } finally {
       setIsLoading(false);
     }
@@ -197,8 +235,17 @@ function AddDomainPage() {
         <Card className="rounded-lg border-emerald-200 bg-emerald-50 shadow-sm">
           <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <div className="font-semibold text-emerald-900">{verifyPayment.isLoading ? "Verifying payment" : verifyPayment.data?.verified ? "Payment received" : "Payment pending"}</div>
-              <div className="text-sm text-emerald-800">Your domain order is being processed. It will appear in your domains list once registration completes.</div>
+              <div className="font-semibold text-emerald-900">
+                {verifyPayment.isLoading
+                  ? "Verifying payment"
+                  : verifyPayment.data?.verified
+                    ? "Payment received"
+                    : "Payment pending"}
+              </div>
+              <div className="text-sm text-emerald-800">
+                Your domain order is being processed. It will appear in your domains list once
+                registration completes.
+              </div>
             </div>
             <Button asChild className="rounded-lg bg-emerald-700 hover:bg-emerald-800">
               <Link to="/dashboard/domains">View domains</Link>
@@ -228,8 +275,16 @@ function AddDomainPage() {
                   />
                 </div>
                 <div className="flex flex-wrap gap-3">
-                  <Button type="submit" className="rounded-xl bg-[var(--ai)] shadow-sm" disabled={isLoading}>
-                    {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                  <Button
+                    type="submit"
+                    className="rounded-xl bg-[var(--ai)] shadow-sm"
+                    disabled={isLoading}
+                  >
+                    {isLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-4 w-4" />
+                    )}
                     Check availability
                   </Button>
                   <Button asChild variant="outline" className="rounded-xl">
@@ -268,11 +323,21 @@ function AddDomainPage() {
                           )}
                           <div className="min-w-0">
                             <div className="font-semibold text-foreground">{item.domain}</div>
-                            <div className={`text-sm ${item.isAvailable ? "text-emerald-700" : "text-amber-700"}`}>{item.message}</div>
-                            {item.planName && <div className="mt-1 text-xs text-muted-foreground">{item.planName}</div>}
+                            <div
+                              className={`text-sm ${item.isAvailable ? "text-emerald-700" : "text-amber-700"}`}
+                            >
+                              {item.message}
+                            </div>
+                            {item.planName && (
+                              <div className="mt-1 text-xs text-muted-foreground">
+                                {item.planName}
+                              </div>
+                            )}
                           </div>
                         </div>
-                        <Badge variant={item.priceZar ? "default" : "outline"}>{item.priceZar ? formatAmount(item.priceZar) : "No price"}</Badge>
+                        <Badge variant={item.priceZar ? "default" : "outline"}>
+                          {item.priceZar ? formatAmount(item.priceZar) : "No price"}
+                        </Badge>
                       </div>
                     </button>
                   ))}
@@ -302,37 +367,70 @@ function AddDomainPage() {
                   </div>
 
                   <div className="space-y-3">
-                    <div className="text-sm font-semibold text-[#07102c]">Add services on this domain</div>
+                    <div className="text-sm font-semibold text-[#07102c]">
+                      Add services on this domain
+                    </div>
                     {!addonPlans.length ? (
-                      <div className="rounded-lg border border-dashed border-border p-3 text-sm text-muted-foreground">No add-ons are configured yet.</div>
-                    ) : addonPlans.map((plan: Plan) => {
-                      const selected = selectedAddons.includes(plan.id);
-                      const Icon = plan.service?.id === "m365" || plan.service?.id === "gws" ? Mail : plan.service?.id === "hosting" || plan.service?.id === "managed-infra" ? Server : ShoppingCart;
-                      return (
-                        <button
-                          key={plan.id}
-                          type="button"
-                          onClick={() => setSelectedAddons((current) => selected ? current.filter((id) => id !== plan.id) : [...current, plan.id])}
-                          className={`flex w-full items-start gap-3 rounded-lg border p-3 text-left ${selected ? "border-[var(--ai)] bg-[#f6f1ff]" : "border-border bg-white"}`}
-                        >
-                          <Icon className="mt-0.5 h-4 w-4 text-[var(--ai)]" />
-                          <div className="min-w-0 flex-1">
-                            <div className="text-sm font-semibold text-[#07102c]">{plan.service?.name} - {plan.name}</div>
-                            <div className="text-xs text-muted-foreground">{formatAmount(parseInt(plan.priceZar ?? "0", 10))}</div>
-                          </div>
-                          <Badge variant={selected ? "default" : "outline"}>{selected ? "Added" : "Add"}</Badge>
-                        </button>
-                      );
-                    })}
+                      <div className="rounded-lg border border-dashed border-border p-3 text-sm text-muted-foreground">
+                        No add-ons are configured yet.
+                      </div>
+                    ) : (
+                      addonPlans.map((plan: Plan) => {
+                        const selected = selectedAddons.includes(plan.id);
+                        const Icon =
+                          plan.service?.id === "m365" || plan.service?.id === "gws"
+                            ? Mail
+                            : plan.service?.id === "hosting" || plan.service?.id === "managed-infra"
+                              ? Server
+                              : ShoppingCart;
+                        return (
+                          <button
+                            key={plan.id}
+                            type="button"
+                            onClick={() =>
+                              setSelectedAddons((current) =>
+                                selected
+                                  ? current.filter((id) => id !== plan.id)
+                                  : [...current, plan.id],
+                              )
+                            }
+                            className={`flex w-full items-start gap-3 rounded-lg border p-3 text-left ${selected ? "border-[var(--ai)] bg-[#f6f1ff]" : "border-border bg-white"}`}
+                          >
+                            <Icon className="mt-0.5 h-4 w-4 text-[var(--ai)]" />
+                            <div className="min-w-0 flex-1">
+                              <div className="text-sm font-semibold text-[#07102c]">
+                                {plan.service?.name} - {plan.name}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {formatAmount(parseInt(plan.priceZar ?? "0", 10))}
+                              </div>
+                            </div>
+                            <Badge variant={selected ? "default" : "outline"}>
+                              {selected ? "Added" : "Add"}
+                            </Badge>
+                          </button>
+                        );
+                      })
+                    )}
                   </div>
 
                   <div className="border-t border-border pt-4">
                     <div className="flex items-center justify-between text-sm">
                       <span className="font-semibold text-[#07102c]">Total due today</span>
-                      <span className="text-lg font-bold text-[#07102c]">{formatAmount(total)}</span>
+                      <span className="text-lg font-bold text-[#07102c]">
+                        {formatAmount(total)}
+                      </span>
                     </div>
-                    <Button className="mt-4 w-full rounded-lg bg-[var(--ai)]" disabled={orderMutation.isPending} onClick={() => orderMutation.mutate()}>
-                      {orderMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShoppingCart className="h-4 w-4" />}
+                    <Button
+                      className="mt-4 w-full rounded-lg bg-[var(--ai)]"
+                      disabled={orderMutation.isPending}
+                      onClick={() => orderMutation.mutate()}
+                    >
+                      {orderMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <ShoppingCart className="h-4 w-4" />
+                      )}
                       Continue to payment
                       <ArrowRight className="h-4 w-4" />
                     </Button>

@@ -5,16 +5,19 @@ import { MascotHero } from "@/components/site/MascotHero";
 import { SectionHeading } from "@/components/site/SectionHeading";
 import { CtaBanner } from "@/components/site/CtaBanner";
 import { ServiceSection } from "@/components/site/ServiceSection";
-import { fetchPublicPricingCatalog } from "@/lib/pricing";
+import { CATEGORIES, fetchPublicPricingCatalog } from "@/lib/pricing";
+import { canonicalLink, ogUrl } from "@/lib/seo";
 
 export const Route = createFileRoute("/ai")({
   head: () => ({
     meta: [
-      { title: "CloudMonkey AI — Intelligent AI. Real business impact." },
-      { name: "description", content: "AI agents, voice intelligence, automation and business assistants — built for real business outcomes." },
+      { title: "AI Automation for South African Businesses | CloudMonkey" },
+      { name: "description", content: "Managed AI agents, workflow automation, voice intelligence and business assistants for South African teams, with prepaid metered usage and human oversight." },
       { property: "og:title", content: "CloudMonkey AI" },
       { property: "og:description", content: "AI that works for your business." },
+      ogUrl("/ai"),
     ],
+    links: [canonicalLink("/ai")],
   }),
   component: AiPage,
 });
@@ -39,8 +42,13 @@ function AiPage() {
     queryKey: ["public", "pricing"],
     queryFn: fetchPublicPricingCatalog,
   });
-  const cat = data?.categories.find((category) => category.id === "ai");
-  const visibleServices = cat?.services.filter((service) => service.id !== "openclaw") ?? [];
+  const pricingCategories = data?.categories ?? CATEGORIES;
+  const aiCategoryIds = new Set(["addons", "quote-services", "marketing"]);
+  const visibleServices =
+    pricingCategories
+      .filter((category) => aiCategoryIds.has(category.id))
+      .flatMap((category) => category.services)
+      .filter((service) => ["ai-agents", "ai-assistant", "openclaw", "competitor-intelligence", "marketing-growth"].includes(service.id)) ?? [];
   return (
     <>
       <MascotHero
@@ -50,7 +58,7 @@ function AiPage() {
         subtitle="AI agents and automation that streamline work, unlock insights, and give you a competitive edge."
         ctas={
           <>
-            <Link to="/auth/sign-up" className="inline-flex items-center gap-2 rounded-full px-6 py-3 text-sm font-semibold text-white shadow-[var(--shadow-elevated)]" style={{ background: "var(--ai)" }}>
+            <Link to="/auth/sign-up" search={{ bundle: undefined, plan: undefined, coupon: undefined, ref: undefined }} className="inline-flex items-center gap-2 rounded-full px-6 py-3 text-sm font-semibold text-white shadow-[var(--shadow-elevated)]" style={{ background: "var(--ai)" }}>
               Explore AI Solutions <ArrowRight className="h-4 w-4" />
             </Link>
             <Link to="/ai-agents" className="rounded-full border-2 px-6 py-3 text-sm font-semibold" style={{ borderColor: "var(--ai)", color: "var(--ai)" }}>Meet the AI Agents</Link>
@@ -93,21 +101,25 @@ function AiPage() {
             subtitle="From a single AI assistant to workflow automation and business intelligence — pick the depth of AI your team needs."
           />
         </div>
-        {isLoading ? (
-          <div className="mx-auto mt-12 max-w-7xl px-6 py-12 text-center text-muted-foreground">
-            <RefreshCcw className="mx-auto mb-3 h-6 w-6 animate-spin" />
-            Loading AI catalog...
+        {isLoading && (
+          <div className="mx-auto mt-8 max-w-7xl px-6">
+            <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 text-center text-sm text-blue-800">
+              <RefreshCcw className="mr-2 inline h-4 w-4 animate-spin" />
+              Refreshing live AI pricing. Crawlable fallback plans are shown below.
+            </div>
           </div>
-        ) : isError ? (
+        )}
+        {isError && (
           <div className="mx-auto mt-12 max-w-7xl px-6 py-12">
             <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-800">
-              <div className="font-semibold">Failed to load AI pricing.</div>
+              <div className="font-semibold">Live AI pricing did not load. Static catalog pricing is shown below.</div>
               <button type="button" onClick={() => refetch()} className="mt-2 font-semibold underline">
                 Try again
               </button>
             </div>
           </div>
-        ) : visibleServices.length ? (
+        )}
+        {visibleServices.length ? (
           visibleServices.map((s) => (
             <ServiceSection key={s.id} service={s} accent="ai" ctaHref={(plan) => `/auth/sign-up?plan=${encodeURIComponent(plan.id)}`} />
           ))

@@ -1,7 +1,10 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { captcha, twoFactor } from "better-auth/plugins";
 import { db } from "../db";
 import * as schema from "../db/schema";
+
+const recaptchaSecretKey = process.env.RECAPTCHA_SECRET_KEY;
 
 export const auth = betterAuth({
 	database: drizzleAdapter(db, {
@@ -11,6 +14,7 @@ export const auth = betterAuth({
 			session: schema.session,
 			account: schema.account,
 			verification: schema.verification,
+			twoFactor: schema.twoFactor,
 		},
 	}),
 	emailAndPassword: {
@@ -35,4 +39,29 @@ export const auth = betterAuth({
 			},
 		},
 	},
+	plugins: [
+		twoFactor({
+			issuer: "CloudMonkey",
+			totpOptions: {
+				issuer: "CloudMonkey",
+			},
+			twoFactorCookieMaxAge: 10 * 60,
+			trustDeviceMaxAge: 30 * 24 * 60 * 60,
+		}),
+		...(recaptchaSecretKey
+			? [
+					captcha({
+						provider: "google-recaptcha",
+						secretKey: recaptchaSecretKey,
+						endpoints: ["/sign-up/email", "/sign-in/email"],
+						expectedAction: "auth_email",
+						minScore: Number(process.env.RECAPTCHA_MIN_SCORE ?? 0.5),
+						allowedHostnames: (process.env.RECAPTCHA_ALLOWED_HOSTNAMES ?? "cloudmonkey.co.za,www.cloudmonkey.co.za")
+							.split(",")
+							.map((hostname) => hostname.trim())
+							.filter(Boolean),
+					}),
+				]
+			: []),
+	],
 });

@@ -9,25 +9,40 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as VoiceRouteImport } from './routes/voice'
 import { Route as PricingRouteImport } from './routes/pricing'
+import { Route as MarketingRouteImport } from './routes/marketing'
+import { Route as LegalRouteImport } from './routes/legal'
 import { Route as DomainsRouteImport } from './routes/domains'
 import { Route as CloudRouteImport } from './routes/cloud'
 import { Route as BusinessRouteImport } from './routes/business'
+import { Route as BuildRouteImport } from './routes/build'
 import { Route as AiAgentsRouteImport } from './routes/ai-agents'
 import { Route as AiRouteImport } from './routes/ai'
 import { Route as AffiliatesRouteImport } from './routes/affiliates'
+import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard/index'
 import { Route as AuthIndexRouteImport } from './routes/auth/index'
 import { Route as WebsiteApprovalTokenRouteImport } from './routes/website-approval/$token'
+import { Route as LegalTermsRouteImport } from './routes/legal/terms'
+import { Route as LegalSlaRouteImport } from './routes/legal/sla'
+import { Route as LegalRefundsRouteImport } from './routes/legal/refunds'
+import { Route as LegalPrivacyRouteImport } from './routes/legal/privacy'
+import { Route as LegalPopiaRouteImport } from './routes/legal/popia'
+import { Route as LegalCookiesRouteImport } from './routes/legal/cookies'
+import { Route as LegalAupRouteImport } from './routes/legal/aup'
 import { Route as DashboardWebsitesRouteImport } from './routes/dashboard/websites'
 import { Route as DashboardWebsiteWizardRouteImport } from './routes/dashboard/website-wizard'
 import { Route as DashboardWebsiteProjectsRouteImport } from './routes/dashboard/website-projects'
+import { Route as DashboardWalletRouteImport } from './routes/dashboard/wallet'
 import { Route as DashboardUsersRouteImport } from './routes/dashboard/users'
 import { Route as DashboardSupportRouteImport } from './routes/dashboard/support'
 import { Route as DashboardSettingsRouteImport } from './routes/dashboard/settings'
+import { Route as DashboardServerStatusRouteImport } from './routes/dashboard/server-status'
 import { Route as DashboardRolesRouteImport } from './routes/dashboard/roles'
 import { Route as DashboardReportsRouteImport } from './routes/dashboard/reports'
+import { Route as DashboardProposalsRouteImport } from './routes/dashboard/proposals'
 import { Route as DashboardProductsRouteImport } from './routes/dashboard/products'
 import { Route as DashboardIntelligenceWizardRouteImport } from './routes/dashboard/intelligence-wizard'
 import { Route as DashboardIntelligenceRouteImport } from './routes/dashboard/intelligence'
@@ -35,6 +50,7 @@ import { Route as DashboardHostingRouteImport } from './routes/dashboard/hosting
 import { Route as DashboardDomainsRouteImport } from './routes/dashboard/domains'
 import { Route as DashboardCustomersRouteImport } from './routes/dashboard/customers'
 import { Route as DashboardCrmRouteImport } from './routes/dashboard/crm'
+import { Route as DashboardCloudSecurityRouteImport } from './routes/dashboard/cloud-security'
 import { Route as DashboardBillingRouteImport } from './routes/dashboard/billing'
 import { Route as DashboardAiWizardRouteImport } from './routes/dashboard/ai-wizard'
 import { Route as DashboardAgentsRouteImport } from './routes/dashboard/agents'
@@ -44,6 +60,7 @@ import { Route as DashboardAdministrationRouteImport } from './routes/dashboard/
 import { Route as DashboardActivityLogsRouteImport } from './routes/dashboard/activity-logs'
 import { Route as DashboardLayoutRouteImport } from './routes/dashboard/_layout'
 import { Route as AuthVerifyEmailRouteImport } from './routes/auth/verify-email'
+import { Route as AuthTwoFactorRouteImport } from './routes/auth/two-factor'
 import { Route as AuthSsoErrorRouteImport } from './routes/auth/sso-error'
 import { Route as AuthSsoCallbackRouteImport } from './routes/auth/sso-callback'
 import { Route as AuthSignUpRouteImport } from './routes/auth/sign-up'
@@ -51,15 +68,32 @@ import { Route as AuthSignInRouteImport } from './routes/auth/sign-in'
 import { Route as AuthResetPasswordRouteImport } from './routes/auth/reset-password'
 import { Route as AuthLinkAccountRouteImport } from './routes/auth/link-account'
 import { Route as AuthForgotPasswordRouteImport } from './routes/auth/forgot-password'
+import { Route as AuthTwoFactorIndexRouteImport } from './routes/auth/two-factor/index'
 import { Route as DashboardWebsitesWebsiteIdRouteImport } from './routes/dashboard/websites/$websiteId'
 import { Route as DashboardUsersUserIdRouteImport } from './routes/dashboard/users/$userId'
 import { Route as DashboardSupportTicketIdRouteImport } from './routes/dashboard/support/$ticketId'
 import { Route as DashboardDomainsNewRouteImport } from './routes/dashboard/domains/new'
+import { Route as AuthTwoFactorSetupRouteImport } from './routes/auth/two-factor/setup'
 import { Route as DashboardBillingInvoicesInvoiceIdRouteImport } from './routes/dashboard/billing/invoices/$invoiceId'
 
+const VoiceRoute = VoiceRouteImport.update({
+  id: '/voice',
+  path: '/voice',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PricingRoute = PricingRouteImport.update({
   id: '/pricing',
   path: '/pricing',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MarketingRoute = MarketingRouteImport.update({
+  id: '/marketing',
+  path: '/marketing',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LegalRoute = LegalRouteImport.update({
+  id: '/legal',
+  path: '/legal',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DomainsRoute = DomainsRouteImport.update({
@@ -77,6 +111,11 @@ const BusinessRoute = BusinessRouteImport.update({
   path: '/business',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BuildRoute = BuildRouteImport.update({
+  id: '/build',
+  path: '/build',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AiAgentsRoute = AiAgentsRouteImport.update({
   id: '/ai-agents',
   path: '/ai-agents',
@@ -90,6 +129,11 @@ const AiRoute = AiRouteImport.update({
 const AffiliatesRoute = AffiliatesRouteImport.update({
   id: '/affiliates',
   path: '/affiliates',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AboutRoute = AboutRouteImport.update({
+  id: '/about',
+  path: '/about',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -112,6 +156,41 @@ const WebsiteApprovalTokenRoute = WebsiteApprovalTokenRouteImport.update({
   path: '/website-approval/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LegalTermsRoute = LegalTermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
+  getParentRoute: () => LegalRoute,
+} as any)
+const LegalSlaRoute = LegalSlaRouteImport.update({
+  id: '/sla',
+  path: '/sla',
+  getParentRoute: () => LegalRoute,
+} as any)
+const LegalRefundsRoute = LegalRefundsRouteImport.update({
+  id: '/refunds',
+  path: '/refunds',
+  getParentRoute: () => LegalRoute,
+} as any)
+const LegalPrivacyRoute = LegalPrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => LegalRoute,
+} as any)
+const LegalPopiaRoute = LegalPopiaRouteImport.update({
+  id: '/popia',
+  path: '/popia',
+  getParentRoute: () => LegalRoute,
+} as any)
+const LegalCookiesRoute = LegalCookiesRouteImport.update({
+  id: '/cookies',
+  path: '/cookies',
+  getParentRoute: () => LegalRoute,
+} as any)
+const LegalAupRoute = LegalAupRouteImport.update({
+  id: '/aup',
+  path: '/aup',
+  getParentRoute: () => LegalRoute,
+} as any)
 const DashboardWebsitesRoute = DashboardWebsitesRouteImport.update({
   id: '/dashboard/websites',
   path: '/dashboard/websites',
@@ -128,6 +207,11 @@ const DashboardWebsiteProjectsRoute =
     path: '/dashboard/website-projects',
     getParentRoute: () => rootRouteImport,
   } as any)
+const DashboardWalletRoute = DashboardWalletRouteImport.update({
+  id: '/dashboard/wallet',
+  path: '/dashboard/wallet',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardUsersRoute = DashboardUsersRouteImport.update({
   id: '/dashboard/users',
   path: '/dashboard/users',
@@ -143,6 +227,11 @@ const DashboardSettingsRoute = DashboardSettingsRouteImport.update({
   path: '/dashboard/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashboardServerStatusRoute = DashboardServerStatusRouteImport.update({
+  id: '/dashboard/server-status',
+  path: '/dashboard/server-status',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardRolesRoute = DashboardRolesRouteImport.update({
   id: '/dashboard/roles',
   path: '/dashboard/roles',
@@ -151,6 +240,11 @@ const DashboardRolesRoute = DashboardRolesRouteImport.update({
 const DashboardReportsRoute = DashboardReportsRouteImport.update({
   id: '/dashboard/reports',
   path: '/dashboard/reports',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardProposalsRoute = DashboardProposalsRouteImport.update({
+  id: '/dashboard/proposals',
+  path: '/dashboard/proposals',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardProductsRoute = DashboardProductsRouteImport.update({
@@ -187,6 +281,11 @@ const DashboardCustomersRoute = DashboardCustomersRouteImport.update({
 const DashboardCrmRoute = DashboardCrmRouteImport.update({
   id: '/dashboard/crm',
   path: '/dashboard/crm',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardCloudSecurityRoute = DashboardCloudSecurityRouteImport.update({
+  id: '/dashboard/cloud-security',
+  path: '/dashboard/cloud-security',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardBillingRoute = DashboardBillingRouteImport.update({
@@ -234,6 +333,11 @@ const AuthVerifyEmailRoute = AuthVerifyEmailRouteImport.update({
   path: '/auth/verify-email',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthTwoFactorRoute = AuthTwoFactorRouteImport.update({
+  id: '/auth/two-factor',
+  path: '/auth/two-factor',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthSsoErrorRoute = AuthSsoErrorRouteImport.update({
   id: '/auth/sso-error',
   path: '/auth/sso-error',
@@ -269,6 +373,11 @@ const AuthForgotPasswordRoute = AuthForgotPasswordRouteImport.update({
   path: '/auth/forgot-password',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthTwoFactorIndexRoute = AuthTwoFactorIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AuthTwoFactorRoute,
+} as any)
 const DashboardWebsitesWebsiteIdRoute =
   DashboardWebsitesWebsiteIdRouteImport.update({
     id: '/$websiteId',
@@ -291,6 +400,11 @@ const DashboardDomainsNewRoute = DashboardDomainsNewRouteImport.update({
   path: '/new',
   getParentRoute: () => DashboardDomainsRoute,
 } as any)
+const AuthTwoFactorSetupRoute = AuthTwoFactorSetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
+  getParentRoute: () => AuthTwoFactorRoute,
+} as any)
 const DashboardBillingInvoicesInvoiceIdRoute =
   DashboardBillingInvoicesInvoiceIdRouteImport.update({
     id: '/invoices/$invoiceId',
@@ -300,13 +414,18 @@ const DashboardBillingInvoicesInvoiceIdRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/affiliates': typeof AffiliatesRoute
   '/ai': typeof AiRoute
   '/ai-agents': typeof AiAgentsRoute
+  '/build': typeof BuildRoute
   '/business': typeof BusinessRoute
   '/cloud': typeof CloudRoute
   '/domains': typeof DomainsRoute
+  '/legal': typeof LegalRouteWithChildren
+  '/marketing': typeof MarketingRoute
   '/pricing': typeof PricingRoute
+  '/voice': typeof VoiceRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
   '/auth/link-account': typeof AuthLinkAccountRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
@@ -314,6 +433,7 @@ export interface FileRoutesByFullPath {
   '/auth/sign-up': typeof AuthSignUpRoute
   '/auth/sso-callback': typeof AuthSsoCallbackRoute
   '/auth/sso-error': typeof AuthSsoErrorRoute
+  '/auth/two-factor': typeof AuthTwoFactorRouteWithChildren
   '/auth/verify-email': typeof AuthVerifyEmailRoute
   '/dashboard': typeof DashboardLayoutRoute
   '/dashboard/activity-logs': typeof DashboardActivityLogsRoute
@@ -323,6 +443,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/agents': typeof DashboardAgentsRoute
   '/dashboard/ai-wizard': typeof DashboardAiWizardRoute
   '/dashboard/billing': typeof DashboardBillingRouteWithChildren
+  '/dashboard/cloud-security': typeof DashboardCloudSecurityRoute
   '/dashboard/crm': typeof DashboardCrmRoute
   '/dashboard/customers': typeof DashboardCustomersRoute
   '/dashboard/domains': typeof DashboardDomainsRouteWithChildren
@@ -330,32 +451,49 @@ export interface FileRoutesByFullPath {
   '/dashboard/intelligence': typeof DashboardIntelligenceRoute
   '/dashboard/intelligence-wizard': typeof DashboardIntelligenceWizardRoute
   '/dashboard/products': typeof DashboardProductsRoute
+  '/dashboard/proposals': typeof DashboardProposalsRoute
   '/dashboard/reports': typeof DashboardReportsRoute
   '/dashboard/roles': typeof DashboardRolesRoute
+  '/dashboard/server-status': typeof DashboardServerStatusRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/support': typeof DashboardSupportRouteWithChildren
   '/dashboard/users': typeof DashboardUsersRouteWithChildren
+  '/dashboard/wallet': typeof DashboardWalletRoute
   '/dashboard/website-projects': typeof DashboardWebsiteProjectsRoute
   '/dashboard/website-wizard': typeof DashboardWebsiteWizardRoute
   '/dashboard/websites': typeof DashboardWebsitesRouteWithChildren
+  '/legal/aup': typeof LegalAupRoute
+  '/legal/cookies': typeof LegalCookiesRoute
+  '/legal/popia': typeof LegalPopiaRoute
+  '/legal/privacy': typeof LegalPrivacyRoute
+  '/legal/refunds': typeof LegalRefundsRoute
+  '/legal/sla': typeof LegalSlaRoute
+  '/legal/terms': typeof LegalTermsRoute
   '/website-approval/$token': typeof WebsiteApprovalTokenRoute
   '/auth/': typeof AuthIndexRoute
   '/dashboard/': typeof DashboardIndexRoute
+  '/auth/two-factor/setup': typeof AuthTwoFactorSetupRoute
   '/dashboard/domains/new': typeof DashboardDomainsNewRoute
   '/dashboard/support/$ticketId': typeof DashboardSupportTicketIdRoute
   '/dashboard/users/$userId': typeof DashboardUsersUserIdRoute
   '/dashboard/websites/$websiteId': typeof DashboardWebsitesWebsiteIdRoute
+  '/auth/two-factor/': typeof AuthTwoFactorIndexRoute
   '/dashboard/billing/invoices/$invoiceId': typeof DashboardBillingInvoicesInvoiceIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/affiliates': typeof AffiliatesRoute
   '/ai': typeof AiRoute
   '/ai-agents': typeof AiAgentsRoute
+  '/build': typeof BuildRoute
   '/business': typeof BusinessRoute
   '/cloud': typeof CloudRoute
   '/domains': typeof DomainsRoute
+  '/legal': typeof LegalRouteWithChildren
+  '/marketing': typeof MarketingRoute
   '/pricing': typeof PricingRoute
+  '/voice': typeof VoiceRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
   '/auth/link-account': typeof AuthLinkAccountRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
@@ -372,6 +510,7 @@ export interface FileRoutesByTo {
   '/dashboard/agents': typeof DashboardAgentsRoute
   '/dashboard/ai-wizard': typeof DashboardAiWizardRoute
   '/dashboard/billing': typeof DashboardBillingRouteWithChildren
+  '/dashboard/cloud-security': typeof DashboardCloudSecurityRoute
   '/dashboard/crm': typeof DashboardCrmRoute
   '/dashboard/customers': typeof DashboardCustomersRoute
   '/dashboard/domains': typeof DashboardDomainsRouteWithChildren
@@ -379,32 +518,49 @@ export interface FileRoutesByTo {
   '/dashboard/intelligence': typeof DashboardIntelligenceRoute
   '/dashboard/intelligence-wizard': typeof DashboardIntelligenceWizardRoute
   '/dashboard/products': typeof DashboardProductsRoute
+  '/dashboard/proposals': typeof DashboardProposalsRoute
   '/dashboard/reports': typeof DashboardReportsRoute
   '/dashboard/roles': typeof DashboardRolesRoute
+  '/dashboard/server-status': typeof DashboardServerStatusRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/support': typeof DashboardSupportRouteWithChildren
   '/dashboard/users': typeof DashboardUsersRouteWithChildren
+  '/dashboard/wallet': typeof DashboardWalletRoute
   '/dashboard/website-projects': typeof DashboardWebsiteProjectsRoute
   '/dashboard/website-wizard': typeof DashboardWebsiteWizardRoute
   '/dashboard/websites': typeof DashboardWebsitesRouteWithChildren
+  '/legal/aup': typeof LegalAupRoute
+  '/legal/cookies': typeof LegalCookiesRoute
+  '/legal/popia': typeof LegalPopiaRoute
+  '/legal/privacy': typeof LegalPrivacyRoute
+  '/legal/refunds': typeof LegalRefundsRoute
+  '/legal/sla': typeof LegalSlaRoute
+  '/legal/terms': typeof LegalTermsRoute
   '/website-approval/$token': typeof WebsiteApprovalTokenRoute
   '/auth': typeof AuthIndexRoute
+  '/auth/two-factor/setup': typeof AuthTwoFactorSetupRoute
   '/dashboard/domains/new': typeof DashboardDomainsNewRoute
   '/dashboard/support/$ticketId': typeof DashboardSupportTicketIdRoute
   '/dashboard/users/$userId': typeof DashboardUsersUserIdRoute
   '/dashboard/websites/$websiteId': typeof DashboardWebsitesWebsiteIdRoute
+  '/auth/two-factor': typeof AuthTwoFactorIndexRoute
   '/dashboard/billing/invoices/$invoiceId': typeof DashboardBillingInvoicesInvoiceIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/affiliates': typeof AffiliatesRoute
   '/ai': typeof AiRoute
   '/ai-agents': typeof AiAgentsRoute
+  '/build': typeof BuildRoute
   '/business': typeof BusinessRoute
   '/cloud': typeof CloudRoute
   '/domains': typeof DomainsRoute
+  '/legal': typeof LegalRouteWithChildren
+  '/marketing': typeof MarketingRoute
   '/pricing': typeof PricingRoute
+  '/voice': typeof VoiceRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
   '/auth/link-account': typeof AuthLinkAccountRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
@@ -412,6 +568,7 @@ export interface FileRoutesById {
   '/auth/sign-up': typeof AuthSignUpRoute
   '/auth/sso-callback': typeof AuthSsoCallbackRoute
   '/auth/sso-error': typeof AuthSsoErrorRoute
+  '/auth/two-factor': typeof AuthTwoFactorRouteWithChildren
   '/auth/verify-email': typeof AuthVerifyEmailRoute
   '/dashboard/_layout': typeof DashboardLayoutRoute
   '/dashboard/activity-logs': typeof DashboardActivityLogsRoute
@@ -421,6 +578,7 @@ export interface FileRoutesById {
   '/dashboard/agents': typeof DashboardAgentsRoute
   '/dashboard/ai-wizard': typeof DashboardAiWizardRoute
   '/dashboard/billing': typeof DashboardBillingRouteWithChildren
+  '/dashboard/cloud-security': typeof DashboardCloudSecurityRoute
   '/dashboard/crm': typeof DashboardCrmRoute
   '/dashboard/customers': typeof DashboardCustomersRoute
   '/dashboard/domains': typeof DashboardDomainsRouteWithChildren
@@ -428,34 +586,51 @@ export interface FileRoutesById {
   '/dashboard/intelligence': typeof DashboardIntelligenceRoute
   '/dashboard/intelligence-wizard': typeof DashboardIntelligenceWizardRoute
   '/dashboard/products': typeof DashboardProductsRoute
+  '/dashboard/proposals': typeof DashboardProposalsRoute
   '/dashboard/reports': typeof DashboardReportsRoute
   '/dashboard/roles': typeof DashboardRolesRoute
+  '/dashboard/server-status': typeof DashboardServerStatusRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/support': typeof DashboardSupportRouteWithChildren
   '/dashboard/users': typeof DashboardUsersRouteWithChildren
+  '/dashboard/wallet': typeof DashboardWalletRoute
   '/dashboard/website-projects': typeof DashboardWebsiteProjectsRoute
   '/dashboard/website-wizard': typeof DashboardWebsiteWizardRoute
   '/dashboard/websites': typeof DashboardWebsitesRouteWithChildren
+  '/legal/aup': typeof LegalAupRoute
+  '/legal/cookies': typeof LegalCookiesRoute
+  '/legal/popia': typeof LegalPopiaRoute
+  '/legal/privacy': typeof LegalPrivacyRoute
+  '/legal/refunds': typeof LegalRefundsRoute
+  '/legal/sla': typeof LegalSlaRoute
+  '/legal/terms': typeof LegalTermsRoute
   '/website-approval/$token': typeof WebsiteApprovalTokenRoute
   '/auth/': typeof AuthIndexRoute
   '/dashboard/': typeof DashboardIndexRoute
+  '/auth/two-factor/setup': typeof AuthTwoFactorSetupRoute
   '/dashboard/domains/new': typeof DashboardDomainsNewRoute
   '/dashboard/support/$ticketId': typeof DashboardSupportTicketIdRoute
   '/dashboard/users/$userId': typeof DashboardUsersUserIdRoute
   '/dashboard/websites/$websiteId': typeof DashboardWebsitesWebsiteIdRoute
+  '/auth/two-factor/': typeof AuthTwoFactorIndexRoute
   '/dashboard/billing/invoices/$invoiceId': typeof DashboardBillingInvoicesInvoiceIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/about'
     | '/affiliates'
     | '/ai'
     | '/ai-agents'
+    | '/build'
     | '/business'
     | '/cloud'
     | '/domains'
+    | '/legal'
+    | '/marketing'
     | '/pricing'
+    | '/voice'
     | '/auth/forgot-password'
     | '/auth/link-account'
     | '/auth/reset-password'
@@ -463,6 +638,7 @@ export interface FileRouteTypes {
     | '/auth/sign-up'
     | '/auth/sso-callback'
     | '/auth/sso-error'
+    | '/auth/two-factor'
     | '/auth/verify-email'
     | '/dashboard'
     | '/dashboard/activity-logs'
@@ -472,6 +648,7 @@ export interface FileRouteTypes {
     | '/dashboard/agents'
     | '/dashboard/ai-wizard'
     | '/dashboard/billing'
+    | '/dashboard/cloud-security'
     | '/dashboard/crm'
     | '/dashboard/customers'
     | '/dashboard/domains'
@@ -479,32 +656,49 @@ export interface FileRouteTypes {
     | '/dashboard/intelligence'
     | '/dashboard/intelligence-wizard'
     | '/dashboard/products'
+    | '/dashboard/proposals'
     | '/dashboard/reports'
     | '/dashboard/roles'
+    | '/dashboard/server-status'
     | '/dashboard/settings'
     | '/dashboard/support'
     | '/dashboard/users'
+    | '/dashboard/wallet'
     | '/dashboard/website-projects'
     | '/dashboard/website-wizard'
     | '/dashboard/websites'
+    | '/legal/aup'
+    | '/legal/cookies'
+    | '/legal/popia'
+    | '/legal/privacy'
+    | '/legal/refunds'
+    | '/legal/sla'
+    | '/legal/terms'
     | '/website-approval/$token'
     | '/auth/'
     | '/dashboard/'
+    | '/auth/two-factor/setup'
     | '/dashboard/domains/new'
     | '/dashboard/support/$ticketId'
     | '/dashboard/users/$userId'
     | '/dashboard/websites/$websiteId'
+    | '/auth/two-factor/'
     | '/dashboard/billing/invoices/$invoiceId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/about'
     | '/affiliates'
     | '/ai'
     | '/ai-agents'
+    | '/build'
     | '/business'
     | '/cloud'
     | '/domains'
+    | '/legal'
+    | '/marketing'
     | '/pricing'
+    | '/voice'
     | '/auth/forgot-password'
     | '/auth/link-account'
     | '/auth/reset-password'
@@ -521,6 +715,7 @@ export interface FileRouteTypes {
     | '/dashboard/agents'
     | '/dashboard/ai-wizard'
     | '/dashboard/billing'
+    | '/dashboard/cloud-security'
     | '/dashboard/crm'
     | '/dashboard/customers'
     | '/dashboard/domains'
@@ -528,31 +723,48 @@ export interface FileRouteTypes {
     | '/dashboard/intelligence'
     | '/dashboard/intelligence-wizard'
     | '/dashboard/products'
+    | '/dashboard/proposals'
     | '/dashboard/reports'
     | '/dashboard/roles'
+    | '/dashboard/server-status'
     | '/dashboard/settings'
     | '/dashboard/support'
     | '/dashboard/users'
+    | '/dashboard/wallet'
     | '/dashboard/website-projects'
     | '/dashboard/website-wizard'
     | '/dashboard/websites'
+    | '/legal/aup'
+    | '/legal/cookies'
+    | '/legal/popia'
+    | '/legal/privacy'
+    | '/legal/refunds'
+    | '/legal/sla'
+    | '/legal/terms'
     | '/website-approval/$token'
     | '/auth'
+    | '/auth/two-factor/setup'
     | '/dashboard/domains/new'
     | '/dashboard/support/$ticketId'
     | '/dashboard/users/$userId'
     | '/dashboard/websites/$websiteId'
+    | '/auth/two-factor'
     | '/dashboard/billing/invoices/$invoiceId'
   id:
     | '__root__'
     | '/'
+    | '/about'
     | '/affiliates'
     | '/ai'
     | '/ai-agents'
+    | '/build'
     | '/business'
     | '/cloud'
     | '/domains'
+    | '/legal'
+    | '/marketing'
     | '/pricing'
+    | '/voice'
     | '/auth/forgot-password'
     | '/auth/link-account'
     | '/auth/reset-password'
@@ -560,6 +772,7 @@ export interface FileRouteTypes {
     | '/auth/sign-up'
     | '/auth/sso-callback'
     | '/auth/sso-error'
+    | '/auth/two-factor'
     | '/auth/verify-email'
     | '/dashboard/_layout'
     | '/dashboard/activity-logs'
@@ -569,6 +782,7 @@ export interface FileRouteTypes {
     | '/dashboard/agents'
     | '/dashboard/ai-wizard'
     | '/dashboard/billing'
+    | '/dashboard/cloud-security'
     | '/dashboard/crm'
     | '/dashboard/customers'
     | '/dashboard/domains'
@@ -576,33 +790,50 @@ export interface FileRouteTypes {
     | '/dashboard/intelligence'
     | '/dashboard/intelligence-wizard'
     | '/dashboard/products'
+    | '/dashboard/proposals'
     | '/dashboard/reports'
     | '/dashboard/roles'
+    | '/dashboard/server-status'
     | '/dashboard/settings'
     | '/dashboard/support'
     | '/dashboard/users'
+    | '/dashboard/wallet'
     | '/dashboard/website-projects'
     | '/dashboard/website-wizard'
     | '/dashboard/websites'
+    | '/legal/aup'
+    | '/legal/cookies'
+    | '/legal/popia'
+    | '/legal/privacy'
+    | '/legal/refunds'
+    | '/legal/sla'
+    | '/legal/terms'
     | '/website-approval/$token'
     | '/auth/'
     | '/dashboard/'
+    | '/auth/two-factor/setup'
     | '/dashboard/domains/new'
     | '/dashboard/support/$ticketId'
     | '/dashboard/users/$userId'
     | '/dashboard/websites/$websiteId'
+    | '/auth/two-factor/'
     | '/dashboard/billing/invoices/$invoiceId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AboutRoute: typeof AboutRoute
   AffiliatesRoute: typeof AffiliatesRoute
   AiRoute: typeof AiRoute
   AiAgentsRoute: typeof AiAgentsRoute
+  BuildRoute: typeof BuildRoute
   BusinessRoute: typeof BusinessRoute
   CloudRoute: typeof CloudRoute
   DomainsRoute: typeof DomainsRoute
+  LegalRoute: typeof LegalRouteWithChildren
+  MarketingRoute: typeof MarketingRoute
   PricingRoute: typeof PricingRoute
+  VoiceRoute: typeof VoiceRoute
   AuthForgotPasswordRoute: typeof AuthForgotPasswordRoute
   AuthLinkAccountRoute: typeof AuthLinkAccountRoute
   AuthResetPasswordRoute: typeof AuthResetPasswordRoute
@@ -610,6 +841,7 @@ export interface RootRouteChildren {
   AuthSignUpRoute: typeof AuthSignUpRoute
   AuthSsoCallbackRoute: typeof AuthSsoCallbackRoute
   AuthSsoErrorRoute: typeof AuthSsoErrorRoute
+  AuthTwoFactorRoute: typeof AuthTwoFactorRouteWithChildren
   AuthVerifyEmailRoute: typeof AuthVerifyEmailRoute
   DashboardLayoutRoute: typeof DashboardLayoutRoute
   DashboardActivityLogsRoute: typeof DashboardActivityLogsRoute
@@ -619,6 +851,7 @@ export interface RootRouteChildren {
   DashboardAgentsRoute: typeof DashboardAgentsRoute
   DashboardAiWizardRoute: typeof DashboardAiWizardRoute
   DashboardBillingRoute: typeof DashboardBillingRouteWithChildren
+  DashboardCloudSecurityRoute: typeof DashboardCloudSecurityRoute
   DashboardCrmRoute: typeof DashboardCrmRoute
   DashboardCustomersRoute: typeof DashboardCustomersRoute
   DashboardDomainsRoute: typeof DashboardDomainsRouteWithChildren
@@ -626,11 +859,14 @@ export interface RootRouteChildren {
   DashboardIntelligenceRoute: typeof DashboardIntelligenceRoute
   DashboardIntelligenceWizardRoute: typeof DashboardIntelligenceWizardRoute
   DashboardProductsRoute: typeof DashboardProductsRoute
+  DashboardProposalsRoute: typeof DashboardProposalsRoute
   DashboardReportsRoute: typeof DashboardReportsRoute
   DashboardRolesRoute: typeof DashboardRolesRoute
+  DashboardServerStatusRoute: typeof DashboardServerStatusRoute
   DashboardSettingsRoute: typeof DashboardSettingsRoute
   DashboardSupportRoute: typeof DashboardSupportRouteWithChildren
   DashboardUsersRoute: typeof DashboardUsersRouteWithChildren
+  DashboardWalletRoute: typeof DashboardWalletRoute
   DashboardWebsiteProjectsRoute: typeof DashboardWebsiteProjectsRoute
   DashboardWebsiteWizardRoute: typeof DashboardWebsiteWizardRoute
   DashboardWebsitesRoute: typeof DashboardWebsitesRouteWithChildren
@@ -641,11 +877,32 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/voice': {
+      id: '/voice'
+      path: '/voice'
+      fullPath: '/voice'
+      preLoaderRoute: typeof VoiceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/pricing': {
       id: '/pricing'
       path: '/pricing'
       fullPath: '/pricing'
       preLoaderRoute: typeof PricingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/marketing': {
+      id: '/marketing'
+      path: '/marketing'
+      fullPath: '/marketing'
+      preLoaderRoute: typeof MarketingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/legal': {
+      id: '/legal'
+      path: '/legal'
+      fullPath: '/legal'
+      preLoaderRoute: typeof LegalRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/domains': {
@@ -669,6 +926,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BusinessRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/build': {
+      id: '/build'
+      path: '/build'
+      fullPath: '/build'
+      preLoaderRoute: typeof BuildRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/ai-agents': {
       id: '/ai-agents'
       path: '/ai-agents'
@@ -688,6 +952,13 @@ declare module '@tanstack/react-router' {
       path: '/affiliates'
       fullPath: '/affiliates'
       preLoaderRoute: typeof AffiliatesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/about': {
+      id: '/about'
+      path: '/about'
+      fullPath: '/about'
+      preLoaderRoute: typeof AboutRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -718,6 +989,55 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WebsiteApprovalTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/legal/terms': {
+      id: '/legal/terms'
+      path: '/terms'
+      fullPath: '/legal/terms'
+      preLoaderRoute: typeof LegalTermsRouteImport
+      parentRoute: typeof LegalRoute
+    }
+    '/legal/sla': {
+      id: '/legal/sla'
+      path: '/sla'
+      fullPath: '/legal/sla'
+      preLoaderRoute: typeof LegalSlaRouteImport
+      parentRoute: typeof LegalRoute
+    }
+    '/legal/refunds': {
+      id: '/legal/refunds'
+      path: '/refunds'
+      fullPath: '/legal/refunds'
+      preLoaderRoute: typeof LegalRefundsRouteImport
+      parentRoute: typeof LegalRoute
+    }
+    '/legal/privacy': {
+      id: '/legal/privacy'
+      path: '/privacy'
+      fullPath: '/legal/privacy'
+      preLoaderRoute: typeof LegalPrivacyRouteImport
+      parentRoute: typeof LegalRoute
+    }
+    '/legal/popia': {
+      id: '/legal/popia'
+      path: '/popia'
+      fullPath: '/legal/popia'
+      preLoaderRoute: typeof LegalPopiaRouteImport
+      parentRoute: typeof LegalRoute
+    }
+    '/legal/cookies': {
+      id: '/legal/cookies'
+      path: '/cookies'
+      fullPath: '/legal/cookies'
+      preLoaderRoute: typeof LegalCookiesRouteImport
+      parentRoute: typeof LegalRoute
+    }
+    '/legal/aup': {
+      id: '/legal/aup'
+      path: '/aup'
+      fullPath: '/legal/aup'
+      preLoaderRoute: typeof LegalAupRouteImport
+      parentRoute: typeof LegalRoute
+    }
     '/dashboard/websites': {
       id: '/dashboard/websites'
       path: '/dashboard/websites'
@@ -737,6 +1057,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard/website-projects'
       fullPath: '/dashboard/website-projects'
       preLoaderRoute: typeof DashboardWebsiteProjectsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/wallet': {
+      id: '/dashboard/wallet'
+      path: '/dashboard/wallet'
+      fullPath: '/dashboard/wallet'
+      preLoaderRoute: typeof DashboardWalletRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard/users': {
@@ -760,6 +1087,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardSettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/dashboard/server-status': {
+      id: '/dashboard/server-status'
+      path: '/dashboard/server-status'
+      fullPath: '/dashboard/server-status'
+      preLoaderRoute: typeof DashboardServerStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dashboard/roles': {
       id: '/dashboard/roles'
       path: '/dashboard/roles'
@@ -772,6 +1106,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard/reports'
       fullPath: '/dashboard/reports'
       preLoaderRoute: typeof DashboardReportsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/proposals': {
+      id: '/dashboard/proposals'
+      path: '/dashboard/proposals'
+      fullPath: '/dashboard/proposals'
+      preLoaderRoute: typeof DashboardProposalsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard/products': {
@@ -821,6 +1162,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard/crm'
       fullPath: '/dashboard/crm'
       preLoaderRoute: typeof DashboardCrmRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/cloud-security': {
+      id: '/dashboard/cloud-security'
+      path: '/dashboard/cloud-security'
+      fullPath: '/dashboard/cloud-security'
+      preLoaderRoute: typeof DashboardCloudSecurityRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard/billing': {
@@ -886,6 +1234,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthVerifyEmailRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth/two-factor': {
+      id: '/auth/two-factor'
+      path: '/auth/two-factor'
+      fullPath: '/auth/two-factor'
+      preLoaderRoute: typeof AuthTwoFactorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth/sso-error': {
       id: '/auth/sso-error'
       path: '/auth/sso-error'
@@ -935,6 +1290,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthForgotPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth/two-factor/': {
+      id: '/auth/two-factor/'
+      path: '/'
+      fullPath: '/auth/two-factor/'
+      preLoaderRoute: typeof AuthTwoFactorIndexRouteImport
+      parentRoute: typeof AuthTwoFactorRoute
+    }
     '/dashboard/websites/$websiteId': {
       id: '/dashboard/websites/$websiteId'
       path: '/$websiteId'
@@ -963,6 +1325,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardDomainsNewRouteImport
       parentRoute: typeof DashboardDomainsRoute
     }
+    '/auth/two-factor/setup': {
+      id: '/auth/two-factor/setup'
+      path: '/setup'
+      fullPath: '/auth/two-factor/setup'
+      preLoaderRoute: typeof AuthTwoFactorSetupRouteImport
+      parentRoute: typeof AuthTwoFactorRoute
+    }
     '/dashboard/billing/invoices/$invoiceId': {
       id: '/dashboard/billing/invoices/$invoiceId'
       path: '/invoices/$invoiceId'
@@ -972,6 +1341,42 @@ declare module '@tanstack/react-router' {
     }
   }
 }
+
+interface LegalRouteChildren {
+  LegalAupRoute: typeof LegalAupRoute
+  LegalCookiesRoute: typeof LegalCookiesRoute
+  LegalPopiaRoute: typeof LegalPopiaRoute
+  LegalPrivacyRoute: typeof LegalPrivacyRoute
+  LegalRefundsRoute: typeof LegalRefundsRoute
+  LegalSlaRoute: typeof LegalSlaRoute
+  LegalTermsRoute: typeof LegalTermsRoute
+}
+
+const LegalRouteChildren: LegalRouteChildren = {
+  LegalAupRoute: LegalAupRoute,
+  LegalCookiesRoute: LegalCookiesRoute,
+  LegalPopiaRoute: LegalPopiaRoute,
+  LegalPrivacyRoute: LegalPrivacyRoute,
+  LegalRefundsRoute: LegalRefundsRoute,
+  LegalSlaRoute: LegalSlaRoute,
+  LegalTermsRoute: LegalTermsRoute,
+}
+
+const LegalRouteWithChildren = LegalRoute._addFileChildren(LegalRouteChildren)
+
+interface AuthTwoFactorRouteChildren {
+  AuthTwoFactorSetupRoute: typeof AuthTwoFactorSetupRoute
+  AuthTwoFactorIndexRoute: typeof AuthTwoFactorIndexRoute
+}
+
+const AuthTwoFactorRouteChildren: AuthTwoFactorRouteChildren = {
+  AuthTwoFactorSetupRoute: AuthTwoFactorSetupRoute,
+  AuthTwoFactorIndexRoute: AuthTwoFactorIndexRoute,
+}
+
+const AuthTwoFactorRouteWithChildren = AuthTwoFactorRoute._addFileChildren(
+  AuthTwoFactorRouteChildren,
+)
 
 interface DashboardBillingRouteChildren {
   DashboardBillingInvoicesInvoiceIdRoute: typeof DashboardBillingInvoicesInvoiceIdRoute
@@ -1032,13 +1437,18 @@ const DashboardWebsitesRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AboutRoute: AboutRoute,
   AffiliatesRoute: AffiliatesRoute,
   AiRoute: AiRoute,
   AiAgentsRoute: AiAgentsRoute,
+  BuildRoute: BuildRoute,
   BusinessRoute: BusinessRoute,
   CloudRoute: CloudRoute,
   DomainsRoute: DomainsRoute,
+  LegalRoute: LegalRouteWithChildren,
+  MarketingRoute: MarketingRoute,
   PricingRoute: PricingRoute,
+  VoiceRoute: VoiceRoute,
   AuthForgotPasswordRoute: AuthForgotPasswordRoute,
   AuthLinkAccountRoute: AuthLinkAccountRoute,
   AuthResetPasswordRoute: AuthResetPasswordRoute,
@@ -1046,6 +1456,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthSignUpRoute: AuthSignUpRoute,
   AuthSsoCallbackRoute: AuthSsoCallbackRoute,
   AuthSsoErrorRoute: AuthSsoErrorRoute,
+  AuthTwoFactorRoute: AuthTwoFactorRouteWithChildren,
   AuthVerifyEmailRoute: AuthVerifyEmailRoute,
   DashboardLayoutRoute: DashboardLayoutRoute,
   DashboardActivityLogsRoute: DashboardActivityLogsRoute,
@@ -1055,6 +1466,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardAgentsRoute: DashboardAgentsRoute,
   DashboardAiWizardRoute: DashboardAiWizardRoute,
   DashboardBillingRoute: DashboardBillingRouteWithChildren,
+  DashboardCloudSecurityRoute: DashboardCloudSecurityRoute,
   DashboardCrmRoute: DashboardCrmRoute,
   DashboardCustomersRoute: DashboardCustomersRoute,
   DashboardDomainsRoute: DashboardDomainsRouteWithChildren,
@@ -1062,11 +1474,14 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardIntelligenceRoute: DashboardIntelligenceRoute,
   DashboardIntelligenceWizardRoute: DashboardIntelligenceWizardRoute,
   DashboardProductsRoute: DashboardProductsRoute,
+  DashboardProposalsRoute: DashboardProposalsRoute,
   DashboardReportsRoute: DashboardReportsRoute,
   DashboardRolesRoute: DashboardRolesRoute,
+  DashboardServerStatusRoute: DashboardServerStatusRoute,
   DashboardSettingsRoute: DashboardSettingsRoute,
   DashboardSupportRoute: DashboardSupportRouteWithChildren,
   DashboardUsersRoute: DashboardUsersRouteWithChildren,
+  DashboardWalletRoute: DashboardWalletRoute,
   DashboardWebsiteProjectsRoute: DashboardWebsiteProjectsRoute,
   DashboardWebsiteWizardRoute: DashboardWebsiteWizardRoute,
   DashboardWebsitesRoute: DashboardWebsitesRouteWithChildren,

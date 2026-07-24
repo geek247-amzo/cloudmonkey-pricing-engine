@@ -92,6 +92,27 @@
       "when": 1782864000000,
       "tag": "0012_website_commerce_foundation",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1783168000000,
+      "tag": "0021_user_whatsapp_allowlist",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1783277287511,
+      "tag": "0014_fancy_polaris",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1783277287512,
+      "tag": "0026_token_wallet",
+      "breakpoints": true
     }
   ]
 }

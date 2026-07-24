@@ -28,13 +28,13 @@ export function ServiceSection({
           {service.name}
         </h3>
         {service.description && <p className="mt-2 text-muted-foreground">{service.description}</p>}
+        {service.note && <p className="mt-3 text-sm text-muted-foreground">{service.note}</p>}
       </div>
       <div className={cols}>
         {service.plans.map((p) => (
           <PricingCard key={p.id} plan={p} accent={accent} currency={currency} href={ctaHref} />
         ))}
       </div>
-      {service.note && <p className="mt-4 text-xs italic text-muted-foreground">{service.note}</p>}
       <div className="mt-12 h-px w-full" style={{ background: `linear-gradient(90deg, transparent, ${accentColor}30, transparent)` }} />
     </section>
   );

@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, RefreshCcw, ShieldCheck, UserRound } from "lucide-react";
+import { ArrowRight, RefreshCcw, ShieldCheck, Trash2, UserRound } from "lucide-react";
 import { useEffect } from "react";
 import { toast } from "sonner";
 
@@ -57,6 +57,36 @@ function UsersPage() {
     onError: () => toast.error("Could not update role"),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      const res = await fetch(`/api/admin/users/${userId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Failed to delete user");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast.success("User and all associated data deleted");
+      queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Could not delete user");
+    },
+  });
+
+  const handleDelete = (userId: string, email: string) => {
+    if (
+      window.confirm(
+        `WARNING: Are you sure you want to permanently delete user ${email} and ALL their websites, databases, invoices, and subscriptions? This action CANNOT be undone.`
+      )
+    ) {
+      deleteMutation.mutate(userId);
+    }
+  };
+
   if (isChildRoute) return <Outlet />;
   if (!authReady || !isAdmin) return <div className="p-8 text-center">Checking permissions...</div>;
 
@@ -104,6 +134,7 @@ function UsersPage() {
               <thead className="border-b border-border/70 text-xs uppercase tracking-[0.16em] text-muted-foreground">
                 <tr>
                   <th className="pb-3">User</th>
+                  <th className="pb-3">WhatsApp</th>
                   <th className="pb-3">Role</th>
                   <th className="pb-3">Verified</th>
                   <th className="pb-3">Created</th>
@@ -124,6 +155,9 @@ function UsersPage() {
                         </div>
                       </div>
                     </td>
+                    <td className="py-4 text-sm text-muted-foreground">
+                      {item.whatsapp || "Not set"}
+                    </td>
                     <td className="py-4">
                       <select
                         value={item.role}
@@ -137,11 +171,20 @@ function UsersPage() {
                       <Badge variant={item.emailVerified ? "default" : "outline"}>{item.emailVerified ? "Verified" : "Unverified"}</Badge>
                     </td>
                     <td className="py-4 text-muted-foreground">{new Date(item.createdAt).toLocaleDateString()}</td>
-                    <td className="py-4 text-right">
+                    <td className="py-4 text-right flex justify-end gap-2">
                       <Button asChild variant="outline" size="sm" className="rounded-lg">
                         <Link to="/dashboard/users/$userId" params={{ userId: item.id }}>
                           View <ArrowRight className="h-3.5 w-3.5" />
                         </Link>
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        className="rounded-lg"
+                        onClick={() => handleDelete(item.id, item.email)}
+                        disabled={deleteMutation.isPending}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </td>
                   </tr>

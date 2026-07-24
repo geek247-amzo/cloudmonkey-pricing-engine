@@ -23,6 +23,8 @@ export async function initializePayment(input: {
   planId?: string | null;
   bundleId?: string | null;
   callbackUrl?: string;
+  reference?: string;
+  metadata?: Record<string, unknown>;
 }): Promise<InitializePaymentResponse> {
   const response = await fetch("https://api.paystack.co/transaction/initialize", {
     method: "POST",
@@ -33,6 +35,7 @@ export async function initializePayment(input: {
     body: JSON.stringify({
       email: input.email,
       amount: input.amountCents,
+      reference: input.reference,
       callback_url: input.callbackUrl,
       metadata: {
         custom_fields: [
@@ -47,6 +50,7 @@ export async function initializePayment(input: {
         user_id: input.userId,
         plan_id: input.planId ?? null,
         bundle_id: input.bundleId ?? null,
+        ...(input.metadata ?? {}),
       },
     }),
   });

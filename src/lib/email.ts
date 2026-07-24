@@ -15,6 +15,7 @@ type SendEmailInput = {
   subject: string;
   data?: Record<string, unknown>;
   idempotencyKey?: string;
+  customId?: string;
 };
 
 type RenderedEmail = {
@@ -47,13 +48,17 @@ export async function sendEmail(input: SendEmailInput) {
     auth: { user, pass },
   });
 
+  const headers: Record<string, string> = {};
+  if (input.idempotencyKey) headers["X-CloudMonkey-Idempotency-Key"] = input.idempotencyKey;
+  if (input.customId) headers["X-Mailjet-CustomID"] = input.customId;
+
   await transporter.sendMail({
     from: `${fromName} <${fromEmail}>`,
     to: input.to,
     subject: rendered.subject,
     html: rendered.html,
     text: rendered.text,
-    headers: input.idempotencyKey ? { "X-CloudMonkey-Idempotency-Key": input.idempotencyKey } : undefined,
+    headers: Object.keys(headers).length > 0 ? headers : undefined,
   });
 }
 

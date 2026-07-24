@@ -1,6 +1,15 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, Bot, LifeBuoy, MessageSquareWarning, Plus, Search } from "lucide-react";
+import {
+  ArrowRight,
+  Bot,
+  FileText,
+  LifeBuoy,
+  MessageSquareWarning,
+  Plus,
+  Search,
+  Sparkles,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -20,6 +29,19 @@ export const Route = createFileRoute("/dashboard/support")({
   component: SupportPage,
 });
 
+type TicketSummary = {
+  id: string;
+  subject: string;
+  description?: string | null;
+  priority: string;
+  status: string;
+  category: string;
+  source?: string | null;
+  updatedAt: string;
+  user?: { email?: string | null } | null;
+  comments?: unknown[] | null;
+};
+
 function SupportPage() {
   const queryClient = useQueryClient();
   const { data: session } = authClient.useSession();
@@ -27,17 +49,18 @@ function SupportPage() {
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState("medium");
+  const [category, setCategory] = useState("general");
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [sourceFilter, setSourceFilter] = useState("all");
   const [query, setQuery] = useState("");
 
-  const { data: tickets, isLoading } = useQuery({
+  const { data: tickets, isLoading } = useQuery<TicketSummary[]>({
     queryKey: [isAdmin ? "admin" : "user", "tickets"],
     queryFn: async () => {
       const res = await fetch(isAdmin ? "/api/admin/tickets" : "/api/user/tickets");
       if (!res.ok) throw new Error("Failed to fetch tickets");
-      return res.json();
+      return res.json() as Promise<TicketSummary[]>;
     },
   });
 
@@ -46,7 +69,14 @@ function SupportPage() {
       const res = await fetch(isAdmin ? "/api/admin/tickets" : "/api/user/tickets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: session?.user?.id, subject, description, priority, status: "open", category: "general" }),
+        body: JSON.stringify({
+          userId: session?.user?.id,
+          subject,
+          description,
+          priority,
+          status: "open",
+          category,
+        }),
       });
       if (!res.ok) throw new Error("Failed to create ticket");
       return res.json();
@@ -54,19 +84,25 @@ function SupportPage() {
     onSuccess: () => {
       setSubject("");
       setDescription("");
+      setPriority("medium");
+      setCategory("general");
       toast.success("Ticket opened");
       queryClient.invalidateQueries({ queryKey: [isAdmin ? "admin" : "user", "tickets"] });
     },
     onError: () => toast.error("Could not open ticket"),
   });
 
-  const openCount = tickets?.filter((ticket: any) => !["resolved", "closed"].includes(ticket.status)).length ?? 0;
-  const urgentCount = tickets?.filter((ticket: any) => ["high", "urgent"].includes(ticket.priority)).length ?? 0;
-  const resolvedCount = tickets?.filter((ticket: any) => ticket.status === "resolved" || ticket.status === "closed").length ?? 0;
-  const aiCount = tickets?.filter((ticket: any) => ticket.source === "ai_chat").length ?? 0;
+  const openCount =
+    tickets?.filter((ticket) => !["resolved", "closed"].includes(ticket.status)).length ?? 0;
+  const urgentCount =
+    tickets?.filter((ticket) => ["high", "urgent"].includes(ticket.priority)).length ?? 0;
+  const resolvedCount =
+    tickets?.filter((ticket) => ticket.status === "resolved" || ticket.status === "closed")
+      .length ?? 0;
+  const aiCount = tickets?.filter((ticket) => ticket.source === "ai_chat").length ?? 0;
   const filteredTickets = useMemo(() => {
     const text = query.trim().toLowerCase();
-    return (tickets ?? []).filter((ticket: any) => {
+    return (tickets ?? []).filter((ticket) => {
       if (statusFilter !== "all" && ticket.status !== statusFilter) return false;
       if (priorityFilter !== "all" && ticket.priority !== priorityFilter) return false;
       if (sourceFilter !== "all" && (ticket.source ?? "manual") !== sourceFilter) return false;
@@ -108,38 +144,96 @@ function SupportPage() {
         ))}
       </div>
 
-      <Card className="rounded-lg border-[#dfe4ef] bg-white shadow-sm">
-        <CardHeader>
-          <CardTitle>Open a ticket</CardTitle>
+      <Card className="overflow-hidden rounded-lg border-[#dfe4ef] bg-white shadow-sm">
+        <CardHeader className="border-b border-[#e7ebf3] bg-[#f7f9fd]">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-start gap-3">
+              <div className="grid h-10 w-10 place-items-center rounded-lg bg-[var(--ai)]/10 text-[var(--ai)]">
+                <FileText className="h-5 w-5" />
+              </div>
+              <div>
+                <CardTitle>Open a ticket</CardTitle>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Capture the issue, impact, category, and priority for the helpdesk queue.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 rounded-lg border border-[#dfe4ef] bg-white px-3 py-2 text-xs text-muted-foreground">
+              <Sparkles className="h-3.5 w-3.5 text-[var(--ai)]" />
+              Structured requests are easier to resolve
+            </div>
+          </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-5">
           <form
-            className="grid gap-4 lg:grid-cols-[1fr_1.5fr_160px_auto]"
+            className="grid gap-4 xl:grid-cols-[1.1fr_170px_170px] xl:items-start"
             onSubmit={(event) => {
               event.preventDefault();
               createMutation.mutate();
             }}
           >
-            <div className="space-y-2">
-              <Label>Subject</Label>
-              <Input value={subject} onChange={(event) => setSubject(event.target.value)} required />
+            <div className="space-y-4 xl:row-span-2">
+              <div className="space-y-2">
+                <Label>Subject</Label>
+                <Input
+                  value={subject}
+                  onChange={(event) => setSubject(event.target.value)}
+                  placeholder="Briefly describe the request"
+                  required
+                  className="h-11 rounded-lg"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Description</Label>
+                <Textarea
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  placeholder="Add context, deliverables, dates, links, and any steps already taken."
+                  className="min-h-36 rounded-lg"
+                />
+              </div>
             </div>
             <div className="space-y-2">
-              <Label>Description</Label>
-              <Textarea value={description} onChange={(event) => setDescription(event.target.value)} className="min-h-9" />
+              <Label>Category</Label>
+              <select
+                value={category}
+                onChange={(event) => setCategory(event.target.value)}
+                className="h-11 w-full rounded-lg border border-input bg-white px-3 text-sm"
+              >
+                <option value="general">General</option>
+                <option value="billing">Billing</option>
+                <option value="domains">Domains</option>
+                <option value="hosting">Hosting</option>
+                <option value="websites">Websites</option>
+                <option value="support">Support</option>
+              </select>
             </div>
             <div className="space-y-2">
               <Label>Priority</Label>
-              <select value={priority} onChange={(event) => setPriority(event.target.value)} className="h-9 w-full rounded-md border border-input bg-white px-3 text-sm">
+              <select
+                value={priority}
+                onChange={(event) => setPriority(event.target.value)}
+                className="h-11 w-full rounded-lg border border-input bg-white px-3 text-sm"
+              >
                 <option value="low">Low</option>
                 <option value="medium">Medium</option>
                 <option value="high">High</option>
                 <option value="urgent">Urgent</option>
               </select>
             </div>
-            <Button type="submit" className="self-end rounded-lg bg-[var(--ai)]" disabled={createMutation.isPending}>
+            <div className="hidden space-y-2 xl:block">
+              <Label>Ticket quality</Label>
+              <div className="rounded-lg border border-dashed border-[#d8deea] bg-[#fbfcff] p-3 text-xs leading-relaxed text-muted-foreground">
+                Use a clear action title, then put details and deliverables in the description.
+              </div>
+            </div>
+            <Button
+              type="submit"
+              className="h-11 self-end rounded-lg bg-[var(--ai)]"
+              disabled={createMutation.isPending}
+            >
               <Plus className="h-4 w-4" />
-              Open
+              Open ticket
             </Button>
           </form>
         </CardContent>
@@ -160,21 +254,33 @@ function SupportPage() {
                 className="min-w-0 flex-1 bg-transparent text-sm outline-none"
               />
             </div>
-            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-10 rounded-lg border border-input bg-white px-3 text-sm">
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              className="h-10 rounded-lg border border-input bg-white px-3 text-sm"
+            >
               <option value="all">All statuses</option>
               <option value="open">Open</option>
               <option value="pending">Pending</option>
               <option value="resolved">Resolved</option>
               <option value="closed">Closed</option>
             </select>
-            <select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)} className="h-10 rounded-lg border border-input bg-white px-3 text-sm">
+            <select
+              value={priorityFilter}
+              onChange={(event) => setPriorityFilter(event.target.value)}
+              className="h-10 rounded-lg border border-input bg-white px-3 text-sm"
+            >
               <option value="all">All priorities</option>
               <option value="low">Low</option>
               <option value="medium">Medium</option>
               <option value="high">High</option>
               <option value="urgent">Urgent</option>
             </select>
-            <select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)} className="h-10 rounded-lg border border-input bg-white px-3 text-sm">
+            <select
+              value={sourceFilter}
+              onChange={(event) => setSourceFilter(event.target.value)}
+              className="h-10 rounded-lg border border-input bg-white px-3 text-sm"
+            >
               <option value="all">All sources</option>
               <option value="manual">Manual</option>
               <option value="ai_chat">AI chat</option>
@@ -184,37 +290,46 @@ function SupportPage() {
           {isLoading ? (
             <div className="py-8 text-center text-sm text-muted-foreground">Loading tickets...</div>
           ) : !tickets?.length ? (
-            <div className="py-8 text-center text-sm text-muted-foreground">No support tickets have been opened.</div>
-          ) : !filteredTickets.length ? (
-            <div className="py-8 text-center text-sm text-muted-foreground">No tickets match the selected filters.</div>
-          ) : filteredTickets.map((ticket: any) => (
-            <div key={ticket.id} className="flex flex-col gap-3 rounded-lg border border-border p-4 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <div className="font-semibold text-foreground">{ticket.subject}</div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  {ticket.user?.email || session?.user?.email} · {ticket.category} · {new Date(ticket.updatedAt).toLocaleString()}
-                </div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <Badge>{ticket.priority}</Badge>
-                  <Badge variant={ticket.status === "resolved" ? "secondary" : "outline"}>{ticket.status}</Badge>
-                  <Badge variant="outline">{ticket.source ?? "manual"}</Badge>
-                  <Badge variant="outline">{ticket.comments?.length ?? 0} comments</Badge>
-                </div>
-              </div>
-              <Button asChild variant="outline" size="sm" className="rounded-lg">
-                <Link to="/dashboard/support/$ticketId" params={{ ticketId: ticket.id }}>
-                  View <ArrowRight className="h-3.5 w-3.5" />
-                </Link>
-              </Button>
+            <div className="py-8 text-center text-sm text-muted-foreground">
+              No support tickets have been opened.
             </div>
-          ))}
+          ) : !filteredTickets.length ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">
+              No tickets match the selected filters.
+            </div>
+          ) : (
+            filteredTickets.map((ticket) => (
+              <div
+                key={ticket.id}
+                className="flex flex-col gap-3 rounded-lg border border-border bg-white p-4 transition hover:border-[var(--ai)]/30 hover:bg-[#fbfcff] lg:flex-row lg:items-center lg:justify-between"
+              >
+                <div>
+                  <div className="font-semibold text-foreground">{ticket.subject}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {ticket.user?.email || session?.user?.email} · {ticket.category} ·{" "}
+                    {new Date(ticket.updatedAt).toLocaleString()}
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Badge>{ticket.priority}</Badge>
+                    <Badge variant={ticket.status === "resolved" ? "secondary" : "outline"}>
+                      {ticket.status}
+                    </Badge>
+                    <Badge variant="outline">{ticket.source ?? "manual"}</Badge>
+                    <Badge variant="outline">{ticket.comments?.length ?? 0} comments</Badge>
+                  </div>
+                </div>
+                <Button asChild variant="outline" size="sm" className="rounded-lg">
+                  <Link to="/dashboard/support/$ticketId" params={{ ticketId: ticket.id }}>
+                    Open <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                </Button>
+              </div>
+            ))
+          )}
         </CardContent>
       </Card>
 
-      <div className="space-y-4">
-        <div className="text-sm font-semibold text-[#07102c]">Ticket detail</div>
-        <Outlet />
-      </div>
+      <Outlet />
     </div>
   );
 }

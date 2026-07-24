@@ -1,26 +1,37 @@
 import { Link } from "@tanstack/react-router";
 import { Menu, X } from "lucide-react";
 import { useState } from "react";
-import { CurrencySwitcher } from "./CurrencySwitcher";
 import logo from "@/assets/cm-logo.png";
 import { useHydratedSession } from "@/hooks/use-admin-access";
+import { authClient } from "@/lib/auth-client";
 
 const NAV = [
   { to: "/cloud", label: "Cloud" },
-  { to: "/business", label: "Business" },
-  { to: "/ai", label: "AI" },
+  { to: "/build", label: "Build" },
+  { to: "/marketing", label: "Marketing" },
+  { to: "/voice", label: "Voice" },
   { to: "/ai-agents", label: "AI Agents" },
   { to: "/domains", label: "Domains" },
+  { to: "/pricing", label: "Pricing" },
 ] as const;
 
 export function Header() {
   const [open, setOpen] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
   const { data: session, authReady } = useHydratedSession();
   const isSignedIn = authReady && !!session;
-  const signInHref = isSignedIn ? "/dashboard" : "/auth/sign-in";
-  const signInLabel = isSignedIn ? "Dashboard" : "Sign in";
   const getStartedHref = isSignedIn ? "/dashboard" : "/auth/sign-up";
   const getStartedLabel = isSignedIn ? "Dashboard" : "Get Started";
+
+  async function handleSignOut() {
+    setIsSigningOut(true);
+    await authClient.signOut({
+      fetchOptions: {
+        onSuccess: () => window.location.assign("/"),
+        onError: () => setIsSigningOut(false),
+      },
+    });
+  }
   return (
     <header className="sticky top-0 z-50 border-b border-border/60 bg-background/80 backdrop-blur-xl">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
@@ -43,10 +54,20 @@ export function Header() {
           ))}
         </nav>
         <div className="hidden items-center gap-3 lg:flex">
-          <CurrencySwitcher />
-          <Link to={signInHref} className="text-sm font-medium text-muted-foreground hover:text-foreground">
-            {signInLabel}
-          </Link>
+          {isSignedIn ? (
+            <button
+              type="button"
+              onClick={handleSignOut}
+              disabled={isSigningOut}
+              className="text-sm font-medium text-muted-foreground hover:text-foreground disabled:opacity-60"
+            >
+              {isSigningOut ? "Signing out..." : "Sign out"}
+            </button>
+          ) : (
+            <Link to="/auth/sign-in" className="text-sm font-medium text-muted-foreground hover:text-foreground">
+              Sign in
+            </Link>
+          )}
           <Link
             to={getStartedHref}
             className="rounded-full px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-[var(--shadow-elevated)] transition-transform hover:scale-[1.02]"
@@ -73,7 +94,27 @@ export function Header() {
               </Link>
             ))}
             <div className="mt-2 flex items-center justify-between border-t border-border pt-3">
-              <CurrencySwitcher />
+              {isSignedIn ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    void handleSignOut();
+                  }}
+                  disabled={isSigningOut}
+                  className="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground disabled:opacity-60"
+                >
+                  {isSigningOut ? "Signing out..." : "Sign out"}
+                </button>
+              ) : (
+                <Link
+                  to="/auth/sign-in"
+                  className="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
+                  onClick={() => setOpen(false)}
+                >
+                  Sign in
+                </Link>
+              )}
               <Link
                 to={getStartedHref}
                 className="rounded-full px-4 py-2 text-sm font-semibold text-primary-foreground"

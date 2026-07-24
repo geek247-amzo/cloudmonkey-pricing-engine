@@ -1,8 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Database, Globe, RefreshCcw, Server, UserRound } from "lucide-react";
+import { Bot, Database, Globe, RefreshCcw, Send, Server, UserRound } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
 
@@ -11,8 +11,16 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAdminAccess } from "@/hooks/use-admin-access";
+import { extractAiResponseText } from "@/lib/ai-response";
+import { formatDateUTC } from "@/lib/date-format";
+import { z } from "zod";
+
+const adminSearchSchema = z.object({
+  tab: z.enum(["domains", "servers", "services", "agent"]).optional(),
+});
 
 export const Route = createFileRoute("/dashboard/administration")({
+  validateSearch: (search) => adminSearchSchema.parse(search),
   head: () => ({
     meta: [{ title: "Administration - CloudMonkey Dashboard" }],
   }),
@@ -78,9 +86,18 @@ function AdministrationPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { authReady, isAdmin } = useAdminAccess();
-  const [view, setView] = useState<"domains" | "servers" | "services">("domains");
+  const search = Route.useSearch();
+  const [view, setView] = useState<"domains" | "servers" | "services" | "agent">(
+    search.tab || "domains",
+  );
   const [domainFilter, setDomainFilter] = useState("");
   const [serverFilter, setServerFilter] = useState("");
+
+  useEffect(() => {
+    if (search.tab) {
+      setView(search.tab);
+    }
+  }, [search.tab]);
 
   useEffect(() => {
     if (authReady && !isAdmin) navigate({ to: "/dashboard" });
@@ -192,8 +209,16 @@ function AdministrationPage() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="Users" value={users.length} icon={UserRound} />
         <MetricCard label="Domains" value={data?.domains?.length ?? 0} icon={Globe} />
-        <MetricCard label="CloudMonkey VPS servers" value={data?.servers?.length ?? 0} icon={Server} />
-        <MetricCard label="CloudMonkey VPS services" value={data?.vultrPlans?.length ?? 0} icon={Database} />
+        <MetricCard
+          label="CloudMonkey VPS servers"
+          value={data?.servers?.length ?? 0}
+          icon={Server}
+        />
+        <MetricCard
+          label="CloudMonkey VPS services"
+          value={data?.vultrPlans?.length ?? 0}
+          icon={Database}
+        />
       </div>
 
       {providerErrors.length > 0 && (
@@ -213,6 +238,7 @@ function AdministrationPage() {
           { value: "domains", label: "Domains" },
           { value: "servers", label: "Servers" },
           { value: "services", label: "CloudMonkey VPS services" },
+          { value: "agent", label: "Admin Agent" },
         ].map((item) => (
           <Button
             key={item.value}
@@ -383,6 +409,8 @@ function AdministrationPage() {
               </CardContent>
             </Card>
           )}
+
+          {view === "agent" && <AdminAgentConsole users={users} />}
         </>
       )}
     </div>
@@ -500,7 +528,406 @@ function EmptyRow({ colSpan, label }: { colSpan: number; label: string }) {
 }
 
 function formatDate(value?: string | null) {
-  if (!value) return "N/A";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "N/A" : date.toLocaleDateString();
+  return value ? formatDateUTC(value) : "N/A";
+}
+
+const MarkdownRenderer: React.FC<{ content: string }> = ({ content }) => {
+  const parts = [];
+  const lines = content.split("\n");
+  let inTable = false;
+  let tableHeaders: string[] = [];
+  let tableRows: string[][] = [];
+
+  const renderTextWithFormatting = (text: string) => {
+    const boldRegex = /\*\*([^*]+)\*\*/g;
+    const codeRegex = /`([^`]+)`/g;
+    let elements: React.ReactNode[] = [text];
+
+    elements = elements.flatMap((el) => {
+      if (typeof el !== "string") return el;
+      const parts = [];
+      let lastIdx = 0;
+      let match;
+      boldRegex.lastIndex = 0;
+      while ((match = boldRegex.exec(el)) !== null) {
+        if (match.index > lastIdx) {
+          parts.push(el.substring(lastIdx, match.index));
+        }
+        parts.push(
+          <strong key={`bold-${match.index}`} className="font-semibold text-foreground">
+            {match[1]}
+          </strong>,
+        );
+        lastIdx = boldRegex.lastIndex;
+      }
+      if (lastIdx < el.length) {
+        parts.push(el.substring(lastIdx));
+      }
+      return parts;
+    });
+
+    elements = elements.flatMap((el) => {
+      if (typeof el !== "string") return el;
+      const parts = [];
+      let lastIdx = 0;
+      let match;
+      codeRegex.lastIndex = 0;
+      while ((match = codeRegex.exec(el)) !== null) {
+        if (match.index > lastIdx) {
+          parts.push(el.substring(lastIdx, match.index));
+        }
+        parts.push(
+          <code
+            key={`code-${match.index}`}
+            className="bg-muted/80 px-1.5 py-0.5 rounded text-xs font-mono border border-border/40 text-[var(--ai)]"
+          >
+            {match[1]}
+          </code>,
+        );
+        lastIdx = codeRegex.lastIndex;
+      }
+      if (lastIdx < el.length) {
+        parts.push(el.substring(lastIdx));
+      }
+      return parts;
+    });
+
+    return elements;
+  };
+
+  const flushTable = (key: number) => {
+    if (tableHeaders.length === 0 && tableRows.length === 0) return null;
+    const tableEl = (
+      <div
+        key={`table-${key}`}
+        className="my-3 overflow-x-auto rounded-lg border border-border bg-card shadow-sm max-w-full"
+      >
+        <table className="min-w-full divide-y divide-border text-xs">
+          {tableHeaders.length > 0 && (
+            <thead className="bg-muted text-muted-foreground font-semibold uppercase tracking-wider text-left">
+              <tr>
+                {tableHeaders.map((header, i) => (
+                  <th key={i} className="px-4 py-2.5 border-r border-border/40 last:border-r-0">
+                    {renderTextWithFormatting(header)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+          )}
+          <tbody className="divide-y divide-border/40 bg-white">
+            {tableRows.map((row, i) => (
+              <tr key={i} className="hover:bg-muted/20 transition-colors">
+                {row.map((cell, j) => (
+                  <td
+                    key={j}
+                    className="px-4 py-2.5 text-foreground font-medium border-r border-border/40 last:border-r-0 whitespace-nowrap"
+                  >
+                    {renderTextWithFormatting(cell)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+    tableHeaders = [];
+    tableRows = [];
+    return tableEl;
+  };
+
+  let keyCounter = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line.startsWith("|") && line.endsWith("|")) {
+      inTable = true;
+      const cells = line
+        .split("|")
+        .map((c) => c.trim())
+        .filter((_, idx, arr) => idx > 0 && idx < arr.length - 1);
+      if (cells.every((c) => c.match(/^:?-+:?$/))) {
+        continue;
+      }
+      if (tableHeaders.length === 0 && tableRows.length === 0) {
+        tableHeaders = cells;
+      } else {
+        tableRows.push(cells);
+      }
+    } else {
+      if (inTable) {
+        const table = flushTable(keyCounter++);
+        if (table) parts.push(table);
+        inTable = false;
+      }
+      if (line.startsWith("- ") || line.startsWith("* ")) {
+        parts.push(
+          <div key={keyCounter++} className="flex gap-2 pl-4 py-0.5 leading-relaxed text-sm">
+            <span className="text-[var(--ai)] mt-1.5 h-1.5 w-1.5 rounded-full bg-[var(--ai)] flex-shrink-0" />
+            <div className="flex-1">{renderTextWithFormatting(line.substring(2))}</div>
+          </div>,
+        );
+      } else if (line.startsWith("#")) {
+        const match = line.match(/^(#{1,6})\s+(.*)$/);
+        if (match) {
+          const level = match[1].length;
+          const text = match[2];
+          const className =
+            level === 1 ? "text-lg font-bold mt-4 mb-2" : "text-base font-semibold mt-3 mb-1.5";
+          parts.push(
+            <div key={keyCounter++} className={`${className} text-foreground`}>
+              {renderTextWithFormatting(text)}
+            </div>,
+          );
+        } else {
+          parts.push(
+            <div key={keyCounter++} className="py-0.5 leading-relaxed">
+              {renderTextWithFormatting(line)}
+            </div>,
+          );
+        }
+      } else {
+        if (line === "") {
+          parts.push(<div key={keyCounter++} className="h-2" />);
+        } else {
+          parts.push(
+            <div key={keyCounter++} className="py-0.5 leading-relaxed whitespace-pre-wrap">
+              {renderTextWithFormatting(lines[i])}
+            </div>,
+          );
+        }
+      }
+    }
+  }
+
+  if (inTable) {
+    const table = flushTable(keyCounter++);
+    if (table) parts.push(table);
+  }
+
+  return <div className="space-y-1">{parts}</div>;
+};
+
+function AdminAgentConsole({
+  users,
+}: {
+  users: Array<{ id: string; name: string | null; email: string }>;
+}) {
+  const [messages, setMessages] = useState<
+    Array<{ id: string; role: "user" | "assistant"; body: string; createdAt: string }>
+  >([]);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [newMessage, setNewMessage] = useState("");
+  const [isSending, setIsSending] = useState(false);
+  const [contextType, setContextType] = useState<string>("");
+  const [contextId, setContextId] = useState<string>("");
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, isSending]);
+
+  // Load chat history
+  useEffect(() => {
+    async function loadHistory() {
+      try {
+        const url = sessionId
+          ? `/api/admin/chat/history?sessionId=${sessionId}`
+          : "/api/admin/chat/history";
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("Failed to load chat history");
+        const data = await res.json();
+        setSessionId(data.session.id);
+        setMessages(data.history || []);
+      } catch (err) {
+        toast.error("Could not load chat history");
+      }
+    }
+    loadHistory();
+  }, [sessionId]);
+
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMessage.trim() || isSending) return;
+
+    const userMsg = {
+      id: "temp-" + Date.now(),
+      role: "user" as const,
+      body: newMessage,
+      createdAt: new Date().toISOString(),
+    };
+
+    setMessages((prev) => [...prev, userMsg]);
+    const messageToSend = newMessage;
+    setNewMessage("");
+    setIsSending(true);
+
+    try {
+      const conversationHistory = messages
+        .filter((m) => m.id !== userMsg.id)
+        .slice(-10)
+        .map((m) => ({ role: m.role, content: m.body }));
+
+      const res = await fetch("/api/admin/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId,
+          message: messageToSend,
+          contextType: contextType || undefined,
+          contextId: contextId || undefined,
+          conversationHistory,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to send message");
+      }
+
+      setMessages((prev) => {
+        const filtered = prev.filter((m) => m.id !== userMsg.id);
+        return [...filtered, data.userMessage, data.botMessage];
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to get agent response");
+      setMessages((prev) => prev.filter((m) => m.id !== userMsg.id));
+      setNewMessage(messageToSend);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  return (
+    <Card className="rounded-lg border-[#dfe4ef] bg-white shadow-sm flex flex-col h-[calc(100vh-350px)] min-h-[500px]">
+      <CardHeader className="border-b border-border/50 py-3 px-4 flex flex-row items-center justify-between gap-3">
+        <div className="flex flex-row items-center gap-3">
+          <div className="bg-[var(--ai-soft)] text-[var(--ai)] p-2 rounded-lg">
+            <Bot className="h-5 w-5" />
+          </div>
+          <div>
+            <CardTitle className="text-base font-bold">Admin AI Copilot</CardTitle>
+            <div className="text-xs text-muted-foreground">
+              Linked to database and Vultr API. Manage servers, accounts, and queries.
+            </div>
+          </div>
+        </div>
+        <div className="flex flex-row items-center gap-2">
+          {users && users.length > 0 && (
+            <select
+              className="text-sm border rounded p-1 max-w-[200px]"
+              value={contextId}
+              onChange={(e) => {
+                setContextType(e.target.value ? "user" : "");
+                setContextId(e.target.value);
+              }}
+            >
+              <option value="">-- No linked customer --</option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name || u.email}
+                </option>
+              ))}
+            </select>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setMessages([]);
+              setSessionId(null);
+            }}
+          >
+            New Chat
+          </Button>
+        </div>
+      </CardHeader>
+
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {messages.length === 0 && (
+          <div className="h-full flex flex-col items-center justify-center text-center p-8">
+            <Bot className="h-10 w-10 text-[var(--ai)] mb-3 animate-pulse" />
+            <div className="font-semibold text-foreground text-sm">
+              CloudMonkey Administrative Assistant
+            </div>
+            <p className="text-xs text-muted-foreground max-w-sm mt-1">
+              Ask me to provision Vultr servers, update customer profile roles, sync website
+              containers, or query direct SQL statistics.
+            </p>
+          </div>
+        )}
+
+        {messages.map((msg) => (
+          <div
+            key={msg.id}
+            className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+          >
+            <div
+              className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm shadow-sm ${
+                msg.role === "user"
+                  ? "bg-[var(--ai)] text-white rounded-br-none"
+                  : "bg-muted text-foreground rounded-bl-none border border-border/40"
+              }`}
+            >
+              <div className="leading-relaxed">
+                <MarkdownRenderer
+                  content={
+                    msg.role === "assistant" ? extractAiResponseText(msg.body, msg.body) : msg.body
+                  }
+                />
+              </div>
+              <div
+                className={`text-[10px] mt-1 ${
+                  msg.role === "user" ? "text-white/60 text-right" : "text-muted-foreground"
+                }`}
+              >
+                {new Date(msg.createdAt).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </div>
+            </div>
+          </div>
+        ))}
+        {isSending && (
+          <div className="flex justify-start">
+            <div className="bg-muted text-foreground max-w-[80%] rounded-2xl rounded-bl-none px-4 py-2.5 text-sm border border-border/40 flex items-center gap-1.5 shadow-sm">
+              <span
+                className="h-2 w-2 rounded-full bg-[var(--ai)] animate-bounce"
+                style={{ animationDelay: "0ms" }}
+              ></span>
+              <span
+                className="h-2 w-2 rounded-full bg-[var(--ai)] animate-bounce"
+                style={{ animationDelay: "150ms" }}
+              ></span>
+              <span
+                className="h-2 w-2 rounded-full bg-[var(--ai)] animate-bounce"
+                style={{ animationDelay: "300ms" }}
+              ></span>
+            </div>
+          </div>
+        )}
+        <div ref={scrollRef} />
+      </div>
+
+      <form onSubmit={handleSend} className="border-t border-border/50 p-3 flex gap-2">
+        <input
+          type="text"
+          value={newMessage}
+          onChange={(e) => setNewMessage(e.target.value)}
+          placeholder="Command the panel (e.g. 'Show me the last 3 registered users' or 'Provision a server')..."
+          className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          disabled={isSending}
+        />
+        <Button
+          type="submit"
+          disabled={isSending || !newMessage.trim()}
+          className="rounded-lg bg-[var(--ai)] hover:bg-[var(--ai)]/90"
+        >
+          <Send className="h-4 w-4" />
+        </Button>
+      </form>
+    </Card>
+  );
 }

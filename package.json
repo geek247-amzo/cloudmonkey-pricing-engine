@@ -11,6 +11,7 @@
     "start": "vite dev --host 0.0.0.0 --port ${PORT:-3000}",
     "lint": "eslint .",
     "format": "prettier --write .",
+    "test": "bun test",
     "db:push": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate"
@@ -61,6 +62,7 @@
     "nodemailer": "^9.0.1",
     "playwright-core": "^1.61.0",
     "postgres": "^3.4.5",
+    "qrcode": "^1.5.4",
     "react": "^19.2.0",
     "react-day-picker": "^9.14.0",
     "react-dom": "^19.2.0",
@@ -79,6 +81,7 @@
     "@eslint/js": "^9.32.0",
     "@lovable.dev/vite-tanstack-config": "^2.3.2",
     "@types/node": "^22.16.5",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.0.4",

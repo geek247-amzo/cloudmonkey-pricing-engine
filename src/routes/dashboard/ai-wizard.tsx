@@ -75,6 +75,9 @@ type PricingPlan = {
   id: string;
   name: string;
   priceZar?: string | null;
+  unit?: string | null;
+  billingType?: string | null;
+  billingFrequency?: string | null;
   trialDays?: number | null;
   service?: { id: string; name: string };
 };
@@ -82,10 +85,24 @@ type PricingBundle = {
   id: string;
   name: string;
   priceZar?: string | null;
+  unit?: string | null;
+  billingType?: string | null;
+  billingFrequency?: string | null;
 };
 type PricingResponse = {
   categories?: Array<{ services?: Array<{ id: string; name: string; plans?: PricingPlan[] }> }>;
   bundles?: PricingBundle[];
+};
+type AgreementRequirement = {
+  required: boolean;
+  signed: boolean;
+  consentText?: string;
+  template?: {
+    id: string;
+    title: string;
+    version: string;
+    documentType: string;
+  } | null;
 };
 type Answers = Record<string, string | string[]>;
 
@@ -95,6 +112,12 @@ async function fetchJson(path: string) {
   return res.json();
 }
 
+function frequencyLabel(item?: { billingFrequency?: string | null; billingType?: string | null; unit?: string | null } | null) {
+  if (item?.billingFrequency === "once_off" || item?.billingType === "once_off") return "once off";
+  if (item?.billingFrequency === "year" || String(item?.unit ?? "").toLowerCase().includes("year")) return "/ year";
+  return item?.unit || "/ month";
+}
+
 function AiWizardPage() {
   const { data: session } = authClient.useSession();
   const search = Route.useSearch();
@@ -102,6 +125,7 @@ function AiWizardPage() {
   const [activeGroup, setActiveGroup] = useState(0);
   const [answers, setAnswers] = useState<Answers>({});
   const [couponCode, setCouponCode] = useState(search.coupon ?? "");
+  const [agreementAccepted, setAgreementAccepted] = useState(false);
 
   const subscriptions = useQuery({
     queryKey: ["user", "subscription"],
@@ -113,6 +137,17 @@ function AiWizardPage() {
     queryKey: ["public", "pricing"],
     queryFn: () => fetchJson("/api/public/pricing") as Promise<PricingResponse>,
     enabled: !!session && (!!search.plan || !!search.bundle),
+  });
+
+  const agreementRequirementPath = search.plan
+    ? `/api/user/agreement-requirement?planId=${encodeURIComponent(search.plan)}`
+    : search.bundle
+      ? `/api/user/agreement-requirement?bundleId=${encodeURIComponent(search.bundle)}`
+      : null;
+  const agreementRequirement = useQuery({
+    queryKey: ["user", "agreement-requirement", search.plan, search.bundle],
+    queryFn: () => fetchJson(agreementRequirementPath!) as Promise<AgreementRequirement>,
+    enabled: !!session && !!agreementRequirementPath,
   });
 
   const verifyPayment = useQuery({
@@ -224,6 +259,13 @@ function AiWizardPage() {
 
   const checkoutMutation = useMutation({
     mutationFn: async () => {
+      if (
+        agreementRequirement.data?.required &&
+        !agreementRequirement.data.signed &&
+        !agreementAccepted
+      ) {
+        throw new Error("Review and accept the service agreement before continuing");
+      }
       const res = await fetch("/api/user/subscription", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -232,6 +274,10 @@ function AiWizardPage() {
           bundleId: search.plan ? null : search.bundle ?? null,
           interval: "month",
           couponCode: couponCode.trim() || null,
+          agreementAccepted: agreementRequirement.data?.required
+            ? agreementAccepted || agreementRequirement.data.signed
+            : undefined,
+          agreementConsentText: agreementRequirement.data?.consentText ?? null,
         }),
       });
       const data = await res.json().catch(() => ({ error: "Failed to start checkout" }));
@@ -325,6 +371,10 @@ function AiWizardPage() {
             }}
             onCheckout={() => checkoutMutation.mutate()}
             isPending={checkoutMutation.isPending}
+            agreementRequirement={agreementRequirement.data}
+            agreementLoading={agreementRequirement.isLoading}
+            agreementAccepted={agreementAccepted}
+            onAgreementAcceptedChange={setAgreementAccepted}
           />
         </div>
       );
@@ -573,6 +623,10 @@ function CheckoutSelectionPanel({
   onCouponChange,
   onCheckout,
   isPending,
+  agreementRequirement,
+  agreementLoading,
+  agreementAccepted,
+  onAgreementAcceptedChange,
 }: {
   plan: PricingPlan | null;
   bundle: PricingBundle | null;
@@ -583,12 +637,19 @@ function CheckoutSelectionPanel({
   onCouponChange: (value: string) => void;
   onCheckout: () => void;
   isPending: boolean;
+  agreementRequirement?: AgreementRequirement;
+  agreementLoading: boolean;
+  agreementAccepted: boolean;
+  onAgreementAcceptedChange: (value: boolean) => void;
 }) {
   const selectedName = plan?.service?.name
     ? `${plan.service.name} - ${plan.name}`
     : plan?.name ?? bundle?.name ?? selectedPlanId ?? selectedBundleId ?? "Selected package";
-  const rawPrice = plan?.priceZar ?? bundle?.priceZar ?? null;
-  const price = rawPrice ? `R ${(parseInt(rawPrice, 10) / 100).toFixed(2)} / month` : "Price loading";
+	  const rawPrice = plan?.priceZar ?? bundle?.priceZar ?? null;
+	  const price = rawPrice
+	    ? `R ${(parseInt(rawPrice, 10) / 100).toFixed(2)} ${frequencyLabel(plan ?? bundle)}`
+	    : "Price loading";
+  const requiresSignature = Boolean(agreementRequirement?.required && !agreementRequirement.signed);
 
   return (
     <Card className="rounded-lg border-[#dfe4ef] bg-white shadow-sm">
@@ -626,7 +687,41 @@ function CheckoutSelectionPanel({
               className="rounded-lg"
             />
           </div>
-          <Button type="submit" className="w-full rounded-lg bg-[var(--ai)]" disabled={isPending || isLoading}>
+          {(agreementLoading || agreementRequirement?.required) && (
+            <div className="rounded-lg border border-[#dfe4ef] bg-white p-3">
+              <div className="text-sm font-bold text-[#07102c]">
+                {agreementLoading
+                  ? "Loading service agreement..."
+                  : agreementRequirement?.template?.title ?? "Service agreement"}
+              </div>
+              {agreementRequirement?.template && (
+                <div className="mt-1 text-xs text-muted-foreground">
+                  Version {agreementRequirement.template.version}
+                </div>
+              )}
+              {requiresSignature && (
+                <label className="mt-3 flex items-start gap-2 text-xs leading-relaxed text-[#4d5874]">
+                  <input
+                    type="checkbox"
+                    checked={agreementAccepted}
+                    onChange={(event) => onAgreementAcceptedChange(event.target.checked)}
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300"
+                  />
+                  <span>{agreementRequirement?.consentText}</span>
+                </label>
+              )}
+              {agreementRequirement?.signed && (
+                <div className="mt-2 text-xs font-semibold text-emerald-700">
+                  Agreement already signed.
+                </div>
+              )}
+            </div>
+          )}
+          <Button
+            type="submit"
+            className="w-full rounded-lg bg-[var(--ai)]"
+            disabled={isPending || isLoading || agreementLoading || (requiresSignature && !agreementAccepted)}
+          >
             {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
             {couponCode.trim().toLowerCase() === "amrishtest" ? "Activate with coupon" : "Continue to checkout"}
           </Button>

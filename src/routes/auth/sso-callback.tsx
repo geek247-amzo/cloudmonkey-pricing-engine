@@ -6,8 +6,13 @@ import { AuthShell } from "@/components/auth/AuthShell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { authClient } from "@/lib/auth-client";
+import { safeDashboardCallback } from "@/lib/auth-redirect";
+import { claimCaesarSession } from "@/lib/caesar-client";
 
 export const Route = createFileRoute("/auth/sso-callback")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    callbackURL: typeof search.callbackURL === "string" ? search.callbackURL : undefined,
+  }),
   head: () => ({
     meta: [{ title: "SSO callback - CloudMonkey" }],
   }),
@@ -16,6 +21,8 @@ export const Route = createFileRoute("/auth/sso-callback")({
 
 function SsoCallbackPage() {
   const router = useRouter();
+  const { callbackURL } = Route.useSearch();
+  const returnTo = safeDashboardCallback(callbackURL);
   const { data: session, isPending } = authClient.useSession();
   const hasProcessedRef = useRef(false);
 
@@ -31,6 +38,7 @@ function SsoCallbackPage() {
     hasProcessedRef.current = true;
 
     const finish = async () => {
+      await claimCaesarSession().catch(() => null);
       const referralCode = localStorage.getItem("cloudmonkey:affiliate-ref");
       const referralCreatedAt = Number(localStorage.getItem("cloudmonkey:affiliate-ref-created-at") ?? 0);
       const referralIsFresh = referralCode && Date.now() - referralCreatedAt <= 60 * 24 * 60 * 60 * 1000;
@@ -51,11 +59,11 @@ function SsoCallbackPage() {
         }
       }
 
-      router.navigate({ to: "/dashboard" });
+      window.location.assign(returnTo);
     };
 
-    finish().catch(() => router.navigate({ to: "/dashboard" }));
-  }, [isPending, router, session]);
+    finish().catch(() => window.location.assign(returnTo));
+  }, [isPending, returnTo, router, session]);
 
   return (
     <AuthShell
