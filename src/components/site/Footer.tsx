@@ -39,6 +39,7 @@ export function Footer() {
             title="Marketing"
             links={[
               { to: "/marketing", label: "SEO" },
+              { to: "/tools", label: "Free Tools" },
               { to: "/marketing", label: "Content" },
               { to: "/marketing", label: "Campaigns" },
             ]}

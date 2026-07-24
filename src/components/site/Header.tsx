@@ -12,6 +12,7 @@ const NAV = [
   { to: "/voice", label: "Voice" },
   { to: "/ai-agents", label: "AI Agents" },
   { to: "/domains", label: "Domains" },
+  { to: "/tools", label: "Free Tools" },
   { to: "/pricing", label: "Pricing" },
 ] as const;
 
@@ -37,7 +38,10 @@ export function Header() {
       <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
         <Link to="/" className="flex items-center gap-2.5">
           <img src={logo} alt="CloudMonkey logo" className="h-9 w-9 shrink-0" />
-          <span className="text-lg font-bold tracking-tight text-foreground" style={{ fontFamily: "var(--font-display)" }}>
+          <span
+            className="text-lg font-bold tracking-tight text-foreground"
+            style={{ fontFamily: "var(--font-display)" }}
+          >
             CloudMonkey
           </span>
         </Link>
@@ -64,7 +68,10 @@ export function Header() {
               {isSigningOut ? "Signing out..." : "Sign out"}
             </button>
           ) : (
-            <Link to="/auth/sign-in" className="text-sm font-medium text-muted-foreground hover:text-foreground">
+            <Link
+              to="/auth/sign-in"
+              className="text-sm font-medium text-muted-foreground hover:text-foreground"
+            >
               Sign in
             </Link>
           )}

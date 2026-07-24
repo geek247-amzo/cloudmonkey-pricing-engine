@@ -12,9 +12,27 @@ import {
   type SeoFinding,
 } from "@/lib/seo-checker";
 import { authClient } from "@/lib/auth-client";
+import { canonicalLink, ogUrl } from "@/lib/seo";
 
 export const Route = createFileRoute("/seo-checker")({
-  head: () => ({ meta: [{ title: "Free SEO Checker - CloudMonkey" }] }),
+  head: () => ({
+    meta: [
+      { title: "Free SEO Checker - CloudMonkey" },
+      {
+        name: "description",
+        content:
+          "Run a free SEO checker scan for title, metadata, links, structured data, accessibility, and technical search issues.",
+      },
+      { property: "og:title", content: "Free SEO Checker - CloudMonkey" },
+      {
+        property: "og:description",
+        content:
+          "Find practical SEO and technical website improvements with CloudMonkey's free checker.",
+      },
+      ogUrl("/seo-checker"),
+    ],
+    links: [canonicalLink("/seo-checker")],
+  }),
   component: SeoCheckerPage,
 });
 
