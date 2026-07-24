@@ -85,6 +85,7 @@ import {
   vultrInstance,
   website,
   websiteHealthCheck,
+  remediationAttempt,
   websiteApprovalToken,
   websiteDesignOption,
   websiteDomain,
@@ -1320,7 +1321,7 @@ async function getAdminServerStatus() {
 }
 
 async function getAdminWebsiteHealth() {
-  const [websites, checks] = await Promise.all([
+  const [websites, checks, remediationAttempts] = await Promise.all([
     db.query.website.findMany({
       where: inArray(website.status, ["online", "active"]),
       orderBy: (row, { asc }) => [asc(row.domain)],
@@ -1328,10 +1329,19 @@ async function getAdminWebsiteHealth() {
     db.query.websiteHealthCheck.findMany({
       orderBy: (row, { desc }) => [desc(row.checkedAt)],
     }),
+    db.query.remediationAttempt.findMany({
+      orderBy: (row, { desc }) => [desc(row.requestedAt)],
+    }),
   ]);
   const latestByWebsite = new Map<string, (typeof checks)[number]>();
   for (const check of checks) {
     if (!latestByWebsite.has(check.websiteId)) latestByWebsite.set(check.websiteId, check);
+  }
+  const latestRemediationByWebsite = new Map<string, (typeof remediationAttempts)[number]>();
+  for (const attempt of remediationAttempts) {
+    if (!latestRemediationByWebsite.has(attempt.websiteId)) {
+      latestRemediationByWebsite.set(attempt.websiteId, attempt);
+    }
   }
   const rows = websites.map((site) => {
     const check = latestByWebsite.get(site.id);
@@ -1349,6 +1359,14 @@ async function getAdminWebsiteHealth() {
             responseTimeMs: check.responseTimeMs,
             contentCheckPassed: check.contentCheckPassed,
             issues: check.issues,
+            lastRemediation: latestRemediationByWebsite.get(site.id)
+              ? {
+                  action: latestRemediationByWebsite.get(site.id)!.action,
+                  requestedAt: latestRemediationByWebsite.get(site.id)!.requestedAt,
+                  result: latestRemediationByWebsite.get(site.id)!.result,
+                  resultDetail: latestRemediationByWebsite.get(site.id)!.resultDetail,
+                }
+              : null,
           }
         : null,
     };
@@ -1469,10 +1487,54 @@ async function runWebsiteHealthLoggingSweep() {
     getWebsites: () => db.query.website.findMany(),
     checkWebsite: checkWebsiteHealth,
     persist: async (site, values) => {
+      const id = `whc_${crypto.randomUUID()}`;
       await db.insert(websiteHealthCheck).values({
-        id: `whc_${crypto.randomUUID()}`,
+        id,
         websiteId: site.id,
         ...values,
+      });
+      return { id };
+    },
+    remediateDownWebsite: async (site, healthCheckId) => {
+      const since30Minutes = new Date(Date.now() - 30 * 60 * 1000);
+      const since24Hours = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const attempts = await db.query.remediationAttempt.findMany({
+        where: (attempt, { and, eq, gte }) =>
+          and(eq(attempt.websiteId, site.id), gte(attempt.requestedAt, since24Hours)),
+        orderBy: (attempt, { desc }) => [desc(attempt.requestedAt)],
+      });
+      if (
+        attempts.some((attempt) => attempt.requestedAt >= since30Minutes) ||
+        attempts.length >= 3
+      ) {
+        return;
+      }
+
+      const id = `rem_${crypto.randomUUID()}`;
+      let result = "failed";
+      let resultDetail = "Website runtime server or provisioner credentials are unavailable";
+      try {
+        if (!site.runtimeServerId) throw new Error("Website has no runtime server assigned");
+        const runtime = await db.query.websiteRuntimeServer.findFirst({
+          where: eq(websiteRuntimeServer.id, site.runtimeServerId),
+        });
+        if (!runtime) throw new Error("Website runtime server not found");
+        await callRuntimeProvisioner(runtime, "/remediate", {
+          websiteId: site.id,
+          action: "restart",
+        });
+        result = "success";
+        resultDetail = "Requested restart for website runtime containers";
+      } catch (error) {
+        resultDetail = error instanceof Error ? error.message : "Restart request failed";
+      }
+      await db.insert(remediationAttempt).values({
+        id,
+        websiteId: site.id,
+        healthCheckId,
+        action: "restart",
+        result,
+        resultDetail: resultDetail.slice(0, 1000),
       });
     },
     withLock: async (work) =>

@@ -36,6 +36,12 @@ type WebsiteHealthResponse = {
       responseTimeMs: number | null;
       contentCheckPassed: boolean;
       issues: string[];
+      lastRemediation: {
+        action: string;
+        requestedAt: string;
+        result: string;
+        resultDetail: string | null;
+      } | null;
     } | null;
   }>;
 };
@@ -206,6 +212,18 @@ function WebsiteHealthCard({ site }: { site: WebsiteHealthResponse["websites"][n
               <li key={issue}>{issue}</li>
             ))}
           </ul>
+        </div>
+      ) : null}
+      {current?.lastRemediation ? (
+        <div className="mt-3 rounded-md border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">
+          <div className="font-bold">Last remediation</div>
+          <div className="mt-1">
+            {current.lastRemediation.action} · {current.lastRemediation.result} ·{" "}
+            {new Date(current.lastRemediation.requestedAt).toLocaleString()}
+          </div>
+          {current.lastRemediation.resultDetail && (
+            <div className="mt-1">{current.lastRemediation.resultDetail}</div>
+          )}
         </div>
       ) : null}
       <div className="mt-3 text-[11px] text-muted-foreground">

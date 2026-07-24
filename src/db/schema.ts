@@ -828,6 +828,20 @@ export const websiteHealthCheck = pgTable("website_health_check", {
   status: text("status").notNull().default("down"),
 });
 
+export const remediationAttempt = pgTable("remediation_attempt", {
+  id: text("id").primaryKey(),
+  websiteId: text("websiteId")
+    .notNull()
+    .references(() => website.id, { onDelete: "cascade" }),
+  healthCheckId: text("healthCheckId")
+    .notNull()
+    .references(() => websiteHealthCheck.id, { onDelete: "cascade" }),
+  action: text("action").notNull(),
+  requestedAt: timestamp("requestedAt").notNull().defaultNow(),
+  result: text("result").notNull(),
+  resultDetail: text("resultDetail"),
+});
+
 export const websiteRuntimeServer = pgTable("website_runtime_server", {
   id: text("id").primaryKey(),
   provider: text("provider").notNull().default("vultr"),
@@ -2147,12 +2161,24 @@ export const websiteRelations = relations(website, ({ one, many }) => ({
   approvalTokens: many(websiteApprovalToken),
   reviewRequests: many(websiteReviewRequest),
   healthChecks: many(websiteHealthCheck),
+  remediationAttempts: many(remediationAttempt),
 }));
 
 export const websiteHealthCheckRelations = relations(websiteHealthCheck, ({ one }) => ({
   website: one(website, {
     fields: [websiteHealthCheck.websiteId],
     references: [website.id],
+  }),
+}));
+
+export const remediationAttemptRelations = relations(remediationAttempt, ({ one }) => ({
+  website: one(website, {
+    fields: [remediationAttempt.websiteId],
+    references: [website.id],
+  }),
+  healthCheck: one(websiteHealthCheck, {
+    fields: [remediationAttempt.healthCheckId],
+    references: [websiteHealthCheck.id],
   }),
 }));
 

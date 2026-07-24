@@ -16,6 +16,7 @@ export type WebsiteHealthSweepWebsite = {
   primaryDomain?: string | null;
   temporaryDomain?: string | null;
   status: string;
+  runtimeServerId?: string | null;
 };
 
 export type WebsiteHealthSweepDeps = {
@@ -24,7 +25,14 @@ export type WebsiteHealthSweepDeps = {
     website: WebsiteHealthSweepWebsite,
     timeoutMs: number,
   ) => Promise<WebsiteHealthCheckValues>;
-  persist: (website: WebsiteHealthSweepWebsite, values: WebsiteHealthCheckValues) => Promise<void>;
+  persist: (
+    website: WebsiteHealthSweepWebsite,
+    values: WebsiteHealthCheckValues,
+  ) => Promise<{ id: string }>;
+  remediateDownWebsite?: (
+    website: WebsiteHealthSweepWebsite,
+    healthCheckId: string,
+  ) => Promise<void>;
   withLock: <T>(work: () => Promise<T>) => Promise<T>;
   timeoutMs?: number;
 };
@@ -47,7 +55,10 @@ export async function runWebsiteHealthSweep(deps: WebsiteHealthSweepDeps) {
 
     for (const website of websites) {
       const values = await deps.checkWebsite(website, deps.timeoutMs ?? 15_000);
-      await deps.persist(website, values);
+      const healthCheck = await deps.persist(website, values);
+      if (values.status === "down" && deps.remediateDownWebsite) {
+        await deps.remediateDownWebsite(website, healthCheck.id);
+      }
       summary.checked += 1;
       summary[values.status] += 1;
     }
