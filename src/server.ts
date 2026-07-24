@@ -84,6 +84,7 @@ import {
   user,
   vultrInstance,
   website,
+  websiteHealthCheck,
   websiteApprovalToken,
   websiteDesignOption,
   websiteDomain,
@@ -107,6 +108,11 @@ import {
 } from "./lib/vultr";
 import { fetchIpv4 } from "./lib/runtime-http";
 import { runRuntimeHealthSweep } from "./lib/runtime-health-sweep";
+import {
+  evaluateWebsiteContent,
+  runWebsiteHealthSweep,
+  type WebsiteHealthSweepWebsite,
+} from "./lib/website-health-sweep";
 import { captureInvoicePaymentAtomically } from "./lib/invoice-payment-capture";
 import { createPublicScanHandlers } from "./lib/public-scans";
 import { initializePayment, verifyPayment } from "./lib/paystack";
@@ -1313,6 +1319,56 @@ async function getAdminServerStatus() {
   };
 }
 
+async function getAdminWebsiteHealth() {
+  const [websites, checks] = await Promise.all([
+    db.query.website.findMany({
+      where: inArray(website.status, ["online", "active"]),
+      orderBy: (row, { asc }) => [asc(row.domain)],
+    }),
+    db.query.websiteHealthCheck.findMany({
+      orderBy: (row, { desc }) => [desc(row.checkedAt)],
+    }),
+  ]);
+  const latestByWebsite = new Map<string, (typeof checks)[number]>();
+  for (const check of checks) {
+    if (!latestByWebsite.has(check.websiteId)) latestByWebsite.set(check.websiteId, check);
+  }
+  const rows = websites.map((site) => {
+    const check = latestByWebsite.get(site.id);
+    return {
+      id: site.id,
+      name: site.name || site.businessName || site.domain,
+      domain: site.primaryDomain || site.domain,
+      websiteStatus: site.status,
+      current: check
+        ? {
+            status: check.status,
+            checkedAt: check.checkedAt,
+            httpStatus: check.httpStatus,
+            sslDaysRemaining: check.sslDaysRemaining,
+            responseTimeMs: check.responseTimeMs,
+            contentCheckPassed: check.contentCheckPassed,
+            issues: check.issues,
+          }
+        : null,
+    };
+  });
+  const counts = rows.reduce(
+    (summary, row) => {
+      const status = row.current?.status;
+      if (status === "healthy" || status === "degraded" || status === "down") summary[status] += 1;
+      else summary.unmonitored += 1;
+      return summary;
+    },
+    { healthy: 0, degraded: 0, down: 0, unmonitored: 0 },
+  );
+  return {
+    generatedAt: new Date().toISOString(),
+    summary: { total: rows.length, ...counts },
+    websites: rows,
+  };
+}
+
 const runtimeHealthAlertState = globalThis as typeof globalThis & {
   __cloudmonkeyRuntimeHealthAlertStarted?: boolean;
 };
@@ -1325,6 +1381,123 @@ const runtimeHealthRequestTimeoutMs = Number(
 const runtimeHealthFailureRepeatMs = Number(
   process.env.RUNTIME_HEALTH_FAILURE_REPEAT_MS ?? 30 * 60 * 1000,
 );
+const websiteHealthState = globalThis as typeof globalThis & {
+  __cloudmonkeyWebsiteHealthStarted?: boolean;
+};
+const websiteHealthIntervalMs = Number(process.env.WEBSITE_HEALTH_INTERVAL_MS ?? 15 * 60 * 1000);
+const websiteHealthRequestTimeoutMs = Number(
+  process.env.WEBSITE_HEALTH_REQUEST_TIMEOUT_MS ?? 15 * 1000,
+);
+
+function websiteHealthUrl(website: WebsiteHealthSweepWebsite) {
+  const candidate = website.primaryDomain || website.domain || website.temporaryDomain;
+  if (!candidate) throw new Error("Website has no domain");
+  return new URL(/^https?:\/\//i.test(candidate) ? candidate : `https://${candidate}`);
+}
+
+async function getSslDaysRemaining(url: URL, timeoutMs: number) {
+  if (url.protocol !== "https:") return null;
+  return await new Promise<number | null>((resolve) => {
+    const socket = tls.connect({
+      host: url.hostname,
+      port: Number(url.port) || 443,
+      servername: url.hostname,
+      rejectUnauthorized: false,
+      timeout: timeoutMs,
+    });
+    const finish = (value: number | null) => {
+      socket.destroy();
+      resolve(value);
+    };
+    socket.once("secureConnect", () => {
+      const certificate = socket.getPeerCertificate();
+      const expiry = certificate?.valid_to ? Date.parse(certificate.valid_to) : NaN;
+      finish(Number.isFinite(expiry) ? Math.floor((expiry - Date.now()) / 86_400_000) : null);
+    });
+    socket.once("timeout", () => finish(null));
+    socket.once("error", () => finish(null));
+  });
+}
+
+async function checkWebsiteHealth(website: WebsiteHealthSweepWebsite, timeoutMs: number) {
+  const checkedAt = new Date();
+  const startedAt = Date.now();
+  const issues: string[] = [];
+  let httpStatus: number | null = null;
+  let responseTimeMs: number | null = null;
+  let contentCheckPassed = false;
+  let sslDaysRemaining: number | null = null;
+  try {
+    const url = websiteHealthUrl(website);
+    sslDaysRemaining = await getSslDaysRemaining(url, timeoutMs);
+    if (url.protocol !== "https:") issues.push("HTTPS is not configured");
+    else if (sslDaysRemaining == null) issues.push("SSL certificate could not be read");
+    else if (sslDaysRemaining < 14)
+      issues.push(`SSL certificate expires in ${sslDaysRemaining} days`);
+
+    const response = await fetchIpv4(url, { timeoutMs });
+    responseTimeMs = Date.now() - startedAt;
+    httpStatus = response.status;
+    const body = await response.text();
+    contentCheckPassed = response.ok && evaluateWebsiteContent(body);
+    if (response.status >= 400) issues.push(`HTTP status ${response.status}`);
+    if (!contentCheckPassed) issues.push("Expected website content was not detected");
+  } catch (error) {
+    responseTimeMs = Date.now() - startedAt;
+    issues.push(error instanceof Error ? error.message : "Website request failed");
+  }
+  const status =
+    httpStatus == null || httpStatus >= 500 || httpStatus >= 400
+      ? "down"
+      : issues.length
+        ? "degraded"
+        : "healthy";
+  return {
+    checkedAt,
+    httpStatus,
+    sslDaysRemaining,
+    responseTimeMs,
+    contentCheckPassed,
+    issues,
+    status: status as "healthy" | "degraded" | "down",
+  };
+}
+
+async function runWebsiteHealthLoggingSweep() {
+  const result = await runWebsiteHealthSweep({
+    timeoutMs: websiteHealthRequestTimeoutMs,
+    getWebsites: () => db.query.website.findMany(),
+    checkWebsite: checkWebsiteHealth,
+    persist: async (site, values) => {
+      await db.insert(websiteHealthCheck).values({
+        id: `whc_${crypto.randomUUID()}`,
+        websiteId: site.id,
+        ...values,
+      });
+    },
+    withLock: async (work) =>
+      db.transaction(async (tx) => {
+        const lockRows = await tx.execute(sql`
+          select pg_try_advisory_xact_lock(hashtextextended('cloudmonkey.website_health_sweep', 0)) as acquired
+        `);
+        if (!lockRows[0]?.acquired) return { locked: true as const };
+        return work();
+      }),
+  });
+  if (!("locked" in result)) console.info("Website health sweep completed", result);
+}
+
+function startWebsiteHealthSweep() {
+  if (websiteHealthState.__cloudmonkeyWebsiteHealthStarted) return;
+  websiteHealthState.__cloudmonkeyWebsiteHealthStarted = true;
+  const sweep = () =>
+    void runWebsiteHealthLoggingSweep().catch((error) => {
+      console.error("Website health sweep failed:", error);
+    });
+  sweep();
+  const timer = setInterval(sweep, websiteHealthIntervalMs);
+  timer.unref?.();
+}
 
 async function runRuntimeHealthAlertSweep() {
   const settings = await getWorkspaceSettings().catch(() => null);
@@ -1419,6 +1592,7 @@ function startRuntimeHealthAlertSweep() {
 
 if (process.env.NODE_ENV !== "test") {
   startRuntimeHealthAlertSweep();
+  startWebsiteHealthSweep();
 }
 
 async function dockerEnsureImage(image: string) {
@@ -4179,10 +4353,12 @@ async function sendN8nAdminChat(input: {
       ...(cloudMonkeyApiToken ? { "X-CloudMonkey-API-Token": cloudMonkeyApiToken } : {}),
       "X-CloudMonkey-Idempotency-Key": input.idempotencyKey,
     },
-    body: JSON.stringify(stripPii({
-      event: "admin.chat.message",
-      ...input,
-    })),
+    body: JSON.stringify(
+      stripPii({
+        event: "admin.chat.message",
+        ...input,
+      }),
+    ),
   });
 
   const responseText = await response.text();
@@ -8075,6 +8251,7 @@ const adminHandlers = createAdminHandlers({
   getWorkspaceBillingDetails,
   getSupportCrmContext: (userId) => getSupportCrmContext({ db }, userId),
   getAdminServerStatus,
+  getAdminWebsiteHealth,
   resolveAdminChatSession,
   loadAdminChatHistory,
   adminChatMessage,
@@ -8498,16 +8675,24 @@ export default {
     }
 
     if (url.pathname.startsWith("/api/auth")) {
-      const signupBody = url.pathname.endsWith("/sign-up/email") && request.method === "POST"
-        ? await request.clone().json().catch(() => null)
-        : null;
+      const signupBody =
+        url.pathname.endsWith("/sign-up/email") && request.method === "POST"
+          ? await request
+              .clone()
+              .json()
+              .catch(() => null)
+          : null;
       const authResponse = await auth.handler(request);
       if (signupBody && authResponse.ok && typeof signupBody?.email === "string") {
         sendEmail({
           template: "welcome",
           to: signupBody.email,
           subject: "Welcome to CloudMonkey",
-          data: { firstName: signupBody.name, primaryCtaText: "Open your dashboard", primaryCtaUrl: `${new URL(request.url).origin}/dashboard` },
+          data: {
+            firstName: signupBody.name,
+            primaryCtaText: "Open your dashboard",
+            primaryCtaUrl: `${new URL(request.url).origin}/dashboard`,
+          },
           idempotencyKey: `welcome:${signupBody.email}`,
         }).catch((error) => console.error("Welcome email failed:", error));
       }
@@ -8678,16 +8863,25 @@ echo "CloudMonkey agent installed."
 
     if (url.pathname.startsWith("/api/leads") && request.method === "POST") {
       try {
-        const body = await parseBody(request, z.object({
-          name: z.string().trim().min(1).max(140), email: z.string().email().max(320),
-          company: z.string().trim().max(160).optional().nullable(), phone: z.string().max(80).optional().nullable(),
-          services: z.string().max(2000).optional().nullable(), setupStyle: z.string().max(160).optional().nullable(),
-          wizardAnswers: z.record(z.string(), z.unknown()).optional(), captureSource: z.string().max(80).optional(),
-          consent: z.literal(true),
-        }));
+        const body = await parseBody(
+          request,
+          z.object({
+            name: z.string().trim().min(1).max(140),
+            email: z.string().email().max(320),
+            company: z.string().trim().max(160).optional().nullable(),
+            phone: z.string().max(80).optional().nullable(),
+            services: z.string().max(2000).optional().nullable(),
+            setupStyle: z.string().max(160).optional().nullable(),
+            wizardAnswers: z.record(z.string(), z.unknown()).optional(),
+            captureSource: z.string().max(80).optional(),
+            consent: z.literal(true),
+          }),
+        );
         const wizardAnswers =
           body.wizardAnswers && typeof body.wizardAnswers === "object" ? body.wizardAnswers : null;
-        const servicesValue = wizardAnswers ? JSON.stringify(stripPii(wizardAnswers)) : body.services;
+        const servicesValue = wizardAnswers
+          ? JSON.stringify(stripPii(wizardAnswers))
+          : body.services;
         await db.insert(lead).values({
           id: "lead_" + Date.now(),
           name: body.name,
@@ -8698,7 +8892,10 @@ echo "CloudMonkey agent installed."
           phone: body.phone ?? null,
           captureSource: body.captureSource ?? "website",
           consentAt: new Date(),
-          scanFingerprint: body.captureSource === "seo_checker" ? sha256(JSON.stringify(stripPii(wizardAnswers ?? body.services ?? ""))) : null,
+          scanFingerprint:
+            body.captureSource === "seo_checker"
+              ? sha256(JSON.stringify(stripPii(wizardAnswers ?? body.services ?? "")))
+              : null,
         });
         await recordAudit({
           action: "lead.created",
@@ -8747,7 +8944,10 @@ echo "CloudMonkey agent installed."
       return publicScanHandlers.handleGeneralScan(request);
     }
 
-    if (url.pathname.match(/^\/api\/public\/handout\/[^/]+\/consume$/) && request.method === "POST") {
+    if (
+      url.pathname.match(/^\/api\/public\/handout\/[^/]+\/consume$/) &&
+      request.method === "POST"
+    ) {
       const token = decodeURIComponent(url.pathname.split("/")[4] ?? "");
       const row = await db.query.secureHandoutLink.findFirst({
         where: eq(secureHandoutLink.tokenHash, hashSecureToken(token)),
@@ -8756,49 +8956,94 @@ echo "CloudMonkey agent installed."
         return json({ error: "Handout link is invalid or expired" }, 404);
       }
       if (row.direction === "request") {
-        return json({ ok: true, mode: "request", expiresAt: row.expiresAt }, { headers: { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } });
+        return json(
+          { ok: true, mode: "request", expiresAt: row.expiresAt },
+          { headers: { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } },
+        );
       }
-      const [claimed] = await db.update(secureHandoutLink)
+      const [claimed] = await db
+        .update(secureHandoutLink)
         .set({ usedAt: new Date() })
-        .where(and(eq(secureHandoutLink.id, row.id), isNull(secureHandoutLink.usedAt), isNull(secureHandoutLink.revokedAt)))
+        .where(
+          and(
+            eq(secureHandoutLink.id, row.id),
+            isNull(secureHandoutLink.usedAt),
+            isNull(secureHandoutLink.revokedAt),
+          ),
+        )
         .returning();
       if (!claimed) return json({ error: "Handout link has already been used" }, 410);
-      return json({ ok: true, handout: JSON.parse(decryptSecret(row.payloadSecret)) }, { headers: { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } });
+      return json(
+        { ok: true, handout: JSON.parse(decryptSecret(row.payloadSecret)) },
+        { headers: { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } },
+      );
     }
 
-    if (url.pathname.match(/^\/api\/public\/handout\/[^/]+\/submit$/) && request.method === "POST") {
+    if (
+      url.pathname.match(/^\/api\/public\/handout\/[^/]+\/submit$/) &&
+      request.method === "POST"
+    ) {
       const token = decodeURIComponent(url.pathname.split("/")[4] ?? "");
       const row = await db.query.secureHandoutLink.findFirst({
         where: eq(secureHandoutLink.tokenHash, hashSecureToken(token)),
       });
-      if (!row || row.direction !== "request" || row.revokedAt || row.submittedAt || !isUnexpired(row.expiresAt)) {
+      if (
+        !row ||
+        row.direction !== "request" ||
+        row.revokedAt ||
+        row.submittedAt ||
+        !isUnexpired(row.expiresAt)
+      ) {
         return json({ error: "Handout request is invalid, expired, or already submitted" }, 404);
       }
       const form = await request.formData();
-      const credentials = String(form.get("credentials") ?? "").trim().slice(0, 20000);
+      const credentials = String(form.get("credentials") ?? "")
+        .trim()
+        .slice(0, 20000);
       const file = form.get("file");
-      const allowedTypes = new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml", "application/pdf"]);
+      const allowedTypes = new Set([
+        "image/png",
+        "image/jpeg",
+        "image/webp",
+        "image/svg+xml",
+        "application/pdf",
+      ]);
       let storagePath: string | null = null;
       let fileName: string | null = null;
       let mimeType: string | null = null;
       if (isUploadedFile(file) && file.size > 0) {
-        if (!allowedTypes.has(file.type ?? "") || file.size > 10 * 1024 * 1024) return json({ error: "Upload must be a PNG, JPG, WEBP, SVG, or PDF under 10 MB" }, 400);
+        if (!allowedTypes.has(file.type ?? "") || file.size > 10 * 1024 * 1024)
+          return json({ error: "Upload must be a PNG, JPG, WEBP, SVG, or PDF under 10 MB" }, 400);
         await mkdir(CHAT_UPLOAD_DIR, { recursive: true });
         fileName = sanitizeFileName(file.name ?? "asset");
         mimeType = file.type ?? "application/octet-stream";
         storagePath = join(CHAT_UPLOAD_DIR, `handout-${makeId("asset")}-${fileName}`);
         await writeFile(storagePath, Buffer.from(await file.arrayBuffer()));
       }
-      if (!credentials && !storagePath) return json({ error: "Provide credentials or upload a file" }, 400);
-      const [submitted] = await db.update(secureHandoutLink)
+      if (!credentials && !storagePath)
+        return json({ error: "Provide credentials or upload a file" }, 400);
+      const [submitted] = await db
+        .update(secureHandoutLink)
         .set({
           payloadSecret: encryptSecret(JSON.stringify({ credentials: credentials || null })),
-          submittedAt: new Date(), submissionStoragePath: storagePath, submissionFileName: fileName, submissionMimeType: mimeType,
+          submittedAt: new Date(),
+          submissionStoragePath: storagePath,
+          submissionFileName: fileName,
+          submissionMimeType: mimeType,
         })
-        .where(and(eq(secureHandoutLink.id, row.id), isNull(secureHandoutLink.submittedAt), isNull(secureHandoutLink.revokedAt)))
+        .where(
+          and(
+            eq(secureHandoutLink.id, row.id),
+            isNull(secureHandoutLink.submittedAt),
+            isNull(secureHandoutLink.revokedAt),
+          ),
+        )
         .returning();
       if (!submitted) return json({ error: "Handout request has already been submitted" }, 409);
-      return json({ ok: true, submittedAt: submitted.submittedAt }, { headers: { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } });
+      return json(
+        { ok: true, submittedAt: submitted.submittedAt },
+        { headers: { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } },
+      );
     }
 
     if (url.pathname === "/api/public/seo-checker/scan" && request.method === "POST") {
@@ -8828,21 +9073,44 @@ echo "CloudMonkey agent installed."
       if (response) return response;
       if (!session) return json({ error: "Unauthorized" }, 401);
       try {
-        const body = await parseBody(request, z.object({
-          handout: z.record(z.string(), z.unknown()),
-          recipientEmail: z.string().email().optional().nullable(),
-          direction: z.enum(["view", "request"]).default("view"),
-          ticketId: z.string().optional().nullable(),
-          expiresInDays: z.coerce.number().int().min(1).max(30).default(7),
-        }));
+        const body = await parseBody(
+          request,
+          z.object({
+            handout: z.record(z.string(), z.unknown()),
+            recipientEmail: z.string().email().optional().nullable(),
+            direction: z.enum(["view", "request"]).default("view"),
+            ticketId: z.string().optional().nullable(),
+            expiresInDays: z.coerce.number().int().min(1).max(30).default(7),
+          }),
+        );
         const token = createSecureToken();
         const expiresAt = new Date(Date.now() + body.expiresInDays * 86400000);
-        const [created] = await db.insert(secureHandoutLink).values({
-          id: makeId("handout"), userId: session.user.id, tokenHash: token.hash,
-          payloadSecret: encryptSecret(JSON.stringify(body.handout)), direction: body.direction, ticketId: body.ticketId ?? null, recipientEmail: body.recipientEmail ?? null, expiresAt,
-        }).returning();
-        await recordAudit({ actorUserId: session.user.id, action: "handout_link.created", entityType: "secure_handout_link", entityId: created.id, message: "Secure handout link created", metadata: { expiresAt, recipientEmail: body.recipientEmail ?? null } });
-        return json({ id: created.id, url: `${new URL(request.url).origin}/handout/${token.raw}`, expiresAt });
+        const [created] = await db
+          .insert(secureHandoutLink)
+          .values({
+            id: makeId("handout"),
+            userId: session.user.id,
+            tokenHash: token.hash,
+            payloadSecret: encryptSecret(JSON.stringify(body.handout)),
+            direction: body.direction,
+            ticketId: body.ticketId ?? null,
+            recipientEmail: body.recipientEmail ?? null,
+            expiresAt,
+          })
+          .returning();
+        await recordAudit({
+          actorUserId: session.user.id,
+          action: "handout_link.created",
+          entityType: "secure_handout_link",
+          entityId: created.id,
+          message: "Secure handout link created",
+          metadata: { expiresAt, recipientEmail: body.recipientEmail ?? null },
+        });
+        return json({
+          id: created.id,
+          url: `${new URL(request.url).origin}/handout/${token.raw}`,
+          expiresAt,
+        });
       } catch (error: any) {
         return json({ error: error.message, issues: error.issues }, error.status ?? 400);
       }
@@ -10198,6 +10466,10 @@ echo "CloudMonkey agent installed."
 
     if (url.pathname.startsWith("/api/admin/website-runtime-servers")) {
       return websiteHandlers.handleAdminWebsiteRuntimeServers(request);
+    }
+
+    if (url.pathname.startsWith("/api/admin/website-health")) {
+      return adminHandlers.handleAdminWebsiteHealth(request);
     }
 
     if (url.pathname.startsWith("/api/admin/website-projects")) {

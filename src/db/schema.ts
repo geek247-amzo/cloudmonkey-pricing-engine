@@ -1,6 +1,7 @@
-import { pgTable, text, timestamp, boolean, integer, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, integer, unique, jsonb } from "drizzle-orm/pg-core";
 import { vector } from "drizzle-orm/pg-core/columns/vector_extension/vector";
 import { relations } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -234,28 +235,32 @@ export const invoice = pgTable("invoice", {
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 });
 
-export const invoicePayment = pgTable("invoice_payment", {
-  id: text("id").primaryKey(),
-  invoiceId: text("invoiceId")
-    .notNull()
-    .references(() => invoice.id),
-  userId: text("userId")
-    .notNull()
-    .references(() => user.id),
-  amount: integer("amount").notNull(),
-  method: text("method").notNull().default("eft"), // eft, cash, manual, gateway
-  reference: text("reference"),
-  notes: text("notes"),
-  idempotencyKey: text("idempotencyKey"),
-  capturedByUserId: text("capturedByUserId").references(() => user.id),
-  paidAt: timestamp("paidAt").notNull(),
-  createdAt: timestamp("createdAt").notNull().defaultNow(),
-}, (table) => ({
-  invoicePaymentIdempotencyUnique: unique("invoice_payment_invoice_idempotency_key_unique").on(
-    table.invoiceId,
-    table.idempotencyKey,
-  ),
-}));
+export const invoicePayment = pgTable(
+  "invoice_payment",
+  {
+    id: text("id").primaryKey(),
+    invoiceId: text("invoiceId")
+      .notNull()
+      .references(() => invoice.id),
+    userId: text("userId")
+      .notNull()
+      .references(() => user.id),
+    amount: integer("amount").notNull(),
+    method: text("method").notNull().default("eft"), // eft, cash, manual, gateway
+    reference: text("reference"),
+    notes: text("notes"),
+    idempotencyKey: text("idempotencyKey"),
+    capturedByUserId: text("capturedByUserId").references(() => user.id),
+    paidAt: timestamp("paidAt").notNull(),
+    createdAt: timestamp("createdAt").notNull().defaultNow(),
+  },
+  (table) => ({
+    invoicePaymentIdempotencyUnique: unique("invoice_payment_invoice_idempotency_key_unique").on(
+      table.invoiceId,
+      table.idempotencyKey,
+    ),
+  }),
+);
 
 export const tokenWallet = pgTable(
   "token_wallet",
@@ -668,7 +673,9 @@ export const lead = pgTable("lead", {
 
 export const secureHandoutLink = pgTable("secure_handout_link", {
   id: text("id").primaryKey(),
-  userId: text("userId").notNull().references(() => user.id),
+  userId: text("userId")
+    .notNull()
+    .references(() => user.id),
   tokenHash: text("tokenHash").notNull().unique(),
   payloadSecret: text("payloadSecret").notNull(),
   direction: text("direction").notNull().default("view"),
@@ -804,6 +811,23 @@ export const website = pgTable("website", {
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 });
 
+export const websiteHealthCheck = pgTable("website_health_check", {
+  id: text("id").primaryKey(),
+  websiteId: text("websiteId")
+    .notNull()
+    .references(() => website.id, { onDelete: "cascade" }),
+  checkedAt: timestamp("checkedAt").notNull().defaultNow(),
+  httpStatus: integer("httpStatus"),
+  sslDaysRemaining: integer("sslDaysRemaining"),
+  responseTimeMs: integer("responseTimeMs"),
+  contentCheckPassed: boolean("contentCheckPassed").notNull().default(false),
+  issues: jsonb("issues")
+    .$type<string[]>()
+    .notNull()
+    .default(sql`'[]'::jsonb`),
+  status: text("status").notNull().default("down"),
+});
+
 export const websiteRuntimeServer = pgTable("website_runtime_server", {
   id: text("id").primaryKey(),
   provider: text("provider").notNull().default("vultr"),
@@ -880,27 +904,34 @@ export const websiteStoreDatabase = pgTable("website_store_database", {
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 });
 
-export const websiteDomain = pgTable("website_domain", {
-  id: text("id").primaryKey(),
-  websiteId: text("websiteId")
-    .notNull()
-    .references(() => website.id),
-  userId: text("userId")
-    .notNull()
-    .references(() => user.id),
-  domain: text("domain").notNull(),
-  type: text("type").notNull().default("temporary"),
-  status: text("status").notNull().default("reserved"),
-  dnsTarget: text("dnsTarget"),
-  sslStatus: text("sslStatus").notNull().default("pending"),
-  isPrimary: boolean("isPrimary").notNull().default(true),
-  createdAt: timestamp("createdAt").notNull().defaultNow(),
-  verifiedAt: timestamp("verifiedAt"),
-}, (table) => {
-  return {
-    websiteDomainWebsiteIdDomainUnique: unique("website_domain_websiteId_domain_unique").on(table.websiteId, table.domain),
-  };
-});
+export const websiteDomain = pgTable(
+  "website_domain",
+  {
+    id: text("id").primaryKey(),
+    websiteId: text("websiteId")
+      .notNull()
+      .references(() => website.id),
+    userId: text("userId")
+      .notNull()
+      .references(() => user.id),
+    domain: text("domain").notNull(),
+    type: text("type").notNull().default("temporary"),
+    status: text("status").notNull().default("reserved"),
+    dnsTarget: text("dnsTarget"),
+    sslStatus: text("sslStatus").notNull().default("pending"),
+    isPrimary: boolean("isPrimary").notNull().default(true),
+    createdAt: timestamp("createdAt").notNull().defaultNow(),
+    verifiedAt: timestamp("verifiedAt"),
+  },
+  (table) => {
+    return {
+      websiteDomainWebsiteIdDomainUnique: unique("website_domain_websiteId_domain_unique").on(
+        table.websiteId,
+        table.domain,
+      ),
+    };
+  },
+);
 
 export const websiteDesignOption = pgTable("website_design_option", {
   id: text("id").primaryKey(),
@@ -2039,20 +2070,17 @@ export const leadRelations = relations(lead, ({ one, many }) => ({
   caesarSessions: many(caesarChatSession),
 }));
 
-export const caesarChatSessionRelations = relations(
-  caesarChatSession,
-  ({ one, many }) => ({
-    user: one(user, {
-      fields: [caesarChatSession.userId],
-      references: [user.id],
-    }),
-    lead: one(lead, {
-      fields: [caesarChatSession.leadId],
-      references: [lead.id],
-    }),
-    messages: many(caesarChatMessage),
+export const caesarChatSessionRelations = relations(caesarChatSession, ({ one, many }) => ({
+  user: one(user, {
+    fields: [caesarChatSession.userId],
+    references: [user.id],
   }),
-);
+  lead: one(lead, {
+    fields: [caesarChatSession.leadId],
+    references: [lead.id],
+  }),
+  messages: many(caesarChatMessage),
+}));
 
 export const caesarChatMessageRelations = relations(caesarChatMessage, ({ one }) => ({
   session: one(caesarChatSession, {
@@ -2118,6 +2146,14 @@ export const websiteRelations = relations(website, ({ one, many }) => ({
   pluginInstalls: many(websitePluginInstall),
   approvalTokens: many(websiteApprovalToken),
   reviewRequests: many(websiteReviewRequest),
+  healthChecks: many(websiteHealthCheck),
+}));
+
+export const websiteHealthCheckRelations = relations(websiteHealthCheck, ({ one }) => ({
+  website: one(website, {
+    fields: [websiteHealthCheck.websiteId],
+    references: [website.id],
+  }),
 }));
 
 export const websiteRuntimeServerRelations = relations(websiteRuntimeServer, ({ many }) => ({

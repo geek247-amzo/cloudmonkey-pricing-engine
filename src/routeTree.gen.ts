@@ -39,6 +39,7 @@ import { Route as HandoutTokenRouteImport } from './routes/handout/$token'
 import { Route as DashboardWebsitesRouteImport } from './routes/dashboard/websites'
 import { Route as DashboardWebsiteWizardRouteImport } from './routes/dashboard/website-wizard'
 import { Route as DashboardWebsiteProjectsRouteImport } from './routes/dashboard/website-projects'
+import { Route as DashboardWebsiteHealthRouteImport } from './routes/dashboard/website-health'
 import { Route as DashboardWalletRouteImport } from './routes/dashboard/wallet'
 import { Route as DashboardUsersRouteImport } from './routes/dashboard/users'
 import { Route as DashboardSupportRouteImport } from './routes/dashboard/support'
@@ -231,6 +232,11 @@ const DashboardWebsiteProjectsRoute =
     path: '/dashboard/website-projects',
     getParentRoute: () => rootRouteImport,
   } as any)
+const DashboardWebsiteHealthRoute = DashboardWebsiteHealthRouteImport.update({
+  id: '/dashboard/website-health',
+  path: '/dashboard/website-health',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardWalletRoute = DashboardWalletRouteImport.update({
   id: '/dashboard/wallet',
   path: '/dashboard/wallet',
@@ -486,6 +492,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/support': typeof DashboardSupportRouteWithChildren
   '/dashboard/users': typeof DashboardUsersRouteWithChildren
   '/dashboard/wallet': typeof DashboardWalletRoute
+  '/dashboard/website-health': typeof DashboardWebsiteHealthRoute
   '/dashboard/website-projects': typeof DashboardWebsiteProjectsRoute
   '/dashboard/website-wizard': typeof DashboardWebsiteWizardRoute
   '/dashboard/websites': typeof DashboardWebsitesRouteWithChildren
@@ -557,6 +564,7 @@ export interface FileRoutesByTo {
   '/dashboard/support': typeof DashboardSupportRouteWithChildren
   '/dashboard/users': typeof DashboardUsersRouteWithChildren
   '/dashboard/wallet': typeof DashboardWalletRoute
+  '/dashboard/website-health': typeof DashboardWebsiteHealthRoute
   '/dashboard/website-projects': typeof DashboardWebsiteProjectsRoute
   '/dashboard/website-wizard': typeof DashboardWebsiteWizardRoute
   '/dashboard/websites': typeof DashboardWebsitesRouteWithChildren
@@ -629,6 +637,7 @@ export interface FileRoutesById {
   '/dashboard/support': typeof DashboardSupportRouteWithChildren
   '/dashboard/users': typeof DashboardUsersRouteWithChildren
   '/dashboard/wallet': typeof DashboardWalletRoute
+  '/dashboard/website-health': typeof DashboardWebsiteHealthRoute
   '/dashboard/website-projects': typeof DashboardWebsiteProjectsRoute
   '/dashboard/website-wizard': typeof DashboardWebsiteWizardRoute
   '/dashboard/websites': typeof DashboardWebsitesRouteWithChildren
@@ -703,6 +712,7 @@ export interface FileRouteTypes {
     | '/dashboard/support'
     | '/dashboard/users'
     | '/dashboard/wallet'
+    | '/dashboard/website-health'
     | '/dashboard/website-projects'
     | '/dashboard/website-wizard'
     | '/dashboard/websites'
@@ -774,6 +784,7 @@ export interface FileRouteTypes {
     | '/dashboard/support'
     | '/dashboard/users'
     | '/dashboard/wallet'
+    | '/dashboard/website-health'
     | '/dashboard/website-projects'
     | '/dashboard/website-wizard'
     | '/dashboard/websites'
@@ -845,6 +856,7 @@ export interface FileRouteTypes {
     | '/dashboard/support'
     | '/dashboard/users'
     | '/dashboard/wallet'
+    | '/dashboard/website-health'
     | '/dashboard/website-projects'
     | '/dashboard/website-wizard'
     | '/dashboard/websites'
@@ -918,6 +930,7 @@ export interface RootRouteChildren {
   DashboardSupportRoute: typeof DashboardSupportRouteWithChildren
   DashboardUsersRoute: typeof DashboardUsersRouteWithChildren
   DashboardWalletRoute: typeof DashboardWalletRoute
+  DashboardWebsiteHealthRoute: typeof DashboardWebsiteHealthRoute
   DashboardWebsiteProjectsRoute: typeof DashboardWebsiteProjectsRoute
   DashboardWebsiteWizardRoute: typeof DashboardWebsiteWizardRoute
   DashboardWebsitesRoute: typeof DashboardWebsitesRouteWithChildren
@@ -1137,6 +1150,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard/website-projects'
       fullPath: '/dashboard/website-projects'
       preLoaderRoute: typeof DashboardWebsiteProjectsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/website-health': {
+      id: '/dashboard/website-health'
+      path: '/dashboard/website-health'
+      fullPath: '/dashboard/website-health'
+      preLoaderRoute: typeof DashboardWebsiteHealthRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard/wallet': {
@@ -1565,6 +1585,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardSupportRoute: DashboardSupportRouteWithChildren,
   DashboardUsersRoute: DashboardUsersRouteWithChildren,
   DashboardWalletRoute: DashboardWalletRoute,
+  DashboardWebsiteHealthRoute: DashboardWebsiteHealthRoute,
   DashboardWebsiteProjectsRoute: DashboardWebsiteProjectsRoute,
   DashboardWebsiteWizardRoute: DashboardWebsiteWizardRoute,
   DashboardWebsitesRoute: DashboardWebsitesRouteWithChildren,

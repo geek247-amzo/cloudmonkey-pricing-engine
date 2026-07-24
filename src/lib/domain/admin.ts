@@ -98,6 +98,7 @@ type AdminDeps = {
   getWorkspaceBillingDetails: (settings: any) => any;
   getSupportCrmContext: (userId: string) => Promise<any>;
   getAdminServerStatus: () => Promise<any>;
+  getAdminWebsiteHealth: () => Promise<any>;
   resolveAdminChatSession: (userId: string, requestedSessionId?: string | null) => Promise<any>;
   loadAdminChatHistory: (sessionId: string, limit?: number) => Promise<any[]>;
   sendN8nAdminChat: (input: any) => Promise<any>;
@@ -1868,6 +1869,12 @@ export function createAdminHandlers(deps: AdminDeps) {
     return deps.json(await deps.getAdminServerStatus());
   }
 
+  async function handleAdminWebsiteHealth(request: Request): Promise<Response> {
+    const { response } = await deps.requireAdmin(request);
+    if (response) return response;
+    return deps.json(await deps.getAdminWebsiteHealth());
+  }
+
   async function handleAdminChat(request: Request): Promise<Response> {
     const { session, response } = await deps.requireAdmin(request);
     if (response) return response;
@@ -1880,7 +1887,10 @@ export function createAdminHandlers(deps: AdminDeps) {
       return deps.json({ session: chatSession, history });
     }
 
-    if ((url.pathname === "/api/admin/chat" || url.pathname === "/api/admin/chat/proactive") && request.method === "POST") {
+    if (
+      (url.pathname === "/api/admin/chat" || url.pathname === "/api/admin/chat/proactive") &&
+      request.method === "POST"
+    ) {
       try {
         const body = await deps.parseBody(request, adminChatSchema);
         const chatSession = await deps.resolveAdminChatSession(session.user.id, body.sessionId);
@@ -1901,10 +1911,17 @@ export function createAdminHandlers(deps: AdminDeps) {
           message: body.proactive
             ? `Proactively review the customer situation and suggest one safe next conversation step.\n\n${body.message}`
             : body.message,
-          contextType: body.contextType ?? (body.proactive ? "proactive_customer_conversation" : null),
+          contextType:
+            body.contextType ?? (body.proactive ? "proactive_customer_conversation" : null),
           contextId: body.contextId ?? body.ticketId ?? body.customerUserId,
           conversationHistory: body.conversationHistory,
-          user: { id: session.user.id, email: session.user.email, name: session.user.name, allowMutations: false, proactiveContext },
+          user: {
+            id: session.user.id,
+            email: session.user.email,
+            name: session.user.name,
+            allowMutations: false,
+            proactiveContext,
+          },
           idempotencyKey: `admin-chat:${chatSession.id}:${userMessageId}`,
         });
         const botMessage = {
@@ -1927,7 +1944,10 @@ export function createAdminHandlers(deps: AdminDeps) {
             userId: null,
             role: "assistant",
             body: botMessage.body,
-            metadata: JSON.stringify({ proactive: body.proactive, contextType: body.contextType ?? null }),
+            metadata: JSON.stringify({
+              proactive: body.proactive,
+              contextType: body.contextType ?? null,
+            }),
           });
         }
         return deps.json({
@@ -2126,6 +2146,8 @@ export function createAdminHandlers(deps: AdminDeps) {
       return handleAdminPlatformMatrix(request);
     if (url.pathname.startsWith("/api/admin/server-status"))
       return handleAdminServerStatus(request);
+    if (url.pathname.startsWith("/api/admin/website-health"))
+      return handleAdminWebsiteHealth(request);
     if (url.pathname.startsWith("/api/admin/server-n8n")) return handleAdminServerN8n(request);
     if (url.pathname.startsWith("/api/admin/chat")) return handleAdminChat(request);
     if (url.pathname.startsWith("/api/admin/m365")) return handleAdminM365(request);
@@ -2146,6 +2168,7 @@ export function createAdminHandlers(deps: AdminDeps) {
     handleAdminSettings,
     handleAdminPlatformMatrix,
     handleAdminServerStatus,
+    handleAdminWebsiteHealth,
     handleAdminServerN8n,
     handleAdminChat,
     handleAdminM365,

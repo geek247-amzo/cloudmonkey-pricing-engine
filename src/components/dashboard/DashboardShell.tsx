@@ -1,4 +1,5 @@
 import {
+  Activity,
   BarChart3,
   Bot,
   BriefcaseBusiness,
@@ -71,6 +72,7 @@ const bottomNav = [{ to: "/dashboard/support", label: "Support", icon: LifeBuoy 
 const adminNav = [
   { to: "/dashboard/customers", label: "Customer Services", icon: UserRound },
   { to: "/dashboard/server-status", label: "Server Status", icon: Server },
+  { to: "/dashboard/website-health", label: "Website Health", icon: Activity },
   { to: "/dashboard/cloud-security", label: "Cloud Security", icon: ShieldPlus },
   { to: "/dashboard/website-projects", label: "Website Projects", icon: HardDrive },
   { to: "/dashboard/administration", label: "Platform Matrix", icon: ShieldCheck },
