@@ -41,6 +41,7 @@ type ManagedDomain = {
   id: string;
   status?: string | null;
   expiryDate?: string | null;
+  autoRenew?: boolean;
 };
 
 type PreparedDomain = ManagedDomain & {
@@ -152,6 +153,7 @@ function getAlertStyles(tone: PreparedDomain["alertTone"]) {
 }
 
 function DomainsPageContent() {
+  const queryClient = useQueryClient();
   const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"cards" | "list">("cards");
   const [sortMode, setSortMode] = useState<"expiry" | "name">("expiry");
@@ -166,6 +168,35 @@ function DomainsPageContent() {
       return res.json();
     },
   });
+
+  const renewMutation = useMutation({
+    mutationFn: async ({ domain, period }: { domain: string; period: number }) => {
+      const response = await fetch("/api/user/domains/renew", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ domain, period }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Domain renewal failed");
+      return data;
+    },
+    onSuccess: () => {
+      toast.success("Domain renewal requested");
+      queryClient.invalidateQueries({ queryKey: ["user", "domains", "list"] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const requestRenewal = (domain: string) => {
+    const value = window.prompt("Renew for how many years?", "1");
+    if (!value) return;
+    const period = Number(value);
+    if (!Number.isInteger(period) || period < 1 || period > 10) {
+      toast.error("Enter a renewal period from 1 to 10 years");
+      return;
+    }
+    renewMutation.mutate({ domain, period });
+  };
 
   const preparedDomains = useMemo<PreparedDomain[]>(() => {
     const rows = (domains ?? []) as ManagedDomain[];
@@ -381,7 +412,12 @@ function DomainsPageContent() {
       {filteredDomains.length > 0 && viewMode === "cards" && (
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
           {filteredDomains.map((dom) => (
-            <DomainCard key={dom.id} domain={dom} onManage={() => setSelectedDomain(dom.id)} />
+            <DomainCard
+              key={dom.id}
+              domain={dom}
+              onManage={() => setSelectedDomain(dom.id)}
+              onRenew={() => requestRenewal(dom.id)}
+            />
           ))}
         </div>
       )}
@@ -451,7 +487,15 @@ function DomainsPageContent() {
   );
 }
 
-function DomainCard({ domain, onManage }: { domain: PreparedDomain; onManage: () => void }) {
+function DomainCard({
+  domain,
+  onManage,
+  onRenew,
+}: {
+  domain: PreparedDomain;
+  onManage: () => void;
+  onRenew: () => void;
+}) {
   return (
     <Card
       className={`relative flex flex-col overflow-hidden border-border/70 bg-card/95 shadow-sm ${domain.alertState === "expired" ? "ring-1 ring-red-200" : domain.alertState === "soon" ? "ring-1 ring-amber-200" : ""}`}
@@ -507,10 +551,20 @@ function DomainCard({ domain, onManage }: { domain: PreparedDomain; onManage: ()
             </span>
           </div>
         </div>
-        <Button className="mt-auto w-full rounded-xl bg-[var(--ai)] shadow-sm" onClick={onManage}>
-          <Settings className="h-4 w-4" />
-          Manage Domain
-        </Button>
+        <div className="mt-auto grid gap-2 sm:grid-cols-2">
+          <Button
+            variant={domain.alertState === "safe" ? "outline" : "destructive"}
+            className="w-full rounded-xl shadow-sm"
+            onClick={onRenew}
+          >
+            <RefreshCcw className="h-4 w-4" />
+            Renew
+          </Button>
+          <Button className="w-full rounded-xl bg-[var(--ai)] shadow-sm" onClick={onManage}>
+            <Settings className="h-4 w-4" />
+            Manage Domain
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
@@ -518,6 +572,11 @@ function DomainCard({ domain, onManage }: { domain: PreparedDomain; onManage: ()
 
 function DomainDetailsView({ domainName, onBack }: { domainName: string; onBack: () => void }) {
   const queryClient = useQueryClient();
+  const { data: domainRows } = useQuery({
+    queryKey: ["user", "domains", "list"],
+    queryFn: async () => (await fetch("/api/user/domains")).json(),
+  });
+  const currentDomain = (domainRows ?? []).find((row: ManagedDomain) => row.id === domainName);
 
   const { data: info, isLoading: isLoadingInfo } = useQuery({
     queryKey: ["user", "domains", "info", domainName],
@@ -575,6 +634,54 @@ function DomainDetailsView({ domainName, onBack }: { domainName: string; onBack:
     },
   });
 
+  const autoRenewMutation = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const response = await fetch("/api/user/domains/auto-renew", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ domain: domainName, enabled }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Auto-renew update failed");
+      return data;
+    },
+    onSuccess: () => {
+      toast.success("Auto-renew updated");
+      queryClient.invalidateQueries({ queryKey: ["user", "domains", "list"] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const renewMutation = useMutation({
+    mutationFn: async (period: number) => {
+      const response = await fetch("/api/user/domains/renew", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ domain: domainName, period }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Domain renewal failed");
+      return data;
+    },
+    onSuccess: () => {
+      toast.success("Domain renewal requested");
+      queryClient.invalidateQueries({ queryKey: ["user", "domains", "list"] });
+      queryClient.invalidateQueries({ queryKey: ["user", "domains", "info", domainName] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const requestRenewal = () => {
+    const value = window.prompt("Renew for how many years?", "1");
+    if (!value) return;
+    const period = Number(value);
+    if (!Number.isInteger(period) || period < 1 || period > 10) {
+      toast.error("Enter a renewal period from 1 to 10 years");
+      return;
+    }
+    renewMutation.mutate(period);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
@@ -598,6 +705,25 @@ function DomainDetailsView({ domainName, onBack }: { domainName: string; onBack:
                   <span className="text-muted-foreground">Status</span>
                   <Badge variant="default">{info?.strStatus || "Active"}</Badge>
                 </div>
+                <div className="flex items-center justify-between gap-3 border-t pt-3 text-sm">
+                  <span className="text-muted-foreground">Auto-renew</span>
+                  <Button
+                    size="sm"
+                    variant={currentDomain?.autoRenew === false ? "outline" : "default"}
+                    onClick={() => autoRenewMutation.mutate(currentDomain?.autoRenew === false)}
+                    disabled={autoRenewMutation.isPending}
+                  >
+                    {currentDomain?.autoRenew === false ? "Enable" : "Enabled"}
+                  </Button>
+                </div>
+                <Button
+                  className="w-full bg-[var(--ai)]"
+                  onClick={requestRenewal}
+                  disabled={renewMutation.isPending}
+                >
+                  <RefreshCcw className="h-4 w-4" />
+                  Renew domain
+                </Button>
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Nameservers</span>
                   <div className="text-right">

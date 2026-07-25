@@ -46,6 +46,16 @@ const adminAssignDomainSchema = z.object({
   expiryDate: z.union([z.string(), z.number(), z.date()]).optional().nullable(),
 });
 
+const domainRenewSchema = z.object({
+  domain: z.string().min(3),
+  period: z.coerce.number().int().min(1).max(10).default(1),
+});
+
+const domainAutoRenewSchema = z.object({
+  domain: z.string().min(3),
+  enabled: z.coerce.boolean(),
+});
+
 export function splitDomainName(domain: string) {
   const value = domain.trim().toLowerCase();
   const parts = value.split(".").filter(Boolean);
@@ -74,6 +84,31 @@ export function parseProviderDate(value: unknown) {
   }
 
   return null;
+}
+
+async function domainsApiPost(path: string, params: Record<string, string>) {
+  const apiKey = process.env.DOMAINS_CO_ZA_API_KEY;
+  if (!apiKey) throw Object.assign(new Error("Domains API is not configured"), { status: 503 });
+  const body = new URLSearchParams({ ...params, key: apiKey });
+  const response = await fetch(`https://api.domains.co.za/api/${path}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok)
+    throw Object.assign(new Error(data?.strMessage || `Domains API returned ${response.status}`), {
+      status: 502,
+    });
+  if (data?.intReturnCode != null && ![0, 1, 2].includes(Number(data.intReturnCode))) {
+    throw Object.assign(new Error(data.strMessage || "Domains API rejected the request"), {
+      status: 422,
+    });
+  }
+  return data;
 }
 
 export async function registerPaidDomainOrder(
@@ -522,6 +557,85 @@ export function createDomainsHandlers(deps: DomainsDeps) {
     return deps.json(domains);
   }
 
+  async function handleDomainRenewal(request: Request, admin = false): Promise<Response> {
+    const auth = admin ? await deps.requireAdmin(request) : await deps.requireSession(request);
+    if (auth.response) return auth.response;
+    if (!auth.session) return deps.json({ error: "Unauthorized" }, 401);
+    if (request.method !== "POST") return deps.json({ error: "Method not allowed" }, 405);
+    try {
+      const body = await deps.parseBody(request, domainRenewSchema);
+      const domainName = body.domain.trim().toLowerCase();
+      const ownership = await deps.db.query.registeredDomain.findFirst({
+        where: eq(deps.registeredDomain.id, domainName),
+      });
+      if (!ownership || (!admin && ownership.userId !== auth.session.user.id))
+        return deps.json({ error: "Forbidden" }, 403);
+      const parts = splitDomainName(domainName);
+      const providerResponse = await domainsApiPost("domain/renew", {
+        sld: parts.sld,
+        tld: parts.tld,
+        period: String(body.period),
+      });
+      const expiry = parseProviderDate(providerResponse.intExDate ?? providerResponse.expiryDate);
+      await deps.db
+        .update(deps.registeredDomain)
+        .set({
+          status: "active",
+          ...(expiry ? { expiryDate: new Date(expiry) } : {}),
+          updatedAt: new Date(),
+        })
+        .where(eq(deps.registeredDomain.id, domainName));
+      await deps.recordAudit({
+        actorUserId: auth.session.user.id,
+        action: "domain.renewed",
+        entityType: "registered_domain",
+        entityId: domainName,
+        message: `${domainName} renewed for ${body.period} year${body.period === 1 ? "" : "s"}`,
+        metadata: { period: body.period, providerResponse },
+      });
+      return deps.json({ ok: true, domain: domainName, expiryDate: expiry, providerResponse });
+    } catch (error: any) {
+      return deps.json({ error: error.message, issues: error.issues }, error.status ?? 500);
+    }
+  }
+
+  async function handleDomainAutoRenew(request: Request, admin = false): Promise<Response> {
+    const auth = admin ? await deps.requireAdmin(request) : await deps.requireSession(request);
+    if (auth.response) return auth.response;
+    if (!auth.session) return deps.json({ error: "Unauthorized" }, 401);
+    if (request.method !== "POST") return deps.json({ error: "Method not allowed" }, 405);
+    try {
+      const body = await deps.parseBody(request, domainAutoRenewSchema);
+      const domainName = body.domain.trim().toLowerCase();
+      const ownership = await deps.db.query.registeredDomain.findFirst({
+        where: eq(deps.registeredDomain.id, domainName),
+      });
+      if (!ownership || (!admin && ownership.userId !== auth.session.user.id))
+        return deps.json({ error: "Forbidden" }, 403);
+      const parts = splitDomainName(domainName);
+      const providerResponse = await domainsApiPost("domain/domain/autorenew", {
+        sld: parts.sld,
+        tld: parts.tld,
+        autorenew: String(body.enabled),
+      });
+      await deps.db
+        .update(deps.registeredDomain)
+        .set({ autoRenew: body.enabled, updatedAt: new Date() })
+        .where(eq(deps.registeredDomain.id, domainName));
+      await deps.recordAudit({
+        actorUserId: auth.session.user.id,
+        action: "domain.auto_renew.updated",
+        entityType: "registered_domain",
+        entityId: domainName,
+        message: `${domainName} auto-renew ${body.enabled ? "enabled" : "disabled"}`,
+        metadata: { enabled: body.enabled, providerResponse },
+      });
+      return deps.json({ ok: true, domain: domainName, autoRenew: body.enabled, providerResponse });
+    } catch (error: any) {
+      return deps.json({ error: error.message, issues: error.issues }, error.status ?? 500);
+    }
+  }
+
   async function handleAdminAssignDomain(request: Request): Promise<Response> {
     const { session, response } = await deps.requireAdmin(request);
     if (response) return response;
@@ -661,6 +775,8 @@ export function createDomainsHandlers(deps: DomainsDeps) {
     handleUserDomainsDns,
     handleUserDomainsInfo,
     handleUserDomains,
+    handleDomainRenewal,
+    handleDomainAutoRenew,
     handleAdminAssignDomain,
     handleAdminDomainsDns,
     handleAdminDomainsInfo,

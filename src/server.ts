@@ -10716,6 +10716,13 @@ echo "CloudMonkey agent installed."
       return domainsHandlers.handleUserDomainsInfo(request);
     }
 
+    if (url.pathname === "/api/user/domains/renew") {
+      return domainsHandlers.handleDomainRenewal(request);
+    }
+    if (url.pathname === "/api/user/domains/auto-renew") {
+      return domainsHandlers.handleDomainAutoRenew(request);
+    }
+
     if (url.pathname.startsWith("/api/user/domains")) {
       return domainsHandlers.handleUserDomains(request);
     }
@@ -10766,6 +10773,13 @@ echo "CloudMonkey agent installed."
 
     if (url.pathname === "/api/admin/domains/info") {
       return domainsHandlers.handleAdminDomainsInfo(request);
+    }
+
+    if (url.pathname === "/api/admin/domains/renew") {
+      return domainsHandlers.handleDomainRenewal(request, true);
+    }
+    if (url.pathname === "/api/admin/domains/auto-renew") {
+      return domainsHandlers.handleDomainAutoRenew(request, true);
     }
 
     if (url.pathname === "/api/admin/assign-domain") {
