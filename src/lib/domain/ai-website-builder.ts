@@ -45,7 +45,7 @@ type BuilderDeps = {
   provisionWebsiteRuntime: (
     userId: string,
     websiteId: string,
-    options?: { skipAgreementCheck?: boolean },
+    options?: { skipAgreementCheck?: boolean; deploymentDomain?: "temporary" | "primary" },
   ) => Promise<any>;
   platformApiCredential: any;
   platformApiUsage: any;
@@ -101,6 +101,37 @@ async function requestClaude(input: { apiKey: string; model: string; brief: stri
 }
 
 export function createAiWebsiteBuilderHandlers(deps: BuilderDeps) {
+  async function handlePublish(request: Request) {
+    const { session, response } = await deps.requireSession(request);
+    if (response) return response;
+    if (request.method !== "POST") return deps.json({ error: "Method not allowed" }, 405);
+    const body = await deps.parseBody(request, z.object({ websiteId: z.string().min(1) }));
+    const site = await deps.db.query.website.findFirst({
+      where: and(eq(deps.website.id, body.websiteId), eq(deps.website.userId, session.user.id)),
+    });
+    if (!site) return deps.json({ error: "Website not found" }, 404);
+    const linkedDomain =
+      site.primaryDomain && site.primaryDomain !== site.temporaryDomain ? site.primaryDomain : null;
+    if (!linkedDomain) {
+      return deps.json(
+        { error: "Link a primary domain before publishing", needsDomain: true },
+        409,
+      );
+    }
+    try {
+      const deployment = await deps.provisionWebsiteRuntime(session.user.id, site.id, {
+        deploymentDomain: "primary",
+      });
+      await deps.db
+        .update(deps.website)
+        .set({ aiGenerationStatus: "published", updatedAt: new Date() })
+        .where(eq(deps.website.id, site.id));
+      return deps.json({ ok: true, domain: linkedDomain, deployment });
+    } catch (error: any) {
+      return deps.json({ error: error.message }, error.status ?? 500);
+    }
+  }
+
   async function handleGenerate(request: Request) {
     const { session, response } = await deps.requireSession(request);
     if (response) return response;
@@ -111,6 +142,18 @@ export function createAiWebsiteBuilderHandlers(deps: BuilderDeps) {
       where: and(eq(deps.website.id, body.websiteId), eq(deps.website.userId, session.user.id)),
     });
     if (!site) return deps.json({ error: "Website not found" }, 404);
+    const previewDomain =
+      site.temporaryDomain ||
+      `${String(site.businessName || site.name || "preview")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "")}-${deps.makeId("preview").slice(-6)}.cloudmonkey.co.za`;
+    if (!site.temporaryDomain) {
+      await deps.db
+        .update(deps.website)
+        .set({ temporaryDomain: previewDomain, updatedAt: new Date() })
+        .where(eq(deps.website.id, site.id));
+    }
 
     const credential = await deps.db.query.platformApiCredential.findFirst({
       where: (row: any, operators: any) =>
@@ -198,7 +241,13 @@ export function createAiWebsiteBuilderHandlers(deps: BuilderDeps) {
       if (body.deploy) {
         deployment = await deps.provisionWebsiteRuntime(session.user.id, site.id);
       }
-      return deps.json({ website: updated, manifest: buildManifest, usage, deployment });
+      return deps.json({
+        website: { ...updated, temporaryDomain: previewDomain },
+        manifest: buildManifest,
+        usage,
+        deployment,
+        previewUrl: deployment?.runtime?.publicUrl ?? `https://${previewDomain}`,
+      });
     } catch (error: any) {
       if (!settled) {
         await deps.releaseWalletReservation({
@@ -211,5 +260,5 @@ export function createAiWebsiteBuilderHandlers(deps: BuilderDeps) {
     }
   }
 
-  return { handleGenerate };
+  return { handleGenerate, handlePublish };
 }

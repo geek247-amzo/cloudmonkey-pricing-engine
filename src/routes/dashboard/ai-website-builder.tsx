@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Bot, CheckCircle2, Globe, Loader2, Rocket, Sparkles } from "lucide-react";
+import { Bot, CheckCircle2, ExternalLink, Globe, Loader2, Rocket, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -19,6 +19,8 @@ export const Route = createFileRoute("/dashboard/ai-website-builder")({
 
 type Website = { id: string; name: string; businessName?: string | null; domain?: string | null };
 type BuilderResult = {
+  website: { id: string; temporaryDomain?: string | null; primaryDomain?: string | null };
+  previewUrl: string;
   manifest: {
     headline: string;
     subheadline: string;
@@ -59,6 +61,16 @@ function AiWebsiteBuilderPage() {
         deploy ? "Website generated and sent to deployment" : "Website content generated",
       );
     },
+    onError: (error: Error) => toast.error(error.message),
+  });
+  const publish = useMutation({
+    mutationFn: () =>
+      fetchJson(`/api/user/ai-website-builder/publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ websiteId: result?.website.id }),
+      }),
+    onSuccess: () => toast.success("Website published to its linked domain"),
     onError: (error: Error) => toast.error(error.message),
   });
 
@@ -181,6 +193,20 @@ function AiWebsiteBuilderPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--ai)]/30 bg-[var(--ai)]/5 p-4 text-sm">
+              <div>
+                <p className="font-semibold">Preview deployment</p>
+                <a
+                  className="text-[var(--ai)] underline"
+                  href={result.previewUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {result.previewUrl} <ExternalLink className="inline h-3 w-3" />
+                </a>
+              </div>
+              <Badge variant="outline">Review before publishing</Badge>
+            </div>
             <h3 className="text-xl font-semibold">{result.manifest.headline}</h3>
             <p className="text-muted-foreground">{result.manifest.subheadline}</p>
             <div className="grid gap-3 md:grid-cols-2">
@@ -194,12 +220,35 @@ function AiWebsiteBuilderPage() {
                 </div>
               ))}
             </div>
-            <Button asChild variant="outline">
-              <Link to="/dashboard/websites">
-                <Globe className="mr-2 h-4 w-4" />
-                View website projects
-              </Link>
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={() => setResult(null)}>
+                Regenerate
+              </Button>
+              {!result.website.primaryDomain ||
+              result.website.primaryDomain === result.website.temporaryDomain ? (
+                <Button asChild variant="outline">
+                  <Link to="/dashboard/domains">
+                    <Globe className="mr-2 h-4 w-4" />
+                    Link a domain to publish
+                  </Link>
+                </Button>
+              ) : (
+                <Button
+                  onClick={() => publish.mutate()}
+                  disabled={publish.isPending}
+                  className="bg-[var(--ai)]"
+                >
+                  <Rocket className="mr-2 h-4 w-4" />
+                  Publish to {result.website.primaryDomain}
+                </Button>
+              )}
+              <Button asChild variant="outline">
+                <Link to="/dashboard/websites">
+                  <Globe className="mr-2 h-4 w-4" />
+                  View website projects
+                </Link>
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}

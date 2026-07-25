@@ -2444,7 +2444,12 @@ async function provisionRemoteWebsiteRuntime(input: {
   store: typeof websiteStore.$inferSelect;
   database?: typeof websiteStoreDatabase.$inferSelect | null;
   buildManifest: unknown;
+  deploymentDomain?: "temporary" | "primary";
 }) {
+  const deploymentDomain =
+    input.deploymentDomain === "primary"
+      ? input.site.primaryDomain || input.site.temporaryDomain || input.site.domain
+      : input.site.temporaryDomain || input.site.primaryDomain || input.site.domain;
   const isEcommerce = input.site.siteType === "ecommerce";
   if (isEcommerce && !input.database) {
     throw new Error("Ecommerce stores require a dedicated database before provisioning");
@@ -2454,7 +2459,7 @@ async function provisionRemoteWebsiteRuntime(input: {
         websiteId: input.site.id,
         storeId: input.store.id,
         businessName: input.site.businessName || input.site.name || input.store.name,
-        domain: input.site.temporaryDomain || input.site.primaryDomain || "",
+        domain: deploymentDomain || "",
         siteType: input.site.siteType,
         designManifest: input.buildManifest,
         store: input.store,
@@ -2462,7 +2467,7 @@ async function provisionRemoteWebsiteRuntime(input: {
     : buildBusinessWebsiteConfig({
         websiteId: input.site.id,
         businessName: input.site.businessName || input.site.name || input.store.name,
-        domain: input.site.temporaryDomain || input.site.primaryDomain || "",
+        domain: deploymentDomain || "",
         siteType: input.site.siteType,
         designManifest: input.buildManifest,
       });
@@ -2474,9 +2479,8 @@ async function provisionRemoteWebsiteRuntime(input: {
   const databaseUrl = input.database
     ? `postgres://${encodeURIComponent(input.database.username)}:${encodeURIComponent(decryptSecret(input.database.passwordSecret))}@${input.database.containerName}:5432/${encodeURIComponent(input.database.databaseName)}`
     : "";
-  const publicBaseUrl = input.site.temporaryDomain ? `https://${input.site.temporaryDomain}` : "";
-  const domain =
-    input.site.temporaryDomain || input.site.primaryDomain || input.site.domain || null;
+  const publicBaseUrl = deploymentDomain ? `https://${deploymentDomain}` : "";
+  const domain = deploymentDomain || null;
   const payload: RuntimeDeployPayload = {
     domain,
     website: {
@@ -2485,7 +2489,7 @@ async function provisionRemoteWebsiteRuntime(input: {
       siteType: input.site.siteType,
       businessName: input.site.businessName || input.site.name || input.store.name,
       domain,
-      temporaryDomain: input.site.temporaryDomain,
+      temporaryDomain: deploymentDomain,
       primaryDomain: input.site.primaryDomain,
     },
     store: {
@@ -3007,7 +3011,7 @@ async function createWebsiteProjectFromOnboarding(input: {
 async function provisionWebsiteRuntime(
   userId: string,
   websiteId: string,
-  options?: { skipAgreementCheck?: boolean },
+  options?: { skipAgreementCheck?: boolean; deploymentDomain?: "temporary" | "primary" },
 ) {
   const detail = await getUserWebsiteDetail(userId, websiteId);
   if (!detail?.store) {
@@ -3061,6 +3065,13 @@ async function provisionWebsiteRuntime(
     throw new Error("Website runtime records disappeared during provisioning");
   if (siteRow.siteType === "ecommerce" && !databaseRow)
     throw new Error("Ecommerce database record disappeared during provisioning");
+  const runtimeSite = {
+    ...siteRow,
+    temporaryDomain:
+      options?.deploymentDomain === "primary"
+        ? siteRow.primaryDomain || siteRow.temporaryDomain || siteRow.domain
+        : siteRow.temporaryDomain || siteRow.primaryDomain || siteRow.domain,
+  };
 
   const buildManifest = safeJsonParse(siteRow.buildManifest) ?? {};
   const subscriptionRow = siteRow.subscriptionId
@@ -3081,10 +3092,11 @@ async function provisionWebsiteRuntime(
     try {
       runtimeResult = await provisionRemoteWebsiteRuntime({
         runtime: runtimeServer,
-        site: siteRow,
+        site: runtimeSite,
         store: storeRow,
         database: databaseRow,
         buildManifest,
+        deploymentDomain: options?.deploymentDomain,
       });
     } catch (error: any) {
       if (
@@ -3100,7 +3112,7 @@ async function provisionWebsiteRuntime(
       });
       resolvedRuntimeServer = null;
       runtimeResult = await provisionLocalWebsiteRuntime({
-        site: siteRow,
+        site: runtimeSite,
         store: storeRow,
         database: databaseRow,
         buildManifest,
@@ -3108,7 +3120,7 @@ async function provisionWebsiteRuntime(
     }
   } else {
     runtimeResult = await provisionLocalWebsiteRuntime({
-      site: siteRow,
+      site: runtimeSite,
       store: storeRow,
       database: databaseRow,
       buildManifest,
@@ -10138,6 +10150,9 @@ echo "CloudMonkey agent installed."
 
     if (url.pathname === "/api/user/ai-website-builder/generate") {
       return aiWebsiteBuilderHandlers.handleGenerate(request);
+    }
+    if (url.pathname === "/api/user/ai-website-builder/publish") {
+      return aiWebsiteBuilderHandlers.handlePublish(request);
     }
 
     if (url.pathname.startsWith("/api/user/onboarding")) {
