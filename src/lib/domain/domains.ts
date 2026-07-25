@@ -613,7 +613,7 @@ export function createDomainsHandlers(deps: DomainsDeps) {
       if (!ownership || (!admin && ownership.userId !== auth.session.user.id))
         return deps.json({ error: "Forbidden" }, 403);
       const parts = splitDomainName(domainName);
-      const providerResponse = await domainsApiPost("domain/domain/autorenew", {
+      const providerResponse = await domainsApiPost("domain/autorenew", {
         sld: parts.sld,
         tld: parts.tld,
         autorenew: String(body.enabled),
