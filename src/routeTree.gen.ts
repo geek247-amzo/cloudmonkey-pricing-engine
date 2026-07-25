@@ -28,6 +28,8 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard/index'
 import { Route as AuthIndexRouteImport } from './routes/auth/index'
 import { Route as WebsiteApprovalTokenRouteImport } from './routes/website-approval/$token'
+import { Route as ToolsUptimeCheckerRouteImport } from './routes/tools/uptime-checker'
+import { Route as ToolsSslCheckerRouteImport } from './routes/tools/ssl-checker'
 import { Route as LegalTermsRouteImport } from './routes/legal/terms'
 import { Route as LegalSlaRouteImport } from './routes/legal/sla'
 import { Route as LegalRefundsRouteImport } from './routes/legal/refunds'
@@ -177,6 +179,16 @@ const WebsiteApprovalTokenRoute = WebsiteApprovalTokenRouteImport.update({
   id: '/website-approval/$token',
   path: '/website-approval/$token',
   getParentRoute: () => rootRouteImport,
+} as any)
+const ToolsUptimeCheckerRoute = ToolsUptimeCheckerRouteImport.update({
+  id: '/uptime-checker',
+  path: '/uptime-checker',
+  getParentRoute: () => ToolsRoute,
+} as any)
+const ToolsSslCheckerRoute = ToolsSslCheckerRouteImport.update({
+  id: '/ssl-checker',
+  path: '/ssl-checker',
+  getParentRoute: () => ToolsRoute,
 } as any)
 const LegalTermsRoute = LegalTermsRouteImport.update({
   id: '/terms',
@@ -471,7 +483,7 @@ export interface FileRoutesByFullPath {
   '/pricing': typeof PricingRoute
   '/seo-checker': typeof SeoCheckerRoute
   '/sso-checker': typeof SsoCheckerRoute
-  '/tools': typeof ToolsRoute
+  '/tools': typeof ToolsRouteWithChildren
   '/voice': typeof VoiceRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
   '/auth/link-account': typeof AuthLinkAccountRoute
@@ -520,6 +532,8 @@ export interface FileRoutesByFullPath {
   '/legal/refunds': typeof LegalRefundsRoute
   '/legal/sla': typeof LegalSlaRoute
   '/legal/terms': typeof LegalTermsRoute
+  '/tools/ssl-checker': typeof ToolsSslCheckerRoute
+  '/tools/uptime-checker': typeof ToolsUptimeCheckerRoute
   '/website-approval/$token': typeof WebsiteApprovalTokenRoute
   '/auth/': typeof AuthIndexRoute
   '/dashboard/': typeof DashboardIndexRoute
@@ -546,7 +560,7 @@ export interface FileRoutesByTo {
   '/pricing': typeof PricingRoute
   '/seo-checker': typeof SeoCheckerRoute
   '/sso-checker': typeof SsoCheckerRoute
-  '/tools': typeof ToolsRoute
+  '/tools': typeof ToolsRouteWithChildren
   '/voice': typeof VoiceRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
   '/auth/link-account': typeof AuthLinkAccountRoute
@@ -594,6 +608,8 @@ export interface FileRoutesByTo {
   '/legal/refunds': typeof LegalRefundsRoute
   '/legal/sla': typeof LegalSlaRoute
   '/legal/terms': typeof LegalTermsRoute
+  '/tools/ssl-checker': typeof ToolsSslCheckerRoute
+  '/tools/uptime-checker': typeof ToolsUptimeCheckerRoute
   '/website-approval/$token': typeof WebsiteApprovalTokenRoute
   '/auth': typeof AuthIndexRoute
   '/auth/two-factor/setup': typeof AuthTwoFactorSetupRoute
@@ -620,7 +636,7 @@ export interface FileRoutesById {
   '/pricing': typeof PricingRoute
   '/seo-checker': typeof SeoCheckerRoute
   '/sso-checker': typeof SsoCheckerRoute
-  '/tools': typeof ToolsRoute
+  '/tools': typeof ToolsRouteWithChildren
   '/voice': typeof VoiceRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
   '/auth/link-account': typeof AuthLinkAccountRoute
@@ -669,6 +685,8 @@ export interface FileRoutesById {
   '/legal/refunds': typeof LegalRefundsRoute
   '/legal/sla': typeof LegalSlaRoute
   '/legal/terms': typeof LegalTermsRoute
+  '/tools/ssl-checker': typeof ToolsSslCheckerRoute
+  '/tools/uptime-checker': typeof ToolsUptimeCheckerRoute
   '/website-approval/$token': typeof WebsiteApprovalTokenRoute
   '/auth/': typeof AuthIndexRoute
   '/dashboard/': typeof DashboardIndexRoute
@@ -746,6 +764,8 @@ export interface FileRouteTypes {
     | '/legal/refunds'
     | '/legal/sla'
     | '/legal/terms'
+    | '/tools/ssl-checker'
+    | '/tools/uptime-checker'
     | '/website-approval/$token'
     | '/auth/'
     | '/dashboard/'
@@ -820,6 +840,8 @@ export interface FileRouteTypes {
     | '/legal/refunds'
     | '/legal/sla'
     | '/legal/terms'
+    | '/tools/ssl-checker'
+    | '/tools/uptime-checker'
     | '/website-approval/$token'
     | '/auth'
     | '/auth/two-factor/setup'
@@ -894,6 +916,8 @@ export interface FileRouteTypes {
     | '/legal/refunds'
     | '/legal/sla'
     | '/legal/terms'
+    | '/tools/ssl-checker'
+    | '/tools/uptime-checker'
     | '/website-approval/$token'
     | '/auth/'
     | '/dashboard/'
@@ -921,7 +945,7 @@ export interface RootRouteChildren {
   PricingRoute: typeof PricingRoute
   SeoCheckerRoute: typeof SeoCheckerRoute
   SsoCheckerRoute: typeof SsoCheckerRoute
-  ToolsRoute: typeof ToolsRoute
+  ToolsRoute: typeof ToolsRouteWithChildren
   VoiceRoute: typeof VoiceRoute
   AuthForgotPasswordRoute: typeof AuthForgotPasswordRoute
   AuthLinkAccountRoute: typeof AuthLinkAccountRoute
@@ -1102,6 +1126,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/website-approval/$token'
       preLoaderRoute: typeof WebsiteApprovalTokenRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/tools/uptime-checker': {
+      id: '/tools/uptime-checker'
+      path: '/uptime-checker'
+      fullPath: '/tools/uptime-checker'
+      preLoaderRoute: typeof ToolsUptimeCheckerRouteImport
+      parentRoute: typeof ToolsRoute
+    }
+    '/tools/ssl-checker': {
+      id: '/tools/ssl-checker'
+      path: '/ssl-checker'
+      fullPath: '/tools/ssl-checker'
+      preLoaderRoute: typeof ToolsSslCheckerRouteImport
+      parentRoute: typeof ToolsRoute
     }
     '/legal/terms': {
       id: '/legal/terms'
@@ -1506,6 +1544,18 @@ const LegalRouteChildren: LegalRouteChildren = {
 
 const LegalRouteWithChildren = LegalRoute._addFileChildren(LegalRouteChildren)
 
+interface ToolsRouteChildren {
+  ToolsSslCheckerRoute: typeof ToolsSslCheckerRoute
+  ToolsUptimeCheckerRoute: typeof ToolsUptimeCheckerRoute
+}
+
+const ToolsRouteChildren: ToolsRouteChildren = {
+  ToolsSslCheckerRoute: ToolsSslCheckerRoute,
+  ToolsUptimeCheckerRoute: ToolsUptimeCheckerRoute,
+}
+
+const ToolsRouteWithChildren = ToolsRoute._addFileChildren(ToolsRouteChildren)
+
 interface AuthTwoFactorRouteChildren {
   AuthTwoFactorSetupRoute: typeof AuthTwoFactorSetupRoute
   AuthTwoFactorIndexRoute: typeof AuthTwoFactorIndexRoute
@@ -1592,7 +1642,7 @@ const rootRouteChildren: RootRouteChildren = {
   PricingRoute: PricingRoute,
   SeoCheckerRoute: SeoCheckerRoute,
   SsoCheckerRoute: SsoCheckerRoute,
-  ToolsRoute: ToolsRoute,
+  ToolsRoute: ToolsRouteWithChildren,
   VoiceRoute: VoiceRoute,
   AuthForgotPasswordRoute: AuthForgotPasswordRoute,
   AuthLinkAccountRoute: AuthLinkAccountRoute,

@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowRight, Search } from "lucide-react";
+import { Activity, ArrowRight, Search, ShieldCheck } from "lucide-react";
 
 import { SectionHeading } from "@/components/site/SectionHeading";
 import { canonicalLink, ogUrl } from "@/lib/seo";
@@ -30,6 +30,20 @@ const TOOLS = [
       "Check titles, metadata, links, structured data, accessibility, and technical search issues.",
     to: "/seo-checker" as const,
     action: "Run an SEO scan",
+  },
+  {
+    icon: ShieldCheck,
+    title: "Free SSL Checker",
+    description: "Check certificate validity, hostname matching, issuer, and expiry dates.",
+    to: "/tools/ssl-checker" as const,
+    action: "Check SSL",
+  },
+  {
+    icon: Activity,
+    title: "Free Uptime Checker",
+    description: "Check HTTP status, response time, and redirect behavior in one quick test.",
+    to: "/tools/uptime-checker" as const,
+    action: "Check uptime",
   },
 ];
 

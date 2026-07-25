@@ -7,6 +7,7 @@ import { mkdir, readFile, readdir, stat, writeFile } from "fs/promises";
 import path from "path";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { isIP } from "node:net";
 const execAsync = promisify(exec);
 import postgres from "postgres";
 import { db } from "./db";
@@ -135,6 +136,7 @@ import { createDomainsHandlers, registerPaidDomainOrder } from "./lib/domain/dom
 import { createAgentsRuntimeHandlers } from "./lib/domain/agents-runtime";
 import { createAdminHandlers } from "./lib/domain/admin";
 import { createAiWebsiteBuilderHandlers } from "./lib/domain/ai-website-builder";
+import { mapFreeToolFindingsToUpsells } from "./lib/free-tools";
 import { chargePlatformUsage, recordPlatformApiUsage } from "./lib/platform-usage";
 import { createBillingHandlers } from "./lib/domain/billing";
 import {
@@ -6241,6 +6243,26 @@ async function probeServerSsl(domain: string): Promise<{
   });
 }
 
+function isPrivateToolHost(hostname: string) {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (["localhost", "localhost.localdomain"].includes(host) || host.endsWith(".local")) return true;
+  const version = isIP(host);
+  if (version === 4) {
+    const octets = host.split(".").map(Number);
+    return (
+      octets[0] === 0 ||
+      octets[0] === 10 ||
+      octets[0] === 127 ||
+      (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
+      (octets[0] === 192 && octets[1] === 168)
+    );
+  }
+  return (
+    version === 6 &&
+    (host === "::1" || host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80:"))
+  );
+}
+
 async function getServersWithTelemetry(userId: string, includeAll: boolean) {
   const instances = await db.query.vultrInstance.findMany({
     ...(includeAll ? {} : { where: eq(vultrInstance.userId, userId) }),
@@ -9173,6 +9195,108 @@ echo "CloudMonkey agent installed."
       const scanResponse = await publicScanHandlers.handleGeneralScan(request);
       if (!session) return scanResponse;
       return scanResponse;
+    }
+
+    if (
+      (url.pathname === "/api/public/tools/ssl-check" ||
+        url.pathname === "/api/public/tools/uptime-check") &&
+      request.method === "POST"
+    ) {
+      const { response } = await requireSession(request);
+      if (response) return response;
+      try {
+        const body = await parseBody(request, z.object({ url: z.string().url().max(2048) }));
+        const target = new URL(body.url);
+        if (!/^https?:$/.test(target.protocol) || isPrivateToolHost(target.hostname)) {
+          return json({ error: "Enter a public HTTP or HTTPS website URL" }, 400);
+        }
+        if (url.pathname.endsWith("ssl-check")) {
+          const ssl =
+            target.protocol === "https:"
+              ? await probeServerSsl(target.hostname)
+              : { status: "missing", issuer: null, expiresAt: null, hostnameMatches: null };
+          const daysRemaining = ssl.expiresAt
+            ? Math.floor((Date.parse(ssl.expiresAt) - Date.now()) / 86_400_000)
+            : null;
+          const findings = [];
+          if (target.protocol !== "https:")
+            findings.push({
+              code: "https_required",
+              title: "HTTPS is not enabled",
+              detail: "Your website is not using an encrypted HTTPS connection.",
+            });
+          if (ssl.status !== "valid")
+            findings.push({
+              code: "ssl_invalid",
+              title: "SSL certificate could not be validated",
+              detail: `Certificate status: ${ssl.status}.`,
+            });
+          if (ssl.hostnameMatches === false)
+            findings.push({
+              code: "ssl_hostname_mismatch",
+              title: "Certificate hostname mismatch",
+              detail: "The certificate does not match this domain.",
+            });
+          if (daysRemaining !== null && daysRemaining < 30)
+            findings.push({
+              code: "ssl_expiring",
+              title: "SSL certificate expires soon",
+              detail: `The certificate expires in ${daysRemaining} days.`,
+            });
+          return json({
+            ok: findings.length === 0,
+            url: target.toString(),
+            issuer: ssl.issuer,
+            expiresAt: ssl.expiresAt,
+            daysRemaining,
+            chainValid: ssl.status === "valid",
+            hostnameMatches: ssl.hostnameMatches,
+            findings,
+            upsells: mapFreeToolFindingsToUpsells("ssl", findings),
+          });
+        }
+
+        const hops: Array<{ url: string; status: number | null }> = [];
+        let current = target;
+        let responseStatus: number | null = null;
+        const startedAt = Date.now();
+        for (let index = 0; index < 6; index += 1) {
+          const response = await fetchIpv4(current, { method: "HEAD", timeoutMs: 8_000 });
+          responseStatus = response.status;
+          hops.push({ url: current.toString(), status: response.status });
+          if (![301, 302, 303, 307, 308].includes(response.status)) break;
+          const location = response.headers.get("location");
+          if (!location) break;
+          const next = new URL(location, current);
+          if (!/^https?:$/.test(next.protocol) || isPrivateToolHost(next.hostname)) break;
+          current = next;
+        }
+        const findings =
+          responseStatus === null || responseStatus >= 400
+            ? [
+                {
+                  code: "uptime_down",
+                  title: "Website is not responding successfully",
+                  detail: responseStatus
+                    ? `The site returned HTTP ${responseStatus}.`
+                    : "The site could not be reached.",
+                },
+              ]
+            : [];
+        return json({
+          ok: findings.length === 0,
+          url: target.toString(),
+          finalUrl: current.toString(),
+          status: responseStatus,
+          responseTimeMs: Date.now() - startedAt,
+          redirects: hops.slice(0, -1),
+          redirectCount: Math.max(0, hops.length - 1),
+          findings,
+          upsells: mapFreeToolFindingsToUpsells("uptime", findings),
+        });
+      } catch (error) {
+        return json({ error: error instanceof Error ? error.message : "Tool check failed" }, 400);
+      }
     }
 
     if (url.pathname.startsWith("/api/user/wallet")) {
