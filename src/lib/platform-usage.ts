@@ -7,12 +7,15 @@ export const PLATFORM_CREDENTIAL_STATUSES = ["active", "invalid", "revoked"] as 
 
 // USD per one million tokens. Keep this map aligned with the Business Overview pricing sheet.
 export const PROVIDER_RATES: Record<string, { input: number; output: number }> = {
+  "gemini-2.5-flash-lite": { input: 0.1, output: 0.4 },
   "gemini-2.5-flash": { input: 0.3, output: 2.5 },
-  "gemini-2.5-pro": { input: 1.25, output: 10 },
-  "gpt-4o-mini": { input: 0.15, output: 0.6 },
-  "gpt-4o": { input: 2.5, output: 10 },
-  "claude-3-5-sonnet": { input: 3, output: 15 },
-  "claude-3-5-haiku": { input: 0.8, output: 4 },
+  "gemini-3.1-pro": { input: 2, output: 12 },
+  "gpt-5.4-nano": { input: 0.2, output: 1.25 },
+  "gpt-5.4-mini": { input: 0.75, output: 4.5 },
+  "gpt-5.4": { input: 2.5, output: 15 },
+  "claude-haiku-4.5": { input: 1, output: 5 },
+  "claude-sonnet-5": { input: 3, output: 15 },
+  "claude-opus-4.8": { input: 5, output: 25 },
 };
 
 export const PLATFORM_MARKUP_BPS = 17000;
@@ -32,7 +35,7 @@ export function providerCostMicrousd(model: string, inputTokens: number, outputT
 
 export function chargedWalletTokens(providerCost: number) {
   const markedUpUsd = (providerCost * PLATFORM_MARKUP_BPS) / 10000 / 1_000_000;
-  const usdToZar = Number(process.env.USD_TO_ZAR_RATE ?? 18.5);
+  const usdToZar = Number(process.env.USD_TO_ZAR_RATE ?? 16.3);
   return Math.max(1, Math.ceil(markedUpUsd * usdToZar * WALLET_TOKENS_PER_ZAR));
 }
 
