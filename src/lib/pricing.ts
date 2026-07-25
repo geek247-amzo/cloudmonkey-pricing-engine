@@ -2,7 +2,7 @@
 // Amounts are kept in ZAR here and stored as cents in the database seed.
 
 export type Currency = "ZAR" | "USD" | "GBP" | "EUR";
-export type BillingType = "recurring" | "once_off" | "quote";
+export type BillingType = "recurring" | "once_off" | "quote" | "token_based";
 export type BillingFrequency = "once_off" | "year" | "month";
 export type CatalogAccent = "cloud" | "business" | "ai";
 export type ManagementType = "managed" | "unmanaged" | "quote";
@@ -351,7 +351,7 @@ export const CATEGORIES: ServiceCategory[] = [
             priceZar: 149,
             setupPriceZar: 0,
             unit: MONTH,
-            billingType: "recurring",
+            billingType: "token_based",
             minimumTerm: "Monthly",
             trialDays: 7,
             sortOrder: 10,
@@ -407,7 +407,7 @@ export const CATEGORIES: ServiceCategory[] = [
             name: "Ecommerce Growth",
             priceZar: 999,
             unit: MONTH,
-            billingType: "recurring",
+            billingType: "token_based",
             minimumTerm: "Monthly",
             badge: "Most Popular",
             highlighted: true,
@@ -425,7 +425,7 @@ export const CATEGORIES: ServiceCategory[] = [
             name: "Ecommerce Pro",
             priceZar: 1999,
             unit: MONTH,
-            billingType: "recurring",
+            billingType: "token_based",
             minimumTerm: "Monthly",
             trialDays: 7,
             sortOrder: 30,
@@ -718,7 +718,7 @@ export const CATEGORIES: ServiceCategory[] = [
             name: "Starter",
             priceZar: 499,
             unit: MONTH,
-            billingType: "recurring",
+            billingType: "token_based",
             sortOrder: 10,
             features: [
               "1 website",
@@ -733,7 +733,7 @@ export const CATEGORIES: ServiceCategory[] = [
             name: "Growth",
             priceZar: 999,
             unit: MONTH,
-            billingType: "recurring",
+            billingType: "token_based",
             highlighted: true,
             badge: "Recommended",
             sortOrder: 20,
@@ -751,7 +751,7 @@ export const CATEGORIES: ServiceCategory[] = [
             name: "Managed SEO",
             priceZar: 2500,
             unit: MONTH,
-            billingType: "recurring",
+            billingType: "token_based",
             sortOrder: 30,
             features: [
               "CloudMonkey executes fixes",
@@ -776,7 +776,7 @@ export const CATEGORIES: ServiceCategory[] = [
             priceZar: 3499,
             setupPriceZar: 2499,
             unit: MONTH,
-            billingType: "recurring",
+            billingType: "token_based",
             minimumTerm: "3 months",
             sortOrder: 10,
             features: ["Content calendar", "4 managed posts", "On-page SEO", "Monthly reporting"],
@@ -787,7 +787,7 @@ export const CATEGORIES: ServiceCategory[] = [
             priceZar: 7499,
             setupPriceZar: 4999,
             unit: MONTH,
-            billingType: "recurring",
+            billingType: "token_based",
             minimumTerm: "3 months",
             highlighted: true,
             sortOrder: 20,
@@ -954,7 +954,7 @@ export const CATEGORIES: ServiceCategory[] = [
             name: "Voice Intelligence Starter",
             priceZar: 499,
             unit: MONTH,
-            billingType: "recurring",
+            billingType: "token_based",
             sortOrder: 10,
             features: ["Transcription", "Basic analytics"],
           },
@@ -963,7 +963,7 @@ export const CATEGORIES: ServiceCategory[] = [
             name: "Voice Intelligence Business",
             priceZar: 999,
             unit: MONTH,
-            billingType: "recurring",
+            billingType: "token_based",
             highlighted: true,
             sortOrder: 20,
             features: ["Sentiment analysis", "Summaries", "Search"],
@@ -973,7 +973,7 @@ export const CATEGORIES: ServiceCategory[] = [
             name: "Voice Intelligence Enterprise",
             priceZar: 2499,
             unit: MONTH,
-            billingType: "recurring",
+            billingType: "token_based",
             sortOrder: 30,
             features: ["Custom models", "Coaching", "Compliance reporting"],
           },
@@ -1102,7 +1102,7 @@ export const CATEGORIES: ServiceCategory[] = [
             name: "Marketing Agent",
             priceZar: 999,
             unit: MONTH,
-            billingType: "recurring",
+            billingType: "token_based",
             sortOrder: 10,
             features: [
               "Campaign creation",
@@ -1117,7 +1117,7 @@ export const CATEGORIES: ServiceCategory[] = [
             name: "Sales Agent",
             priceZar: 999,
             unit: MONTH,
-            billingType: "recurring",
+            billingType: "token_based",
             sortOrder: 20,
             features: [
               "Lead research",
@@ -1132,7 +1132,7 @@ export const CATEGORIES: ServiceCategory[] = [
             name: "Support Agent",
             priceZar: 999,
             unit: MONTH,
-            billingType: "recurring",
+            billingType: "token_based",
             sortOrder: 30,
             features: [
               "24/7 ticket triage",
@@ -1147,7 +1147,7 @@ export const CATEGORIES: ServiceCategory[] = [
             name: "HR Agent",
             priceZar: 999,
             unit: MONTH,
-            billingType: "recurring",
+            billingType: "token_based",
             sortOrder: 40,
             features: [
               "Recruitment workflows",
@@ -1162,7 +1162,7 @@ export const CATEGORIES: ServiceCategory[] = [
             name: "Finance Agent",
             priceZar: 999,
             unit: MONTH,
-            billingType: "recurring",
+            billingType: "token_based",
             sortOrder: 50,
             features: [
               "Expense tracking",
@@ -1177,7 +1177,7 @@ export const CATEGORIES: ServiceCategory[] = [
             name: "Operations Agent",
             priceZar: 999,
             unit: MONTH,
-            billingType: "recurring",
+            billingType: "token_based",
             sortOrder: 60,
             features: [
               "Workflow automation",
@@ -1271,7 +1271,7 @@ export const CATEGORIES: ServiceCategory[] = [
             name: "Starter",
             priceZar: 999,
             unit: MONTH,
-            billingType: "recurring",
+            billingType: "token_based",
             sortOrder: 10,
             features: ["1 knowledge base", "Email integration", "Calendar integration"],
           },
@@ -1280,7 +1280,7 @@ export const CATEGORIES: ServiceCategory[] = [
             name: "Growth",
             priceZar: 2499,
             unit: MONTH,
-            billingType: "recurring",
+            billingType: "token_based",
             highlighted: true,
             badge: "Most Popular",
             sortOrder: 20,
@@ -1296,7 +1296,7 @@ export const CATEGORIES: ServiceCategory[] = [
             name: "Business",
             priceZar: 4999,
             unit: MONTH,
-            billingType: "recurring",
+            billingType: "token_based",
             sortOrder: 30,
             features: ["Advanced AI", "Multi-department access", "Custom automations", "Reporting"],
           },

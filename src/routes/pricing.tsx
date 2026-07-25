@@ -8,16 +8,29 @@ import { MascotHero } from "@/components/site/MascotHero";
 import { PricingCard } from "@/components/site/PricingCard";
 import { SectionHeading } from "@/components/site/SectionHeading";
 import { ServiceSection } from "@/components/site/ServiceSection";
-import { BUNDLES, CATEGORIES, fetchPublicPricingCatalog, formatPrice, type Bundle } from "@/lib/pricing";
+import {
+  BUNDLES,
+  CATEGORIES,
+  fetchPublicPricingCatalog,
+  formatPrice,
+  type Bundle,
+} from "@/lib/pricing";
 import { canonicalLink, ogUrl } from "@/lib/seo";
 
 export const Route = createFileRoute("/pricing")({
   head: () => ({
     meta: [
       { title: "Pricing — CloudMonkey" },
-      { name: "description", content: "CloudMonkey pricing in ZAR, managed from the admin catalog and synced to the public site." },
+      {
+        name: "description",
+        content:
+          "CloudMonkey pricing in ZAR, managed from the admin catalog and synced to the public site.",
+      },
       { property: "og:title", content: "CloudMonkey Pricing" },
-      { property: "og:description", content: "Transparent pricing in ZAR, powered by the product catalog." },
+      {
+        property: "og:description",
+        content: "Transparent pricing in ZAR, powered by the product catalog.",
+      },
       ogUrl("/pricing"),
     ],
     links: [canonicalLink("/pricing")],
@@ -26,10 +39,22 @@ export const Route = createFileRoute("/pricing")({
 });
 
 const TRUST = [
-  { icon: Shield, title: "Admin Managed", desc: "Product and bundle pricing is edited from the dashboard." },
-  { icon: Lock, title: "Single Source of Truth", desc: "The public site reads from the same catalog as internal tools." },
+  {
+    icon: Shield,
+    title: "Admin Managed",
+    desc: "Product and bundle pricing is edited from the dashboard.",
+  },
+  {
+    icon: Lock,
+    title: "Single Source of Truth",
+    desc: "The public site reads from the same catalog as internal tools.",
+  },
   { icon: Zap, title: "Fast Updates", desc: "Change pricing once and it appears across the site." },
-  { icon: Headphones, title: "Human Support", desc: "If pricing needs a quote, sales can take it from here." },
+  {
+    icon: Headphones,
+    title: "Human Support",
+    desc: "If pricing needs a quote, sales can take it from here.",
+  },
 ];
 
 function PricingPage() {
@@ -56,11 +81,13 @@ function PricingPage() {
   ];
   const bundleFilterOptions = [
     { value: "all", label: "All Bundles", count: bundles.length },
-    ...bundleGroupOrder.map((label) => ({
-      value: label,
-      label,
-      count: bundles.filter((bundle) => bundle.categoryNote === label).length,
-    })).filter((option) => option.count > 0),
+    ...bundleGroupOrder
+      .map((label) => ({
+        value: label,
+        label,
+        count: bundles.filter((bundle) => bundle.categoryNote === label).length,
+      }))
+      .filter((option) => option.count > 0),
   ];
   const visibleBundles =
     activeBundleGroup === "all"
@@ -70,7 +97,11 @@ function PricingPage() {
   return (
     <>
       <MascotHero
-        eyebrow={<><Globe className="h-3 w-3" /> Pricing</>}
+        eyebrow={
+          <>
+            <Globe className="h-3 w-3" /> Pricing
+          </>
+        }
         title={<>Simple, transparent pricing</>}
         subtitle="All public prices are shown in ZAR and managed from the same product catalog used by the dashboard."
         ctas={
@@ -97,7 +128,10 @@ function PricingPage() {
         <div className="grid gap-6 rounded-3xl border border-border bg-card p-8 shadow-[var(--shadow-card)] sm:grid-cols-2 lg:grid-cols-4">
           {TRUST.map((item) => (
             <div key={item.title} className="flex items-start gap-3">
-              <div className="inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl" style={{ background: "var(--accent)", color: "var(--primary)" }}>
+              <div
+                className="inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl"
+                style={{ background: "var(--accent)", color: "var(--primary)" }}
+              >
                 <item.icon className="h-5 w-5" />
               </div>
               <div>
@@ -127,8 +161,14 @@ function PricingPage() {
 
         {isError && (
           <div className="mt-12 rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-800">
-            <div className="font-semibold">Live pricing did not load. Static catalog pricing is shown below.</div>
-            <button type="button" onClick={() => refetch()} className="mt-2 font-semibold underline">
+            <div className="font-semibold">
+              Live pricing did not load. Static catalog pricing is shown below.
+            </div>
+            <button
+              type="button"
+              onClick={() => refetch()}
+              className="mt-2 font-semibold underline"
+            >
               Try again
             </button>
           </div>
@@ -141,7 +181,12 @@ function PricingPage() {
             <SectionHeading
               eyebrow="Bundles"
               accent="var(--ai)"
-              title={<>Grouped packages. <span style={{ color: "var(--ai)" }}>Everything connected.</span></>}
+              title={
+                <>
+                  Grouped packages.{" "}
+                  <span style={{ color: "var(--ai)" }}>Everything connected.</span>
+                </>
+              }
               subtitle="Build, growth, cloud, voice, AI, and support packages grouped by how customers buy them."
             />
 
@@ -172,7 +217,9 @@ function PricingPage() {
                 ))}
               </div>
               <div className="text-sm text-muted-foreground">
-                Showing <span className="font-semibold text-foreground">{visibleBundles.length}</span> bundle{visibleBundles.length === 1 ? "" : "s"}
+                Showing{" "}
+                <span className="font-semibold text-foreground">{visibleBundles.length}</span>{" "}
+                bundle{visibleBundles.length === 1 ? "" : "s"}
               </div>
             </div>
 
@@ -200,7 +247,8 @@ function PricingPage() {
             subtitle="These prices are pulled from the database and displayed the same way across the public site and admin views."
           />
           <p className="mx-auto mt-4 max-w-2xl text-center text-sm leading-6 text-muted-foreground">
-            Taxes, VAT treatment, setup fees, minimum terms, and final totals are confirmed in checkout, quotes, invoices, and accepted service orders before provisioning starts.
+            Taxes, VAT treatment, setup fees, minimum terms, and final totals are confirmed in
+            checkout, quotes, invoices, and accepted service orders before provisioning starts.
           </p>
 
           {categories.length === 0 && (
@@ -223,31 +271,51 @@ function PricingPage() {
               </div>
               {category.services.map((service) => {
                 if (service.id === "ai-agents") {
-                  const selectedPlan = service.plans.find(p => p.id === aiAgentType) || service.plans[0];
+                  const selectedPlan =
+                    service.plans.find((p) => p.id === aiAgentType) || service.plans[0];
                   return (
                     <section key={service.id} className="mx-auto max-w-7xl py-12">
                       <div className="mb-8 max-w-2xl">
-                        <h3 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl" style={{ fontFamily: "var(--font-display)" }}>
+                        <h3
+                          className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl"
+                          style={{ fontFamily: "var(--font-display)" }}
+                        >
                           {service.name}
                         </h3>
-                        {service.description && <p className="mt-2 text-muted-foreground">{service.description}</p>}
+                        {service.description && (
+                          <p className="mt-2 text-muted-foreground">{service.description}</p>
+                        )}
                         <div className="mt-5 max-w-xs">
-                          <label className="mb-2 block text-sm font-semibold text-foreground">Select Agent Type</label>
+                          <label className="mb-2 block text-sm font-semibold text-foreground">
+                            Select Agent Type
+                          </label>
                           <select
                             value={aiAgentType}
                             onChange={(e) => setAiAgentType(e.target.value)}
                             className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm shadow-sm"
                           >
-                            {service.plans.map(p => (
-                              <option key={p.id} value={p.id}>{p.name}</option>
+                            {service.plans.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.name}
+                              </option>
                             ))}
                           </select>
                         </div>
                       </div>
                       <div className="grid gap-6 sm:grid-cols-1 lg:max-w-md">
-                        <PricingCard plan={selectedPlan} accent={category.accent} currency="ZAR" href={`/auth/sign-up?plan=${selectedPlan.id}`} />
+                        <PricingCard
+                          plan={selectedPlan}
+                          accent={category.accent}
+                          currency="ZAR"
+                          href={`/auth/sign-up?plan=${selectedPlan.id}`}
+                        />
                       </div>
-                      <div className="mt-12 h-px w-full" style={{ background: `linear-gradient(90deg, transparent, var(--${category.accent})30, transparent)` }} />
+                      <div
+                        className="mt-12 h-px w-full"
+                        style={{
+                          background: `linear-gradient(90deg, transparent, var(--${category.accent})30, transparent)`,
+                        }}
+                      />
                     </section>
                   );
                 }
@@ -261,7 +329,11 @@ function PricingPage() {
                   />
                 );
               })}
-              {category.note && <p className="mx-auto max-w-7xl px-6 text-sm text-muted-foreground">{category.note}</p>}
+              {category.note && (
+                <p className="mx-auto max-w-7xl px-6 text-sm text-muted-foreground">
+                  {category.note}
+                </p>
+              )}
             </div>
           ))}
         </section>
@@ -286,13 +358,41 @@ function PricingLaneSummary({
   bundles: Bundle[];
 }) {
   const laneRows = [
-    { lane: "Managed Cloud", offer: "Static hosting, managed websites, VPS, backups and DNS", categoryId: "managed-cloud" },
-    { lane: "Build", offer: "Landing pages, websites, ecommerce, MVPs, portals and automations", categoryId: "build" },
-    { lane: "Marketing", offer: "SEO, content, campaigns, competitor intelligence and growth operations", categoryId: "marketing" },
-    { lane: "Voice", offer: "VoIP, hosted PBX, SIP trunks, recording, IVR and voice intelligence", categoryId: "voice" },
-    { lane: "AI Agents", offer: "Managed business agents with setup, tuning and 1M tokens/month", serviceId: "ai-agents" },
-    { lane: "Add-ons", offer: "Domains, productivity admin, security, backups, SSL and support extensions", categoryId: "addons" },
-    { lane: "Quote-based", offer: "Enterprise, custom AI, migrations, security and complex integrations", categoryId: "quote-services" },
+    {
+      lane: "Managed Cloud",
+      offer: "Static hosting, managed websites, VPS, backups and DNS",
+      categoryId: "managed-cloud",
+    },
+    {
+      lane: "Build",
+      offer: "Landing pages, websites, ecommerce, MVPs, portals and automations",
+      categoryId: "build",
+    },
+    {
+      lane: "Marketing",
+      offer: "SEO, content, campaigns, competitor intelligence and growth operations",
+      categoryId: "marketing",
+    },
+    {
+      lane: "Voice",
+      offer: "VoIP, hosted PBX, SIP trunks, recording, IVR and voice intelligence",
+      categoryId: "voice",
+    },
+    {
+      lane: "AI Agents",
+      offer: "Managed business agents with setup, tuning and 1M tokens/month",
+      serviceId: "ai-agents",
+    },
+    {
+      lane: "Add-ons",
+      offer: "Domains, productivity admin, security, backups, SSL and support extensions",
+      categoryId: "addons",
+    },
+    {
+      lane: "Quote-based",
+      offer: "Enterprise, custom AI, migrations, security and complex integrations",
+      categoryId: "quote-services",
+    },
   ];
   return (
     <div className="mt-10 overflow-hidden rounded-2xl border border-border bg-white shadow-sm">
@@ -309,7 +409,10 @@ function PricingLaneSummary({
           .flatMap((service) => service.plans);
         const starting = startingPrice(plans);
         return (
-          <div key={row.lane} className="grid grid-cols-[1fr_1.6fr_1fr] gap-3 border-b border-border/60 px-5 py-4 text-sm last:border-0">
+          <div
+            key={row.lane}
+            className="grid grid-cols-[1fr_1.6fr_1fr] gap-3 border-b border-border/60 px-5 py-4 text-sm last:border-0"
+          >
             <div className="font-semibold text-foreground">{row.lane}</div>
             <div className="text-muted-foreground">{row.offer}</div>
             <div className="font-semibold text-foreground">{starting}</div>
@@ -317,33 +420,77 @@ function PricingLaneSummary({
         );
       })}
       <div className="border-t border-border bg-[#fbfcff] px-5 py-4 text-sm text-muted-foreground">
-        Popular bundles include {bundles.slice(0, 4).map((bundle) => `${bundle.name} (${formatPrice(bundle.priceZar, "ZAR")}${bundle.unit ?? ""})`).join(", ")}.
+        Popular bundles include{" "}
+        {bundles
+          .slice(0, 4)
+          .map(
+            (bundle) =>
+              `${bundle.name} (${formatPrice(bundle.priceZar, "ZAR")}${bundle.unit ?? ""})`,
+          )
+          .join(", ")}
+        .
       </div>
     </div>
   );
 }
 
-function startingPrice(plans: Array<{ priceZar: number | null; unit?: string; billingType?: string; priceLabel?: string }>) {
-  const priced = plans.filter((plan) => typeof plan.priceZar === "number") as Array<{ priceZar: number; unit?: string }>;
+function startingPrice(
+  plans: Array<{
+    priceZar: number | null;
+    unit?: string;
+    billingType?: string;
+    priceLabel?: string;
+  }>,
+) {
+  if (plans.some((plan) => plan.billingType === "token_based")) return "Token usage";
+  const priced = plans.filter((plan) => typeof plan.priceZar === "number") as Array<{
+    priceZar: number;
+    unit?: string;
+  }>;
   if (!priced.length) return "Quote";
-  const cheapest = priced.reduce((lowest, plan) => plan.priceZar < lowest.priceZar ? plan : lowest, priced[0]);
+  const cheapest = priced.reduce(
+    (lowest, plan) => (plan.priceZar < lowest.priceZar ? plan : lowest),
+    priced[0],
+  );
   return `From ${formatPrice(cheapest.priceZar, "ZAR")}${cheapest.unit ?? ""}`;
 }
 
 function BundleCard({ bundle }: { bundle: Bundle }) {
   const billingType = bundle.billingType ?? "recurring";
   const canCheckout = billingType !== "quote";
-  const priceText = billingType === "quote" ? bundle.priceLabel || "Request Quote" : formatPrice(bundle.priceZar, "ZAR");
-  const ctaLabel = billingType === "quote" ? "Request Quote" : billingType === "once_off" ? "Buy Once Off" : "Choose bundle";
+  const priceText =
+    billingType === "quote"
+      ? bundle.priceLabel || "Request Quote"
+      : formatPrice(bundle.priceZar, "ZAR");
+  const ctaLabel =
+    billingType === "quote"
+      ? "Request Quote"
+      : billingType === "once_off"
+        ? "Buy Once Off"
+        : "Choose bundle";
 
   return (
     <div
       className="relative flex h-full flex-col overflow-hidden rounded-3xl border bg-card p-6 shadow-[var(--shadow-card)]"
-      style={bundle.highlighted ? { boxShadow: "0 0 0 2px var(--ai), var(--shadow-elevated)", borderColor: "transparent" } : { borderColor: "var(--border)" }}
+      style={
+        bundle.highlighted
+          ? { boxShadow: "0 0 0 2px var(--ai), var(--shadow-elevated)", borderColor: "transparent" }
+          : { borderColor: "var(--border)" }
+      }
     >
-      <div className="absolute inset-x-0 top-0 h-1" style={{ background: bundle.highlighted ? "var(--gradient-primary)" : "linear-gradient(90deg, transparent, color-mix(in srgb, var(--ai) 45%, transparent), transparent)" }} />
+      <div
+        className="absolute inset-x-0 top-0 h-1"
+        style={{
+          background: bundle.highlighted
+            ? "var(--gradient-primary)"
+            : "linear-gradient(90deg, transparent, color-mix(in srgb, var(--ai) 45%, transparent), transparent)",
+        }}
+      />
       {bundle.badge && (
-        <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-white" style={{ background: "var(--ai)" }}>
+        <span
+          className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-white"
+          style={{ background: "var(--ai)" }}
+        >
           {bundle.badge}
         </span>
       )}
@@ -357,15 +504,27 @@ function BundleCard({ bundle }: { bundle: Bundle }) {
           </div>
         )}
       </div>
-      <div className="text-sm font-semibold text-foreground" style={{ fontFamily: "var(--font-display)" }}>
+      <div
+        className="text-sm font-semibold text-foreground"
+        style={{ fontFamily: "var(--font-display)" }}
+      >
         {bundle.name}
       </div>
-      <div className="mt-3 text-3xl font-bold text-foreground" style={{ fontFamily: "var(--font-display)" }}>
+      <div
+        className="mt-3 text-3xl font-bold text-foreground"
+        style={{ fontFamily: "var(--font-display)" }}
+      >
         {priceText}
-        {billingType !== "quote" && <span className="ml-1 text-xs font-normal text-muted-foreground">{bundle.unit || "/month"}</span>}
+        {billingType !== "quote" && (
+          <span className="ml-1 text-xs font-normal text-muted-foreground">
+            {bundle.unit || "/month"}
+          </span>
+        )}
       </div>
       <div className="mt-3 space-y-1 text-xs text-muted-foreground">
-        {bundle.setupPriceZar != null && bundle.setupPriceZar > 0 && <div>Setup: {formatPrice(bundle.setupPriceZar, "ZAR")}</div>}
+        {bundle.setupPriceZar != null && bundle.setupPriceZar > 0 && (
+          <div>Setup: {formatPrice(bundle.setupPriceZar, "ZAR")}</div>
+        )}
         {bundle.minimumTerm && <div>Minimum term: {bundle.minimumTerm}</div>}
         {bundle.serviceNote && <div>{bundle.serviceNote}</div>}
       </div>
@@ -386,7 +545,10 @@ function BundleCard({ bundle }: { bundle: Bundle }) {
           {ctaLabel}
         </Link>
       ) : (
-        <a href="mailto:sales@cloudmonkey.co.za?subject=CloudMonkey%20Bundle%20Quote" className="mt-5 rounded-full border border-border bg-background px-3 py-2 text-center text-xs font-semibold text-foreground hover:bg-secondary">
+        <a
+          href="mailto:sales@cloudmonkey.co.za?subject=CloudMonkey%20Bundle%20Quote"
+          className="mt-5 rounded-full border border-border bg-background px-3 py-2 text-center text-xs font-semibold text-foreground hover:bg-secondary"
+        >
           {ctaLabel}
         </a>
       )}
