@@ -348,6 +348,36 @@ export const tokenFeatureRate = pgTable("token_feature_rate", {
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 });
 
+export const platformApiCredential = pgTable("platform_api_credential", {
+  id: text("id").primaryKey(),
+  provider: text("provider").notNull(),
+  label: text("label").notNull(),
+  keyEncrypted: text("keyEncrypted").notNull(),
+  keyLastFour: text("keyLastFour").notNull(),
+  status: text("status").notNull().default("active"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  lastVerifiedAt: timestamp("lastVerifiedAt"),
+  monthlySpendCap: integer("monthlySpendCap"),
+});
+
+export const platformApiUsage = pgTable("platform_api_usage", {
+  id: text("id").primaryKey(),
+  credentialId: text("credentialId").references(() => platformApiCredential.id, {
+    onDelete: "set null",
+  }),
+  userId: text("userId").references(() => user.id, { onDelete: "set null" }),
+  provider: text("provider").notNull(),
+  model: text("model").notNull(),
+  featureKey: text("featureKey").notNull(),
+  inputTokens: integer("inputTokens").notNull().default(0),
+  outputTokens: integer("outputTokens").notNull().default(0),
+  providerCostMicrousd: integer("providerCostMicrousd").notNull().default(0),
+  chargedCostMicrousd: integer("chargedCostMicrousd").notNull().default(0),
+  chargedTokens: integer("chargedTokens").notNull().default(0),
+  metadataJson: text("metadataJson"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+});
+
 export const tokenTopupIntent = pgTable("token_topup_intent", {
   id: text("id").primaryKey(),
   walletId: text("walletId")

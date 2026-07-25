@@ -33,6 +33,8 @@ import {
   lead,
   microsoft365Tenant,
   microsoft365TenantScan,
+  platformApiCredential,
+  platformApiUsage,
   proposal,
   proposalItem,
   registeredDomain,
@@ -68,6 +70,7 @@ import {
   workspaceSettings,
   adminChatMessage,
 } from "../../db/schema";
+import { PLATFORM_CREDENTIAL_STATUSES, PLATFORM_PROVIDERS } from "../platform-usage";
 
 function toCentsFromZarInput(value: unknown) {
   if (value == null || value === "") return null;
@@ -94,6 +97,8 @@ type AdminDeps = {
   recordAudit: (input: Record<string, unknown>) => Promise<void>;
   sendEmail: (input: Record<string, unknown>) => Promise<void>;
   makeId: (prefix: string) => string;
+  encryptSecret: (value: string) => string;
+  decryptSecret: (value: string) => string;
   getWorkspaceSettings: () => Promise<any>;
   getWorkspaceBillingDetails: (settings: any) => any;
   getSupportCrmContext: (userId: string) => Promise<any>;
@@ -2127,6 +2132,174 @@ export function createAdminHandlers(deps: AdminDeps) {
     return deps.json({ error: "Method not allowed" }, 405);
   }
 
+  async function handleAdminPlatformCredentials(request: Request): Promise<Response> {
+    const { session, response } = await deps.requireAdmin(request);
+    if (response) return response;
+    const url = new URL(request.url);
+    const match = url.pathname.match(
+      /^\/api\/admin\/platform-credentials(?:\/([^/]+))?(?:\/(verify))?$/,
+    );
+    const credentialId = match?.[1] ? decodeURIComponent(match[1]) : null;
+    const action = match?.[2];
+
+    if (request.method === "GET") {
+      const credentials = await deps.db.query.platformApiCredential.findMany({
+        orderBy: (row: any, operators: any) => [operators.desc(row.createdAt)],
+      });
+      const usage = await deps.db.query.platformApiUsage.findMany({
+        orderBy: (row: any, operators: any) => [operators.desc(row.createdAt)],
+        limit: 500,
+      });
+      const currentMonth = new Date();
+      currentMonth.setDate(1);
+      currentMonth.setHours(0, 0, 0, 0);
+      const safeCredentials = credentials.map((credential: any) => {
+        const rows = usage.filter(
+          (item: any) =>
+            item.credentialId === credential.id && new Date(item.createdAt) >= currentMonth,
+        );
+        const recent = usage
+          .filter((item: any) => item.credentialId === credential.id)
+          .slice(0, 10)
+          .map((item: any) => ({
+            id: item.id,
+            provider: item.provider,
+            model: item.model,
+            featureKey: item.featureKey,
+            inputTokens: item.inputTokens,
+            outputTokens: item.outputTokens,
+            providerCostMicrousd: item.providerCostMicrousd,
+            chargedCostMicrousd: item.chargedCostMicrousd,
+            chargedTokens: item.chargedTokens,
+            createdAt: item.createdAt,
+          }));
+        const monthlySpendMicrousd = rows.reduce(
+          (total: number, item: any) => total + Number(item.providerCostMicrousd ?? 0),
+          0,
+        );
+        return {
+          id: credential.id,
+          provider: credential.provider,
+          label: credential.label,
+          keyLastFour: credential.keyLastFour,
+          status: credential.status,
+          createdAt: credential.createdAt,
+          lastVerifiedAt: credential.lastVerifiedAt,
+          monthlySpendCap: credential.monthlySpendCap,
+          monthlySpendMicrousd,
+          runwayPercent: credential.monthlySpendCap
+            ? Math.max(0, Math.round((1 - monthlySpendMicrousd / credential.monthlySpendCap) * 100))
+            : null,
+          recentUsage: recent,
+        };
+      });
+      return deps.json(safeCredentials);
+    }
+
+    if (request.method === "POST" && !credentialId) {
+      const body = z
+        .object({
+          provider: z.enum(PLATFORM_PROVIDERS),
+          label: z.string().trim().min(1).max(120),
+          apiKey: z.string().min(8),
+          monthlySpendCap: z.coerce.number().int().positive().nullable().optional(),
+        })
+        .parse(await request.json());
+      const [created] = await deps.db
+        .insert(platformApiCredential)
+        .values({
+          id: deps.makeId("platformkey"),
+          provider: body.provider,
+          label: body.label,
+          keyEncrypted: deps.encryptSecret(body.apiKey),
+          keyLastFour: body.apiKey.slice(-4),
+          status: "active",
+          monthlySpendCap: body.monthlySpendCap ?? null,
+          createdAt: new Date(),
+        })
+        .returning();
+      await deps.recordAudit({
+        actorUserId: session.user.id,
+        action: "platform_api_credential.created",
+        entityType: "platform_api_credential",
+        entityId: created.id,
+        message: `${body.provider} platform credential added`,
+        metadata: { provider: body.provider, label: body.label, keyLastFour: created.keyLastFour },
+      });
+      return deps.json({ ...created, keyEncrypted: undefined }, 201);
+    }
+
+    if (!credentialId) return deps.json({ error: "Credential not found" }, 404);
+    const existing = await deps.db.query.platformApiCredential.findFirst({
+      where: eq(platformApiCredential.id, credentialId),
+    });
+    if (!existing) return deps.json({ error: "Credential not found" }, 404);
+
+    if (request.method === "PUT" && !action) {
+      const body = z
+        .object({
+          apiKey: z.string().min(8).optional(),
+          status: z.enum(PLATFORM_CREDENTIAL_STATUSES).optional(),
+          label: z.string().trim().min(1).max(120).optional(),
+          monthlySpendCap: z.coerce.number().int().positive().nullable().optional(),
+        })
+        .parse(await request.json());
+      const [updated] = await deps.db
+        .update(platformApiCredential)
+        .set({
+          ...(body.apiKey
+            ? {
+                keyEncrypted: deps.encryptSecret(body.apiKey),
+                keyLastFour: body.apiKey.slice(-4),
+                status: "active",
+              }
+            : {}),
+          ...(body.status ? { status: body.status } : {}),
+          ...(body.label ? { label: body.label } : {}),
+          ...(body.monthlySpendCap !== undefined ? { monthlySpendCap: body.monthlySpendCap } : {}),
+        })
+        .where(eq(platformApiCredential.id, credentialId))
+        .returning();
+      return deps.json({ ...updated, keyEncrypted: undefined });
+    }
+
+    if (request.method === "POST" && action === "verify") {
+      const secret = deps.decryptSecret(existing.keyEncrypted);
+      const headers: Record<string, string> = {};
+      let endpoint = "";
+      if (existing.provider === "gemini") {
+        endpoint = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(secret)}`;
+      } else if (existing.provider === "openai") {
+        endpoint = "https://api.openai.com/v1/models";
+        headers.Authorization = `Bearer ${secret}`;
+      } else if (existing.provider === "anthropic") {
+        endpoint = "https://api.anthropic.com/v1/models";
+        headers["x-api-key"] = secret;
+        headers["anthropic-version"] = "2023-06-01";
+      } else {
+        endpoint = "https://api.mailjet.com/v3/REST/myprofile";
+        const [key, secretValue] = secret.split(":");
+        headers.Authorization = `Basic ${Buffer.from(`${key}:${secretValue ?? ""}`).toString("base64")}`;
+      }
+      const check = await fetch(endpoint, { headers, signal: AbortSignal.timeout(10_000) });
+      if (!check.ok) {
+        await deps.db
+          .update(platformApiCredential)
+          .set({ status: "invalid" })
+          .where(eq(platformApiCredential.id, credentialId));
+        return deps.json({ error: `Provider verification failed (${check.status})` }, 502);
+      }
+      const [verified] = await deps.db
+        .update(platformApiCredential)
+        .set({ status: "active", lastVerifiedAt: new Date() })
+        .where(eq(platformApiCredential.id, credentialId))
+        .returning();
+      return deps.json({ ...verified, keyEncrypted: undefined });
+    }
+
+    return deps.json({ error: "Method not allowed" }, 405);
+  }
+
   async function handleAdminRoot(request: Request): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname.startsWith("/api/admin/users")) return handleAdminUsers(request);
@@ -2151,6 +2324,8 @@ export function createAdminHandlers(deps: AdminDeps) {
     if (url.pathname.startsWith("/api/admin/server-n8n")) return handleAdminServerN8n(request);
     if (url.pathname.startsWith("/api/admin/chat")) return handleAdminChat(request);
     if (url.pathname.startsWith("/api/admin/m365")) return handleAdminM365(request);
+    if (url.pathname.startsWith("/api/admin/platform-credentials"))
+      return handleAdminPlatformCredentials(request);
     return deps.json({ error: "Method not allowed" }, 405);
   }
 
@@ -2172,6 +2347,7 @@ export function createAdminHandlers(deps: AdminDeps) {
     handleAdminServerN8n,
     handleAdminChat,
     handleAdminM365,
+    handleAdminPlatformCredentials,
     handleAdminRoot,
   };
 }

@@ -58,6 +58,8 @@ import {
   tokenWallet,
   tokenWalletLedger,
   tokenWalletReservation,
+  platformApiCredential,
+  platformApiUsage,
   serverAgent,
   serverContainer,
   serverDatabase,
@@ -132,6 +134,7 @@ import {
 import { createDomainsHandlers, registerPaidDomainOrder } from "./lib/domain/domains";
 import { createAgentsRuntimeHandlers } from "./lib/domain/agents-runtime";
 import { createAdminHandlers } from "./lib/domain/admin";
+import { chargePlatformUsage, recordPlatformApiUsage } from "./lib/platform-usage";
 import { createBillingHandlers } from "./lib/domain/billing";
 import {
   commitWalletReservation,
@@ -5589,8 +5592,18 @@ async function embedSupportText(text: string, taskType: "RETRIEVAL_QUERY" | "RET
   return Array.isArray(values) ? values.map((value: unknown) => Number(value)) : null;
 }
 
-async function generateGeminiText(prompt: string, systemInstruction?: string): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY;
+async function generateGeminiText(
+  prompt: string,
+  systemInstruction?: string,
+  usageContext?: { userId?: string | null; featureKey?: string },
+): Promise<string> {
+  const storedCredential = await db.query.platformApiCredential.findFirst({
+    where: (row: any, operators: any) => and(eq(row.provider, "gemini"), eq(row.status, "active")),
+    orderBy: (row: any, operators: any) => [operators.desc(row.createdAt)],
+  });
+  const apiKey = storedCredential
+    ? decryptSecret(storedCredential.keyEncrypted)
+    : process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("Gemini API key is not configured");
 
   const model = "gemini-2.5-flash";
@@ -5615,6 +5628,31 @@ async function generateGeminiText(prompt: string, systemInstruction?: string): P
 
   const text = body.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!text) throw new Error("No text returned from Gemini");
+  const usage = body.usageMetadata ?? {};
+  const [usageRow] = await recordPlatformApiUsage({
+    db,
+    makeId,
+    platformApiUsage,
+    credentialId: storedCredential?.id ?? null,
+    userId: usageContext?.userId ?? null,
+    provider: "gemini",
+    model,
+    featureKey: usageContext?.featureKey ?? "gemini_generation",
+    inputTokens: Number(usage.promptTokenCount ?? 0),
+    outputTokens: Number(usage.candidatesTokenCount ?? 0),
+  });
+  if (usageContext?.userId && usageRow) {
+    await chargePlatformUsage({
+      db,
+      makeId,
+      tokenWallet,
+      tokenWalletLedger,
+      userId: usageContext.userId,
+      usageId: usageRow.id,
+      featureKey: usageContext.featureKey ?? "gemini_generation",
+      chargedTokens: usageRow.chargedTokens,
+    });
+  }
   return text;
 }
 
@@ -8309,6 +8347,8 @@ const adminHandlers = createAdminHandlers({
   recordAudit,
   sendEmail,
   makeId,
+  encryptSecret,
+  decryptSecret,
   getWorkspaceSettings,
   getWorkspaceBillingDetails,
   getSupportCrmContext: (userId) => getSupportCrmContext({ db }, userId),

@@ -49,6 +49,7 @@ import { Route as DashboardRolesRouteImport } from './routes/dashboard/roles'
 import { Route as DashboardReportsRouteImport } from './routes/dashboard/reports'
 import { Route as DashboardProposalsRouteImport } from './routes/dashboard/proposals'
 import { Route as DashboardProductsRouteImport } from './routes/dashboard/products'
+import { Route as DashboardPlatformCredentialsRouteImport } from './routes/dashboard/platform-credentials'
 import { Route as DashboardIntelligenceWizardRouteImport } from './routes/dashboard/intelligence-wizard'
 import { Route as DashboardIntelligenceRouteImport } from './routes/dashboard/intelligence'
 import { Route as DashboardHostingRouteImport } from './routes/dashboard/hosting'
@@ -282,6 +283,12 @@ const DashboardProductsRoute = DashboardProductsRouteImport.update({
   path: '/dashboard/products',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashboardPlatformCredentialsRoute =
+  DashboardPlatformCredentialsRouteImport.update({
+    id: '/dashboard/platform-credentials',
+    path: '/dashboard/platform-credentials',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const DashboardIntelligenceWizardRoute =
   DashboardIntelligenceWizardRouteImport.update({
     id: '/dashboard/intelligence-wizard',
@@ -483,6 +490,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/hosting': typeof DashboardHostingRoute
   '/dashboard/intelligence': typeof DashboardIntelligenceRoute
   '/dashboard/intelligence-wizard': typeof DashboardIntelligenceWizardRoute
+  '/dashboard/platform-credentials': typeof DashboardPlatformCredentialsRoute
   '/dashboard/products': typeof DashboardProductsRoute
   '/dashboard/proposals': typeof DashboardProposalsRoute
   '/dashboard/reports': typeof DashboardReportsRoute
@@ -555,6 +563,7 @@ export interface FileRoutesByTo {
   '/dashboard/hosting': typeof DashboardHostingRoute
   '/dashboard/intelligence': typeof DashboardIntelligenceRoute
   '/dashboard/intelligence-wizard': typeof DashboardIntelligenceWizardRoute
+  '/dashboard/platform-credentials': typeof DashboardPlatformCredentialsRoute
   '/dashboard/products': typeof DashboardProductsRoute
   '/dashboard/proposals': typeof DashboardProposalsRoute
   '/dashboard/reports': typeof DashboardReportsRoute
@@ -628,6 +637,7 @@ export interface FileRoutesById {
   '/dashboard/hosting': typeof DashboardHostingRoute
   '/dashboard/intelligence': typeof DashboardIntelligenceRoute
   '/dashboard/intelligence-wizard': typeof DashboardIntelligenceWizardRoute
+  '/dashboard/platform-credentials': typeof DashboardPlatformCredentialsRoute
   '/dashboard/products': typeof DashboardProductsRoute
   '/dashboard/proposals': typeof DashboardProposalsRoute
   '/dashboard/reports': typeof DashboardReportsRoute
@@ -703,6 +713,7 @@ export interface FileRouteTypes {
     | '/dashboard/hosting'
     | '/dashboard/intelligence'
     | '/dashboard/intelligence-wizard'
+    | '/dashboard/platform-credentials'
     | '/dashboard/products'
     | '/dashboard/proposals'
     | '/dashboard/reports'
@@ -775,6 +786,7 @@ export interface FileRouteTypes {
     | '/dashboard/hosting'
     | '/dashboard/intelligence'
     | '/dashboard/intelligence-wizard'
+    | '/dashboard/platform-credentials'
     | '/dashboard/products'
     | '/dashboard/proposals'
     | '/dashboard/reports'
@@ -847,6 +859,7 @@ export interface FileRouteTypes {
     | '/dashboard/hosting'
     | '/dashboard/intelligence'
     | '/dashboard/intelligence-wizard'
+    | '/dashboard/platform-credentials'
     | '/dashboard/products'
     | '/dashboard/proposals'
     | '/dashboard/reports'
@@ -921,6 +934,7 @@ export interface RootRouteChildren {
   DashboardHostingRoute: typeof DashboardHostingRoute
   DashboardIntelligenceRoute: typeof DashboardIntelligenceRoute
   DashboardIntelligenceWizardRoute: typeof DashboardIntelligenceWizardRoute
+  DashboardPlatformCredentialsRoute: typeof DashboardPlatformCredentialsRoute
   DashboardProductsRoute: typeof DashboardProductsRoute
   DashboardProposalsRoute: typeof DashboardProposalsRoute
   DashboardReportsRoute: typeof DashboardReportsRoute
@@ -1220,6 +1234,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard/products'
       fullPath: '/dashboard/products'
       preLoaderRoute: typeof DashboardProductsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/platform-credentials': {
+      id: '/dashboard/platform-credentials'
+      path: '/dashboard/platform-credentials'
+      fullPath: '/dashboard/platform-credentials'
+      preLoaderRoute: typeof DashboardPlatformCredentialsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard/intelligence-wizard': {
@@ -1576,6 +1597,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardHostingRoute: DashboardHostingRoute,
   DashboardIntelligenceRoute: DashboardIntelligenceRoute,
   DashboardIntelligenceWizardRoute: DashboardIntelligenceWizardRoute,
+  DashboardPlatformCredentialsRoute: DashboardPlatformCredentialsRoute,
   DashboardProductsRoute: DashboardProductsRoute,
   DashboardProposalsRoute: DashboardProposalsRoute,
   DashboardReportsRoute: DashboardReportsRoute,
