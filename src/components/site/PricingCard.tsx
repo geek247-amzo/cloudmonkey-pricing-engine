@@ -33,9 +33,7 @@ export function PricingCard({
   const displayPrice =
     billingType === "quote"
       ? plan.priceLabel || "Request Quote"
-      : billingType === "token_based"
-        ? "1 token"
-        : `${plan.priceLabel ? `${plan.priceLabel} ` : ""}${formatPrice(plan.priceZar, resolvedCurrency)}`;
+      : `${plan.priceLabel ? `${plan.priceLabel} ` : ""}${formatPrice(plan.priceZar, resolvedCurrency)}`;
   const ctaLabel =
     billingType === "quote"
       ? "Request Quote"
@@ -81,11 +79,8 @@ export function PricingCard({
         >
           {displayPrice}
         </span>
-        {billingType === "token_based" ? (
-          <span className="text-sm text-muted-foreground">/action</span>
-        ) : (
-          billingType !== "quote" &&
-          plan.unit && <span className="text-sm text-muted-foreground">{plan.unit}</span>
+        {billingType !== "quote" && plan.unit && (
+          <span className="text-sm text-muted-foreground">{plan.unit}</span>
         )}
       </div>
       <div className="mb-5 min-h-10 space-y-1 text-xs text-muted-foreground">
