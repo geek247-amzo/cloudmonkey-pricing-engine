@@ -59,6 +59,7 @@ import { Route as DashboardCrmRouteImport } from './routes/dashboard/crm'
 import { Route as DashboardCloudSecurityRouteImport } from './routes/dashboard/cloud-security'
 import { Route as DashboardBillingRouteImport } from './routes/dashboard/billing'
 import { Route as DashboardAiWizardRouteImport } from './routes/dashboard/ai-wizard'
+import { Route as DashboardAiWebsiteBuilderRouteImport } from './routes/dashboard/ai-website-builder'
 import { Route as DashboardAgentsRouteImport } from './routes/dashboard/agents'
 import { Route as DashboardAffiliatesRouteImport } from './routes/dashboard/affiliates'
 import { Route as DashboardAffiliateAdminRouteImport } from './routes/dashboard/affiliate-admin'
@@ -335,6 +336,12 @@ const DashboardAiWizardRoute = DashboardAiWizardRouteImport.update({
   path: '/dashboard/ai-wizard',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashboardAiWebsiteBuilderRoute =
+  DashboardAiWebsiteBuilderRouteImport.update({
+    id: '/dashboard/ai-website-builder',
+    path: '/dashboard/ai-website-builder',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const DashboardAgentsRoute = DashboardAgentsRouteImport.update({
   id: '/dashboard/agents',
   path: '/dashboard/agents',
@@ -481,6 +488,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/affiliate-admin': typeof DashboardAffiliateAdminRoute
   '/dashboard/affiliates': typeof DashboardAffiliatesRoute
   '/dashboard/agents': typeof DashboardAgentsRoute
+  '/dashboard/ai-website-builder': typeof DashboardAiWebsiteBuilderRoute
   '/dashboard/ai-wizard': typeof DashboardAiWizardRoute
   '/dashboard/billing': typeof DashboardBillingRouteWithChildren
   '/dashboard/cloud-security': typeof DashboardCloudSecurityRoute
@@ -554,6 +562,7 @@ export interface FileRoutesByTo {
   '/dashboard/affiliate-admin': typeof DashboardAffiliateAdminRoute
   '/dashboard/affiliates': typeof DashboardAffiliatesRoute
   '/dashboard/agents': typeof DashboardAgentsRoute
+  '/dashboard/ai-website-builder': typeof DashboardAiWebsiteBuilderRoute
   '/dashboard/ai-wizard': typeof DashboardAiWizardRoute
   '/dashboard/billing': typeof DashboardBillingRouteWithChildren
   '/dashboard/cloud-security': typeof DashboardCloudSecurityRoute
@@ -628,6 +637,7 @@ export interface FileRoutesById {
   '/dashboard/affiliate-admin': typeof DashboardAffiliateAdminRoute
   '/dashboard/affiliates': typeof DashboardAffiliatesRoute
   '/dashboard/agents': typeof DashboardAgentsRoute
+  '/dashboard/ai-website-builder': typeof DashboardAiWebsiteBuilderRoute
   '/dashboard/ai-wizard': typeof DashboardAiWizardRoute
   '/dashboard/billing': typeof DashboardBillingRouteWithChildren
   '/dashboard/cloud-security': typeof DashboardCloudSecurityRoute
@@ -704,6 +714,7 @@ export interface FileRouteTypes {
     | '/dashboard/affiliate-admin'
     | '/dashboard/affiliates'
     | '/dashboard/agents'
+    | '/dashboard/ai-website-builder'
     | '/dashboard/ai-wizard'
     | '/dashboard/billing'
     | '/dashboard/cloud-security'
@@ -777,6 +788,7 @@ export interface FileRouteTypes {
     | '/dashboard/affiliate-admin'
     | '/dashboard/affiliates'
     | '/dashboard/agents'
+    | '/dashboard/ai-website-builder'
     | '/dashboard/ai-wizard'
     | '/dashboard/billing'
     | '/dashboard/cloud-security'
@@ -850,6 +862,7 @@ export interface FileRouteTypes {
     | '/dashboard/affiliate-admin'
     | '/dashboard/affiliates'
     | '/dashboard/agents'
+    | '/dashboard/ai-website-builder'
     | '/dashboard/ai-wizard'
     | '/dashboard/billing'
     | '/dashboard/cloud-security'
@@ -925,6 +938,7 @@ export interface RootRouteChildren {
   DashboardAffiliateAdminRoute: typeof DashboardAffiliateAdminRoute
   DashboardAffiliatesRoute: typeof DashboardAffiliatesRoute
   DashboardAgentsRoute: typeof DashboardAgentsRoute
+  DashboardAiWebsiteBuilderRoute: typeof DashboardAiWebsiteBuilderRoute
   DashboardAiWizardRoute: typeof DashboardAiWizardRoute
   DashboardBillingRoute: typeof DashboardBillingRouteWithChildren
   DashboardCloudSecurityRoute: typeof DashboardCloudSecurityRoute
@@ -1306,6 +1320,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardAiWizardRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/dashboard/ai-website-builder': {
+      id: '/dashboard/ai-website-builder'
+      path: '/dashboard/ai-website-builder'
+      fullPath: '/dashboard/ai-website-builder'
+      preLoaderRoute: typeof DashboardAiWebsiteBuilderRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dashboard/agents': {
       id: '/dashboard/agents'
       path: '/dashboard/agents'
@@ -1588,6 +1609,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardAffiliateAdminRoute: DashboardAffiliateAdminRoute,
   DashboardAffiliatesRoute: DashboardAffiliatesRoute,
   DashboardAgentsRoute: DashboardAgentsRoute,
+  DashboardAiWebsiteBuilderRoute: DashboardAiWebsiteBuilderRoute,
   DashboardAiWizardRoute: DashboardAiWizardRoute,
   DashboardBillingRoute: DashboardBillingRouteWithChildren,
   DashboardCloudSecurityRoute: DashboardCloudSecurityRoute,

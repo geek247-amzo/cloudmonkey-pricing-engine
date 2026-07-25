@@ -94,13 +94,14 @@ export async function chargePlatformUsage(input: {
       sql`select 1 from ${input.tokenWallet} where ${input.tokenWallet.id} = ${wallet.id} for update`,
     );
     const available = Number(wallet.balanceTokens) - Number(wallet.reservedTokens);
-    if (available < input.chargedTokens) {
+    if (input.chargedTokens > 0 && available < input.chargedTokens) {
       throw Object.assign(new Error("Insufficient token balance"), { status: 409 });
     }
+    const nextBalance = Number(wallet.balanceTokens) - input.chargedTokens;
     const [updated] = await tx
       .update(input.tokenWallet)
       .set({
-        balanceTokens: Number(wallet.balanceTokens) - input.chargedTokens,
+        balanceTokens: nextBalance,
         updatedAt: new Date(),
       })
       .where(eq(input.tokenWallet.id, wallet.id))
@@ -109,9 +110,9 @@ export async function chargePlatformUsage(input: {
       id: input.makeId("walledger"),
       walletId: wallet.id,
       userId: input.userId,
-      entryType: "usage_charge",
-      direction: "debit",
-      amountTokens: input.chargedTokens,
+      entryType: input.chargedTokens >= 0 ? "usage_charge" : "usage_adjustment",
+      direction: input.chargedTokens >= 0 ? "debit" : "credit",
+      amountTokens: Math.abs(input.chargedTokens),
       balanceBeforeTokens: Number(wallet.balanceTokens),
       balanceAfterTokens: Number(updated.balanceTokens),
       reservedBeforeTokens: Number(wallet.reservedTokens),

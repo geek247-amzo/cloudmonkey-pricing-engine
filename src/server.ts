@@ -134,6 +134,7 @@ import {
 import { createDomainsHandlers, registerPaidDomainOrder } from "./lib/domain/domains";
 import { createAgentsRuntimeHandlers } from "./lib/domain/agents-runtime";
 import { createAdminHandlers } from "./lib/domain/admin";
+import { createAiWebsiteBuilderHandlers } from "./lib/domain/ai-website-builder";
 import { chargePlatformUsage, recordPlatformApiUsage } from "./lib/platform-usage";
 import { createBillingHandlers } from "./lib/domain/billing";
 import {
@@ -8606,6 +8607,24 @@ const websiteHandlers = createWebsiteHandlers({
   websiteSchema,
 });
 
+const aiWebsiteBuilderHandlers = createAiWebsiteBuilderHandlers({
+  db,
+  json,
+  requireSession,
+  parseBody,
+  makeId,
+  decryptSecret,
+  reserveWalletUsage: reserveWalletUsageBound,
+  commitWalletReservation: commitWalletReservationBound,
+  releaseWalletReservation: releaseWalletReservationBound,
+  provisionWebsiteRuntime,
+  platformApiCredential,
+  platformApiUsage,
+  tokenWallet,
+  tokenWalletLedger,
+  website,
+});
+
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     const url = new URL(request.url);
@@ -9991,6 +10010,10 @@ echo "CloudMonkey agent installed."
 
     if (url.pathname.startsWith("/api/user/website-onboarding")) {
       return websiteHandlers.handleUserWebsiteOnboarding(request);
+    }
+
+    if (url.pathname === "/api/user/ai-website-builder/generate") {
+      return aiWebsiteBuilderHandlers.handleGenerate(request);
     }
 
     if (url.pathname.startsWith("/api/user/onboarding")) {

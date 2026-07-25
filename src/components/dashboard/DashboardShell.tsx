@@ -48,6 +48,7 @@ const mainNav = [
   { to: "/dashboard", label: "Overview", icon: Home },
   { to: "/dashboard/ai-wizard", label: "Product Onboarding", icon: WandSparkles },
   { to: "/dashboard/agents", label: "AI Agents", icon: Bot },
+  { to: "/dashboard/ai-website-builder", label: "AI Website Builder", icon: WandSparkles },
 ] as const;
 
 const cloudNav = [
