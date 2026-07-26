@@ -147,8 +147,7 @@ export function parseAdminDnsMutationRequest(message: string) {
       }
 
       const nextRecordIndex = lines.findIndex(
-        (line, candidateIndex) =>
-          candidateIndex > index && /^(?:Record Type|Type)$/i.test(line),
+        (line, candidateIndex) => candidateIndex > index && /^(?:Record Type|Type)$/i.test(line),
       );
       const sectionEnd = nextRecordIndex === -1 ? lines.length : nextRecordIndex;
       const hostnameLabelIndex = lines.findIndex(
@@ -884,7 +883,8 @@ export async function executeSupportToolCalls(
               .replace(/\.$/, "")
               .toLowerCase() === expectedName &&
             String(record.content ?? record.value ?? "").trim() === providerContent &&
-            (providerPriority === null || Number(record.prio ?? record.priority) === providerPriority),
+            (providerPriority === null ||
+              Number(record.prio ?? record.priority) === providerPriority),
         );
         if (existingRecord) {
           results.push({
@@ -1198,26 +1198,27 @@ export function createSupportChatHandlers(deps: SupportChatDependencies) {
             : body.message;
           let aiResult: ReturnType<typeof normalizeSupportAgentResponse>;
           const attachmentPayload = selectedAttachments.map(attachmentDto);
-          let walletReservation: any;
-          try {
-            walletReservation = await deps.reserveWalletUsage({
-              userId: session.user.id,
-              featureKey: "support_chat",
-              quantity: 1,
-              sourceType: "support_chat",
-              sourceId: userMessageId,
-              requestIdempotencyKey: `support-chat:${chatSession.id}:${userMessageId}`,
-              metadata: {
-                sessionId: chatSession.id,
-                messageId: userMessageId,
-                isAdmin: isAdminSession,
-              },
-            });
-          } catch (error: any) {
-            return deps.json(
-              { error: error.message || "Insufficient token balance" },
-              error.status ?? 500,
-            );
+          let walletReservation: any = null;
+          if (!isAdminSession) {
+            try {
+              walletReservation = await deps.reserveWalletUsage({
+                userId: session.user.id,
+                featureKey: "support_chat",
+                quantity: 1,
+                sourceType: "support_chat",
+                sourceId: userMessageId,
+                requestIdempotencyKey: `support-chat:${chatSession.id}:${userMessageId}`,
+                metadata: {
+                  sessionId: chatSession.id,
+                  messageId: userMessageId,
+                },
+              });
+            } catch (error: any) {
+              return deps.json(
+                { error: error.message || "Insufficient token balance" },
+                error.status ?? 500,
+              );
+            }
           }
           try {
             aiResult = await completeSupportChatTurn({
@@ -1274,19 +1275,23 @@ export function createSupportChatHandlers(deps: SupportChatDependencies) {
               fallbackToolCalls:
                 currentAdminDnsTools.length > 0 ? currentAdminDnsTools : priorAdminDnsTools,
             });
-            await deps.commitWalletReservation({
-              reservationId: walletReservation.reservation.id,
-              sourceId: userMessageId,
-              metadata: { sessionId: chatSession.id, messageId: userMessageId },
-            });
-          } catch (error: any) {
-            await deps
-              .releaseWalletReservation({
+            if (walletReservation) {
+              await deps.commitWalletReservation({
                 reservationId: walletReservation.reservation.id,
-                reason: "support_agent_webhook_failed",
+                sourceId: userMessageId,
                 metadata: { sessionId: chatSession.id, messageId: userMessageId },
-              })
-              .catch(() => undefined);
+              });
+            }
+          } catch (error: any) {
+            if (walletReservation) {
+              await deps
+                .releaseWalletReservation({
+                  reservationId: walletReservation.reservation.id,
+                  reason: "support_agent_webhook_failed",
+                  metadata: { sessionId: chatSession.id, messageId: userMessageId },
+                })
+                .catch(() => undefined);
+            }
             const shouldEscalate = shouldCreateEmergencyFallbackTicket(body.message);
             aiResult = {
               reply: shouldEscalate
