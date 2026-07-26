@@ -1487,6 +1487,60 @@ async function checkWebsiteHealth(website: WebsiteHealthSweepWebsite, timeoutMs:
   };
 }
 
+async function requestWebsiteRemediation(
+  websiteId: string,
+  healthCheckId: string,
+  actorUserId?: string,
+) {
+  const since30Minutes = new Date(Date.now() - 30 * 60 * 1000);
+  const since24Hours = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const attempts = await db.query.remediationAttempt.findMany({
+    where: (attempt, { and, eq, gte }) =>
+      and(eq(attempt.websiteId, websiteId), gte(attempt.requestedAt, since24Hours)),
+    orderBy: (attempt, { desc }) => [desc(attempt.requestedAt)],
+  });
+  if (attempts.some((attempt) => attempt.requestedAt >= since30Minutes) || attempts.length >= 3) {
+    return { skipped: true, reason: attempts.length >= 3 ? "daily_cap" : "cooldown" };
+  }
+
+  const site = await db.query.website.findFirst({ where: eq(website.id, websiteId) });
+  if (!site) throw Object.assign(new Error("Website not found"), { status: 404 });
+  const id = `rem_${crypto.randomUUID()}`;
+  let result = "failed";
+  let resultDetail = "Website runtime server or provisioner credentials are unavailable";
+  try {
+    if (!site.runtimeServerId) throw new Error("Website has no runtime server assigned");
+    const runtime = await db.query.websiteRuntimeServer.findFirst({
+      where: eq(websiteRuntimeServer.id, site.runtimeServerId),
+    });
+    if (!runtime) throw new Error("Website runtime server not found");
+    await callRuntimeProvisioner(runtime, "/remediate", { websiteId: site.id, action: "restart" });
+    result = "success";
+    resultDetail = "Requested restart for website runtime containers";
+  } catch (error) {
+    resultDetail = error instanceof Error ? error.message : "Restart request failed";
+  }
+  await db.insert(remediationAttempt).values({
+    id,
+    websiteId: site.id,
+    healthCheckId,
+    action: "restart",
+    result,
+    resultDetail: resultDetail.slice(0, 1000),
+  });
+  if (actorUserId) {
+    await recordAudit({
+      actorUserId,
+      action: "copilot.website.remediate",
+      entityType: "website",
+      entityId: site.id,
+      message: `Admin copilot requested website remediation for ${site.domain}`,
+      metadata: { action: "restart", result, resultDetail: resultDetail.slice(0, 1000) },
+    });
+  }
+  return { skipped: false, result, resultDetail };
+}
+
 async function runWebsiteHealthLoggingSweep() {
   const result = await runWebsiteHealthSweep({
     timeoutMs: websiteHealthRequestTimeoutMs,
@@ -1502,46 +1556,7 @@ async function runWebsiteHealthLoggingSweep() {
       return { id };
     },
     remediateDownWebsite: async (site, healthCheckId) => {
-      const since30Minutes = new Date(Date.now() - 30 * 60 * 1000);
-      const since24Hours = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      const attempts = await db.query.remediationAttempt.findMany({
-        where: (attempt, { and, eq, gte }) =>
-          and(eq(attempt.websiteId, site.id), gte(attempt.requestedAt, since24Hours)),
-        orderBy: (attempt, { desc }) => [desc(attempt.requestedAt)],
-      });
-      if (
-        attempts.some((attempt) => attempt.requestedAt >= since30Minutes) ||
-        attempts.length >= 3
-      ) {
-        return;
-      }
-
-      const id = `rem_${crypto.randomUUID()}`;
-      let result = "failed";
-      let resultDetail = "Website runtime server or provisioner credentials are unavailable";
-      try {
-        if (!site.runtimeServerId) throw new Error("Website has no runtime server assigned");
-        const runtime = await db.query.websiteRuntimeServer.findFirst({
-          where: eq(websiteRuntimeServer.id, site.runtimeServerId),
-        });
-        if (!runtime) throw new Error("Website runtime server not found");
-        await callRuntimeProvisioner(runtime, "/remediate", {
-          websiteId: site.id,
-          action: "restart",
-        });
-        result = "success";
-        resultDetail = "Requested restart for website runtime containers";
-      } catch (error) {
-        resultDetail = error instanceof Error ? error.message : "Restart request failed";
-      }
-      await db.insert(remediationAttempt).values({
-        id,
-        websiteId: site.id,
-        healthCheckId,
-        action: "restart",
-        result,
-        resultDetail: resultDetail.slice(0, 1000),
-      });
+      await requestWebsiteRemediation(site.id, healthCheckId);
     },
     withLock: async (work) =>
       db.transaction(async (tx) => {
@@ -8239,7 +8254,34 @@ const supportChatHandlers = createSupportChatHandlers({
   commitWalletReservation: commitWalletReservationBound,
   releaseWalletReservation: releaseWalletReservationBound,
   executeToolCalls: (userId, toolCalls, access) =>
-    executeSupportToolCalls({ db, recordAudit }, userId, toolCalls, access),
+    executeSupportToolCalls(
+      {
+        db,
+        recordAudit,
+        provisionWebsiteRuntime: (ownerUserId, websiteId, options) =>
+          provisionWebsiteRuntime(ownerUserId, websiteId, options),
+        remediateWebsite: async (websiteId, actorUserId) => {
+          const site = await db.query.website.findFirst({ where: eq(website.id, websiteId) });
+          if (!site) throw Object.assign(new Error("Website not found"), { status: 404 });
+          let healthCheck = await db.query.websiteHealthCheck.findFirst({
+            where: eq(websiteHealthCheck.websiteId, websiteId),
+            orderBy: (check, { desc }) => [desc(check.checkedAt)],
+          });
+          if (!healthCheck) {
+            const values = await checkWebsiteHealth(site, websiteHealthRequestTimeoutMs);
+            const id = `whc_${crypto.randomUUID()}`;
+            [healthCheck] = await db
+              .insert(websiteHealthCheck)
+              .values({ id, websiteId, ...values })
+              .returning();
+          }
+          return requestWebsiteRemediation(websiteId, healthCheck.id, actorUserId);
+        },
+      },
+      userId,
+      toolCalls,
+      access,
+    ),
   storeSupportLearning: (input) => storeSupportLearning({ db, makeId }, input),
   readFile,
   stat,

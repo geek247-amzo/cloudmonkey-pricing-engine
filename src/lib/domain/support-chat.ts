@@ -1,7 +1,7 @@
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { unwrapAiResponseEnvelope } from "../ai-response";
@@ -23,6 +23,7 @@ import {
   vultrInstance,
   website,
   user,
+  websiteRuntimeServer,
 } from "../../db/schema";
 import { splitDomainName } from "./domains";
 import { listInstances, rebootInstance, startInstance, stopInstance } from "../vultr";
@@ -88,7 +89,7 @@ const supportAgentToolCallSchema = z.discriminatedUnion("type", [
     domain: z.string().min(3),
     recordType: z.enum(["A", "AAAA", "CNAME", "MX", "TXT", "SRV", "CAA"]),
     name: z.string().min(1),
-    content: z.string().min(1),
+    content: z.string().min(1).optional(),
     ttl: z.number().int().min(60).max(86400).optional().default(3600),
   }),
   z.object({
@@ -102,6 +103,25 @@ const supportAgentToolCallSchema = z.discriminatedUnion("type", [
     type: z.literal("vultr_action"),
     instanceId: z.string().min(1),
     action: z.enum(["start", "stop", "reboot"]),
+  }),
+  z
+    .object({
+      type: z.literal("website_lookup"),
+      websiteId: z.string().min(1).optional(),
+      domain: z.string().min(3).optional(),
+    })
+    .refine((value) => value.websiteId || value.domain, {
+      message: "Website ID or domain is required",
+    }),
+  z.object({
+    type: z.literal("website_deploy"),
+    websiteId: z.string().min(1),
+    deploymentDomain: z.enum(["temporary", "primary"]).optional().default("temporary"),
+  }),
+  z.object({
+    type: z.literal("website_remediate"),
+    websiteId: z.string().min(1),
+    action: z.literal("restart").default("restart"),
   }),
 ]);
 
@@ -815,6 +835,12 @@ export async function storeSupportLearning(
 export async function executeSupportToolCalls(
   deps: Pick<SupportChatDependencies, "db"> & {
     recordAudit?: (input: Record<string, unknown>) => Promise<void>;
+    provisionWebsiteRuntime?: (
+      userId: string,
+      websiteId: string,
+      options?: { deploymentDomain?: "temporary" | "primary"; skipAgreementCheck?: boolean },
+    ) => Promise<unknown>;
+    remediateWebsite?: (websiteId: string, actorUserId: string) => Promise<unknown>;
   },
   userId: string,
   toolCalls: z.infer<typeof supportAgentToolCallSchema>[],
@@ -853,6 +879,28 @@ export async function executeSupportToolCalls(
         const apiKey = process.env.DOMAINS_CO_ZA_API_KEY;
         if (!apiKey) throw new Error("Domains API is not configured");
         const parts = splitDomainName(toolCall.domain);
+        let recordContent = toolCall.content?.trim() ?? "";
+        if (!recordContent && ["A", "AAAA"].includes(toolCall.recordType)) {
+          const site = await deps.db.query.website.findFirst({
+            where: (row: any) =>
+              or(
+                eq(row.domain, parts.domain),
+                eq(row.primaryDomain, parts.domain),
+                eq(row.temporaryDomain, parts.domain),
+              ),
+          });
+          if (site?.runtimeServerId) {
+            const runtime = await deps.db.query.websiteRuntimeServer.findFirst({
+              where: eq(websiteRuntimeServer.id, site.runtimeServerId),
+            });
+            recordContent = runtime?.publicIp ?? runtime?.ingressIp ?? runtime?.privateIp ?? "";
+          }
+        }
+        if (!recordContent) {
+          throw new Error(
+            "DNS record content is required, or provide a managed website domain so its runtime IP can be resolved",
+          );
+        }
         const currentResponse = await fetch(
           `https://api.domains.co.za/api/domain/dns?sld=${encodeURIComponent(parts.sld)}&tld=${encodeURIComponent(parts.tld)}&key=${apiKey}`,
         );
@@ -866,8 +914,8 @@ export async function executeSupportToolCalls(
             ? currentData.arrRecords
             : [];
         const mxContentMatch =
-          toolCall.recordType === "MX" ? toolCall.content.trim().match(/^(\d+)\s+(.+)$/) : null;
-        const providerContent = mxContentMatch?.[2] ?? toolCall.content.trim();
+          toolCall.recordType === "MX" ? recordContent.match(/^(\d+)\s+(.+)$/) : null;
+        const providerContent = mxContentMatch?.[2] ?? recordContent;
         const providerPriority = mxContentMatch ? Number(mxContentMatch[1]) : null;
         const normalizedDomain = parts.domain.replace(/\.$/, "").toLowerCase();
         const expectedName =
@@ -979,6 +1027,74 @@ export async function executeSupportToolCalls(
           metadata: { source: "support_chat" },
         });
         results.push({ toolCall, ok: true, data: { completed: true } });
+      } else if (toolCall.type === "website_lookup") {
+        const websiteRow = await deps.db.query.website.findFirst({
+          where: (row: any) => {
+            const filters = [];
+            if (toolCall.websiteId) filters.push(eq(row.id, toolCall.websiteId));
+            if (toolCall.domain) {
+              const domain = toolCall.domain.trim().toLowerCase();
+              filters.push(
+                eq(row.domain, domain),
+                eq(row.primaryDomain, domain),
+                eq(row.temporaryDomain, domain),
+              );
+            }
+            return filters.length === 1 ? filters[0] : or(...filters);
+          },
+        });
+        if (!websiteRow)
+          throw Object.assign(new Error("Website record not found"), { status: 404 });
+        const runtime = websiteRow.runtimeServerId
+          ? await deps.db.query.websiteRuntimeServer.findFirst({
+              where: eq(websiteRuntimeServer.id, websiteRow.runtimeServerId),
+            })
+          : null;
+        results.push({
+          toolCall,
+          ok: true,
+          data: {
+            id: websiteRow.id,
+            domain: websiteRow.domain,
+            status: websiteRow.status,
+            aiGenerationStatus: websiteRow.aiGenerationStatus,
+            temporaryDomain: websiteRow.temporaryDomain,
+            primaryDomain: websiteRow.primaryDomain,
+            containerStatus: websiteRow.containerStatus,
+            runtimeServer: runtime
+              ? {
+                  id: runtime.id,
+                  profileName: runtime.profileName,
+                  hostname: runtime.hostname,
+                  publicIp: runtime.publicIp,
+                  privateIp: runtime.privateIp,
+                  status: runtime.status,
+                }
+              : null,
+          },
+        });
+      } else if (toolCall.type === "website_deploy") {
+        if (!access.isAdmin)
+          throw Object.assign(new Error("Administrator access is required"), { status: 403 });
+        if (!deps.provisionWebsiteRuntime) throw new Error("Website deployment is not configured");
+        const data = await deps.provisionWebsiteRuntime(userId, toolCall.websiteId, {
+          deploymentDomain: toolCall.deploymentDomain,
+        });
+        await deps.recordAudit?.({
+          actorUserId: access.actorUserId ?? userId,
+          action: "copilot.website.deploy",
+          entityType: "website",
+          entityId: toolCall.websiteId,
+          message: `Admin copilot deployed website ${toolCall.websiteId}`,
+          metadata: { source: "support_chat", deploymentDomain: toolCall.deploymentDomain },
+        });
+        results.push({ toolCall, ok: true, data });
+      } else if (toolCall.type === "website_remediate") {
+        if (!access.isAdmin)
+          throw Object.assign(new Error("Administrator access is required"), { status: 403 });
+        if (!deps.remediateWebsite) throw new Error("Website remediation is not configured");
+        const data = await deps.remediateWebsite(toolCall.websiteId, access.actorUserId ?? userId);
+        results.push({ toolCall, ok: true, data });
       }
     } catch (error) {
       results.push({
@@ -1157,8 +1273,9 @@ export function createSupportChatHandlers(deps: SupportChatDependencies) {
               content: [
                 "ADMIN COPILOT ACCESS: this authenticated user has platform-wide access.",
                 "Do not apply customer ownership restrictions to domain or Vultr lookups.",
-                "Available admin tools include domain_dns, domain_dns_create, and domain_dns_delete for any domain, domain_info, owned_domains for all managed domains, vultr_instances, and vultr_action with start, stop, or reboot.",
+                "Available admin tools include domain_dns, domain_dns_create, and domain_dns_delete for any domain, domain_info, owned_domains for all managed domains, website_lookup, website_deploy, website_remediate, vultr_instances, and vultr_action with start, stop, or reboot.",
                 "For an authorized admin DNS or Vultr operation, execute the tool and never create a support ticket instead.",
+                "Use website_lookup to inspect a managed website before deploying or remediating it. website_deploy and website_remediate require an explicit admin request; never trigger them autonomously.",
                 "Use a tool when the admin asks you to inspect or fix a supported service; report the actual tool result and never claim success before it completes.",
               ].join(" "),
             });
@@ -1189,7 +1306,9 @@ export function createSupportChatHandlers(deps: SupportChatDependencies) {
             ? [
                 "ADMIN OPERATION POLICY: You are authorized to perform platform-wide service operations.",
                 "Never create a support ticket for a DNS or Vultr operation that an available tool can perform.",
+                "For website status use website_lookup with the website ID or domain. For an explicit deployment request use website_deploy; for an explicit restart request use website_remediate with action restart. Never trigger deployment or remediation autonomously.",
                 "To add DNS use toolCalls entries shaped as {type:'domain_dns_create',domain,recordType,name,content,ttl}.",
+                "For A or AAAA records on a managed website, content may be omitted and the tool will resolve the assigned runtime IP; keep manual content when a specific target is intended.",
                 "To delete DNS use {type:'domain_dns_delete',domain,dnsId}. For DNS inspection use {type:'domain_dns',domain}.",
                 "Return the tool call first; only report success after toolResults confirm it.",
                 "ADMIN REQUEST:",
