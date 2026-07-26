@@ -8235,6 +8235,9 @@ const supportChatHandlers = createSupportChatHandlers({
   loadSupportChatHistory: (sessionId, limit) => loadSupportChatHistory({ db }, sessionId, limit),
   retrieveSupportKnowledge: (input) => retrieveSupportKnowledge({ db, makeId }, input),
   sendN8nSupportChat,
+  reserveWalletUsage: reserveWalletUsageBound,
+  commitWalletReservation: commitWalletReservationBound,
+  releaseWalletReservation: releaseWalletReservationBound,
   executeToolCalls: (userId, toolCalls, access) =>
     executeSupportToolCalls({ db, recordAudit }, userId, toolCalls, access),
   storeSupportLearning: (input) => storeSupportLearning({ db, makeId }, input),

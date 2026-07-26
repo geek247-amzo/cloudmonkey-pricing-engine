@@ -306,6 +306,9 @@ type SupportChatDependencies = {
     context: Record<string, unknown>;
   }) => Promise<any>;
   sendN8nSupportChat: (input: any) => Promise<any>;
+  reserveWalletUsage: (input: any) => Promise<any>;
+  commitWalletReservation: (input: any) => Promise<any>;
+  releaseWalletReservation: (input: any) => Promise<any>;
   executeToolCalls: (
     userId: string,
     toolCalls: unknown[],
@@ -1195,6 +1198,27 @@ export function createSupportChatHandlers(deps: SupportChatDependencies) {
             : body.message;
           let aiResult: ReturnType<typeof normalizeSupportAgentResponse>;
           const attachmentPayload = selectedAttachments.map(attachmentDto);
+          let walletReservation: any;
+          try {
+            walletReservation = await deps.reserveWalletUsage({
+              userId: session.user.id,
+              featureKey: "support_chat",
+              quantity: 1,
+              sourceType: "support_chat",
+              sourceId: userMessageId,
+              requestIdempotencyKey: `support-chat:${chatSession.id}:${userMessageId}`,
+              metadata: {
+                sessionId: chatSession.id,
+                messageId: userMessageId,
+                isAdmin: isAdminSession,
+              },
+            });
+          } catch (error: any) {
+            return deps.json(
+              { error: error.message || "Insufficient token balance" },
+              error.status ?? 500,
+            );
+          }
           try {
             aiResult = await completeSupportChatTurn({
               sessionId: chatSession.id,
@@ -1250,7 +1274,19 @@ export function createSupportChatHandlers(deps: SupportChatDependencies) {
               fallbackToolCalls:
                 currentAdminDnsTools.length > 0 ? currentAdminDnsTools : priorAdminDnsTools,
             });
+            await deps.commitWalletReservation({
+              reservationId: walletReservation.reservation.id,
+              sourceId: userMessageId,
+              metadata: { sessionId: chatSession.id, messageId: userMessageId },
+            });
           } catch (error: any) {
+            await deps
+              .releaseWalletReservation({
+                reservationId: walletReservation.reservation.id,
+                reason: "support_agent_webhook_failed",
+                metadata: { sessionId: chatSession.id, messageId: userMessageId },
+              })
+              .catch(() => undefined);
             const shouldEscalate = shouldCreateEmergencyFallbackTicket(body.message);
             aiResult = {
               reply: shouldEscalate
