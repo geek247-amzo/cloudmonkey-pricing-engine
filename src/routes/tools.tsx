@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { Activity, ArrowRight, Search, ShieldCheck } from "lucide-react";
 
 import { SectionHeading } from "@/components/site/SectionHeading";
@@ -48,6 +48,10 @@ const TOOLS = [
 ];
 
 function ToolsPage() {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+
+  if (pathname !== "/tools") return <Outlet />;
+
   return (
     <main className="mx-auto max-w-7xl px-6 py-16">
       <SectionHeading
