@@ -923,7 +923,7 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
 
     if (subresource === "products" && request.method === "POST") {
       try {
-        const detail = await deps.getUserWebsiteDetail(session.user.id, websiteId);
+        const detail = await deps.getUserWebsiteDetail(session.user.id, websiteId, actingAsAdmin);
         if (!detail?.store) return deps.json({ error: "Website store not found" }, 404);
         if (detail.siteType !== "ecommerce")
           return deps.json({ error: "Products are only available for ecommerce stores" }, 400);
@@ -951,7 +951,7 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
           .values({
             id: productId,
             storeId: detail.store.id,
-            userId: session.user.id,
+            userId: detail.userId,
             title: body.title,
             slug,
             description: body.description,
@@ -982,7 +982,12 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
           entityType: "store_product",
           entityId: productId,
           message: `${body.title} added to ${detail.businessName || detail.domain}`,
-          metadata: { websiteId, storeId: detail.store.id },
+          metadata: {
+            websiteId,
+            storeId: detail.store.id,
+            actedOnBehalfOf: actingAsAdmin,
+            targetUserId: detail.userId,
+          },
         });
 
         return deps.json({ ...createdProduct, variants: [createdVariant] }, 201);
