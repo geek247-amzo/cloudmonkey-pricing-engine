@@ -822,9 +822,10 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
 
         const detail = await deps.getUserWebsiteDetail(session.user.id, websiteId, actingAsAdmin);
         if (!detail?.store) return deps.json({ error: "Website store not found" }, 404);
-        if (
-          !["design_options_uploaded", "awaiting_design_selection"].includes(String(detail.status))
-        ) {
+        const designSelectionReady =
+          ["design_options_uploaded", "awaiting_design_selection"].includes(String(detail.status)) ||
+          detail.aiGenerationStatus === "awaiting_design_selection";
+        if (!designSelectionReady) {
           return deps.json(
             { error: "Design options can only be selected after the site is ready for review" },
             409,
