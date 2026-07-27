@@ -7904,6 +7904,25 @@ const supportAgentToolCallSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("owned_domains") }),
   z.object({ type: z.literal("domain_dns"), domain: z.string().min(3) }),
   z.object({ type: z.literal("domain_info"), domain: z.string().min(3) }),
+  z
+    .object({
+      type: z.literal("website_lookup"),
+      websiteId: z.string().min(1).optional(),
+      domain: z.string().min(3).optional(),
+    })
+    .refine((value) => value.websiteId || value.domain, {
+      message: "Website ID or domain is required",
+    }),
+  z.object({
+    type: z.literal("website_deploy"),
+    websiteId: z.string().min(1),
+    deploymentDomain: z.enum(["temporary", "primary"]).optional().default("temporary"),
+  }),
+  z.object({
+    type: z.literal("website_remediate"),
+    websiteId: z.string().min(1),
+    action: z.literal("restart").default("restart"),
+  }),
 ]);
 
 const supportAgentResponseSchema = z.object({
