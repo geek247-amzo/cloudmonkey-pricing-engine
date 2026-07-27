@@ -57,9 +57,10 @@ export function shouldOpenNewSupportTicket(
   shouldCreateTicket: boolean,
   linkedTicket?: { status?: string | null } | null,
 ) {
-  if (!shouldCreateTicket) return false;
-  if (!linkedTicket) return true;
-  return ["resolved", "closed"].includes(String(linkedTicket.status ?? "").toLowerCase());
+  // A ticketed turn is an explicit request for a new support case. The chat
+  // session may still point at an older open ticket, but that must not cause
+  // unrelated requests to be appended as comments to it.
+  return shouldCreateTicket;
 }
 
 const supportChatSchema = z

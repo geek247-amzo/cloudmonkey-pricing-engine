@@ -368,11 +368,11 @@ sig1.dkim.geek247.co.za.at.icloudmailadmin.com.`),
     );
   });
 
-  test("a new support request does not reuse a resolved or closed linked ticket", () => {
+  test("a new support request always gets a new ticket", () => {
     expect(shouldOpenNewSupportTicket(true, null)).toBe(true);
     expect(shouldOpenNewSupportTicket(true, { status: "closed" })).toBe(true);
     expect(shouldOpenNewSupportTicket(true, { status: "resolved" })).toBe(true);
-    expect(shouldOpenNewSupportTicket(true, { status: "open" })).toBe(false);
+    expect(shouldOpenNewSupportTicket(true, { status: "open" })).toBe(true);
     expect(shouldOpenNewSupportTicket(false, { status: "closed" })).toBe(false);
   });
 
