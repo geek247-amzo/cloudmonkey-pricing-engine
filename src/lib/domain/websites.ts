@@ -804,7 +804,7 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
           throw error;
         }
       } catch (error: any) {
-        console.error("Admin website provisioning failed", {
+        console.error("Website design generation failed", {
           websiteId,
           message: error?.message ?? String(error),
         });
@@ -1219,6 +1219,10 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
           .where(eq(deps.websiteRuntimeServer.id, runtime.id));
         return deps.json({ ok: healthResponse.ok, status: healthResponse.status, health: payload });
       } catch (error: any) {
+        console.error("Admin website provisioning failed", {
+          websiteId,
+          message: error?.message ?? String(error),
+        });
         await deps.db
           .update(deps.websiteRuntimeServer)
           .set({
