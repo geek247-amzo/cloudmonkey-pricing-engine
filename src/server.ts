@@ -8310,6 +8310,41 @@ const supportChatHandlers = createSupportChatHandlers({
   sanitizeFileName,
 });
 
+async function executeInternalAdminCopilotTools(input: {
+  actorUserId: string;
+  toolCalls: unknown[];
+}) {
+  const toolCalls = z.array(supportAgentToolCallSchema).parse(input.toolCalls);
+  return executeSupportToolCalls(
+    {
+      db,
+      recordAudit,
+      provisionWebsiteRuntime: (ownerUserId, websiteId, options) =>
+        provisionWebsiteRuntime(ownerUserId, websiteId, options),
+      remediateWebsite: async (websiteId, actorUserId) => {
+        const site = await db.query.website.findFirst({ where: eq(website.id, websiteId) });
+        if (!site) throw Object.assign(new Error("Website not found"), { status: 404 });
+        let healthCheck = await db.query.websiteHealthCheck.findFirst({
+          where: eq(websiteHealthCheck.websiteId, websiteId),
+          orderBy: (check, { desc }) => [desc(check.checkedAt)],
+        });
+        if (!healthCheck) {
+          const values = await checkWebsiteHealth(site, websiteHealthRequestTimeoutMs);
+          const id = `whc_${crypto.randomUUID()}`;
+          [healthCheck] = await db
+            .insert(websiteHealthCheck)
+            .values({ id, websiteId, ...values })
+            .returning();
+        }
+        return requestWebsiteRemediation(websiteId, healthCheck.id, actorUserId);
+      },
+    },
+    input.actorUserId,
+    toolCalls,
+    { isAdmin: true, actorUserId: input.actorUserId },
+  );
+}
+
 const caesarHandlers = createCaesarHandlers(
   {
     db,
@@ -10881,6 +10916,29 @@ echo "CloudMonkey agent installed."
 
     if (url.pathname.startsWith("/api/admin/")) {
       return adminHandlers.handleAdminRoot(request);
+    }
+
+    if (url.pathname === "/api/internal/admin/copilot-tools" && request.method === "POST") {
+      const expectedToken =
+        process.env.CLOUDMONKEY_API_TOKEN ?? process.env.N8N_ADMIN_AGENT_WEBHOOK_SECRET;
+      const suppliedToken = request.headers.get("X-CloudMonkey-API-Token");
+      if (!expectedToken || suppliedToken !== expectedToken) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      try {
+        const body = await request.json();
+        const actorUserId = z.string().min(1).parse(body.actorUserId);
+        const results = await executeInternalAdminCopilotTools({
+          actorUserId,
+          toolCalls: body.toolCalls,
+        });
+        return json({ results });
+      } catch (error: any) {
+        return json({ error: error.message, issues: error.issues }, error.status ?? 400);
+      }
     }
 
     if (url.pathname === "/api/internal/admin/sql" && request.method === "POST") {

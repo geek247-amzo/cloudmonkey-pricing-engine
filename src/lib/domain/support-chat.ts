@@ -80,7 +80,7 @@ const supportChatSchema = z
     message: "Message or attachment is required",
   });
 
-const supportAgentToolCallSchema = z.discriminatedUnion("type", [
+export const supportAgentToolCallSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("domain_availability"), domain: z.string().min(3) }),
   z.object({ type: z.literal("owned_domains") }),
   z.object({ type: z.literal("domain_dns"), domain: z.string().min(3) }),
