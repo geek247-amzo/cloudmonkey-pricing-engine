@@ -1929,6 +1929,100 @@ export function createAdminHandlers(deps: AdminDeps) {
           },
           idempotencyKey: `admin-chat:${chatSession.id}:${userMessageId}`,
         });
+        const normalizedResponse = unwrapAiResponseEnvelope(responseData);
+        const responseRecord =
+          normalizedResponse && typeof normalizedResponse === "object" && !Array.isArray(normalizedResponse)
+            ? (normalizedResponse as Record<string, any>)
+            : {};
+        const responseTicket =
+          responseRecord.ticket && typeof responseRecord.ticket === "object"
+            ? responseRecord.ticket
+            : {};
+        const ticketCreationRequested =
+          responseRecord.createTicket === true ||
+          responseRecord.action === "create_ticket" ||
+          responseTicket.create === true ||
+          responseTicket.created === true ||
+          /\b(?:create|open|log|raise)\b[\s\S]{0,40}\bticket\b/i.test(body.message);
+        const targetEmail = [
+          responseTicket.customerEmail,
+          responseTicket.email,
+          responseRecord.customerEmail,
+          responseRecord.email,
+          body.message.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0],
+        ].find((value) => typeof value === "string" && value.includes("@"));
+        const targetUserId =
+          body.customerUserId ??
+          (typeof responseTicket.customerUserId === "string" ? responseTicket.customerUserId : null) ??
+          (typeof responseRecord.customerUserId === "string" ? responseRecord.customerUserId : null) ??
+          (typeof responseRecord.userId === "string" ? responseRecord.userId : null);
+        let ticket: any = null;
+        let ticketCreation: { created: boolean; reason?: string; ticket?: any } = { created: false };
+        if (ticketCreationRequested) {
+          const resolvedUser = targetUserId
+            ? await deps.db.query.user.findFirst({ where: eq(user.id, targetUserId) })
+            : targetEmail
+              ? (
+                  await deps.db
+                    .select()
+                    .from(user)
+                    .where(sql`lower(${user.email}) = ${String(targetEmail).trim().toLowerCase()}`)
+                    .limit(1)
+                )[0]
+              : null;
+          if (!resolvedUser) {
+            ticketCreation = {
+              created: false,
+              reason: "The requested customer could not be resolved to a CloudMonkey account.",
+            };
+          } else {
+            const aiSessionId = `admin-chat:${chatSession.id}:${userMessageId}`;
+            const existingTicket = await deps.db.query.supportTicket.findFirst({
+              where: eq(supportTicket.aiSessionId, aiSessionId),
+            });
+            if (existingTicket) {
+              ticket = existingTicket;
+            } else {
+              const subject = String(
+                responseTicket.subject ?? responseRecord.subject ?? body.message,
+              ).slice(0, 120).trim() || "Admin AI support request";
+              const description = String(
+                responseTicket.description ?? responseRecord.description ?? body.message,
+              ).slice(0, 10000);
+              const requestedPriority = responseTicket.priority ?? responseRecord.priority;
+              const priority = ["low", "medium", "high", "urgent"].includes(requestedPriority)
+                ? requestedPriority
+                : "medium";
+              const category = String(
+                responseTicket.category ?? responseRecord.category ?? "general",
+              ).slice(0, 80);
+              [ticket] = await deps.db
+                .insert(supportTicket)
+                .values({
+                  id: deps.makeId("ticket"),
+                  userId: resolvedUser.id,
+                  subject,
+                  description,
+                  priority,
+                  status: "open",
+                  category,
+                  source: "admin_ai",
+                  aiSessionId,
+                  lastCustomerMessageAt: new Date(),
+                })
+                .returning();
+              await deps.recordAudit({
+                actorUserId: session.user.id,
+                action: "admin.ticket.created",
+                entityType: "support_ticket",
+                entityId: ticket.id,
+                message: `Admin AI opened support ticket for ${resolvedUser.email}: ${subject}`,
+                metadata: { customerUserId: resolvedUser.id, customerEmail: resolvedUser.email },
+              });
+            }
+            ticketCreation = { created: true, ticket };
+          }
+        }
         const botMessage = {
           id: deps.makeId("adminchatmsg"),
           role: "assistant",
@@ -1952,6 +2046,11 @@ export function createAdminHandlers(deps: AdminDeps) {
             metadata: JSON.stringify({
               proactive: body.proactive,
               contextType: body.contextType ?? null,
+              ticketCreation: {
+                created: ticketCreation.created,
+                reason: ticketCreation.reason ?? null,
+                ticketId: ticket?.id ?? null,
+              },
             }),
           });
         }
@@ -1959,6 +2058,11 @@ export function createAdminHandlers(deps: AdminDeps) {
           session: chatSession,
           userMessage,
           botMessage,
+          ticket: ticketCreation.created ? ticket : null,
+          ticketCreation: {
+            created: ticketCreation.created,
+            reason: ticketCreation.reason ?? null,
+          },
           response: responseData,
         });
       } catch (error: any) {
