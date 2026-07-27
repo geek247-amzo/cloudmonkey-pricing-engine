@@ -2434,10 +2434,11 @@ async function callRuntimeProvisioner<T>(
   const bodyText = JSON.stringify(body ?? {});
   const signed = signRuntimeRequest(provisionerSecret, "POST", pathname, bodyText);
   const timeoutMs = pathname === "/deploy" ? 180_000 : 30_000;
-  const response = await fetch(`${baseUrl}${pathname}`, {
+  const requestInit = {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      Connection: "close",
       "X-CM-Runtime-Id": runtime.id,
       "X-CM-Timestamp": signed.timestamp,
       "X-CM-Nonce": signed.nonce,
@@ -2445,7 +2446,21 @@ async function callRuntimeProvisioner<T>(
     },
     body: bodyText,
     signal: AbortSignal.timeout(timeoutMs),
-  });
+  } as RequestInit;
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}${pathname}`, requestInit);
+  } catch (error: any) {
+    console.error("Runtime provisioner transport failed", {
+      pathname,
+      runtimeId: runtime.id,
+      url: `${baseUrl}${pathname}`,
+      bodyBytes: Buffer.byteLength(bodyText),
+      message: error?.message ?? String(error),
+      cause: error?.cause?.message ?? error?.cause?.code ?? null,
+    });
+    throw error;
+  }
   const text = await response.text();
   if (!response.ok) {
     throw new Error(
