@@ -6,6 +6,8 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 
+import { isAdmin } from "../auth-guards";
+
 const websiteApprovalResponseSchema = z.object({
   action: z.enum(["approve", "changes_requested"]).default("approve"),
   designOptionId: z.string().optional(),
@@ -46,7 +48,11 @@ export type WebsitesDeps = {
   safeJsonParse: (value: string | null | undefined) => any;
   addDays: (date: Date, days: number) => Date;
   getWorkspaceSettings: () => Promise<any>;
-  getUserWebsiteDetail: (userId: string, websiteId: string) => Promise<any>;
+  getUserWebsiteDetail: (
+    userId: string,
+    websiteId: string,
+    actingAsAdmin?: boolean,
+  ) => Promise<any>;
   getUserWebsiteDashboardRows: (userId: string) => Promise<any>;
   createWebsiteProjectFromOnboarding: (input: any) => Promise<any>;
   buildStoreDatabaseRecord: (input: { websiteId: string; storeId: string; userId: string }) => any;
@@ -58,7 +64,11 @@ export type WebsitesDeps = {
   storeProductCreateSchema: any;
   buildBasicWebsiteManifest: (site: any) => any;
   sendN8nBasicWebsiteBuild: (input: any) => Promise<any>;
-  provisionWebsiteRuntime: (userId: string, websiteId: string, options?: { skipAgreementCheck?: boolean }) => Promise<any>;
+  provisionWebsiteRuntime: (
+    userId: string,
+    websiteId: string,
+    options?: { skipAgreementCheck?: boolean },
+  ) => Promise<any>;
   callRuntimeProvisioner: <T>(runtime: any, pathname: string, body: unknown) => Promise<T>;
   fetchIpv4: (input: string | URL, init?: { timeoutMs?: number }) => Promise<Response>;
   reserveWalletUsage: (input: any) => Promise<any>;
@@ -166,7 +176,10 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
     if (!token) return deps.json({ error: "Approval token is required" }, 400);
 
     const tokenRow = await deps.db.query.websiteApprovalToken.findFirst({
-      where: eq(deps.websiteApprovalToken.tokenHash, crypto.createHash("sha256").update(token).digest("hex")),
+      where: eq(
+        deps.websiteApprovalToken.tokenHash,
+        crypto.createHash("sha256").update(token).digest("hex"),
+      ),
     });
     if (!tokenRow) return deps.json({ error: "Approval link is invalid" }, 404);
     if (tokenRow.usedAt) return deps.json({ error: "Approval link has already been used" }, 410);
@@ -194,7 +207,9 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
       const respondedAt = new Date();
       const review = await deps.db.query.websiteReviewRequest.findFirst({
         where: eq(deps.websiteReviewRequest.targetId, tokenRow.targetId ?? tokenRow.websiteId),
-        orderBy: (websiteReviewRequest: any, { desc }: any) => [desc(websiteReviewRequest.createdAt)],
+        orderBy: (websiteReviewRequest: any, { desc }: any) => [
+          desc(websiteReviewRequest.createdAt),
+        ],
       });
 
       if (tokenRow.actionType === "design_approval") {
@@ -354,7 +369,10 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
       if (!activeSubscription || activeSubscription.userId !== session.user.id) {
         return deps.json({ error: "Subscription not found" }, 404);
       }
-      if (!String(activeSubscription.planId ?? "").startsWith("web-") && !String(activeSubscription.planId ?? "").startsWith("ecom-")) {
+      if (
+        !String(activeSubscription.planId ?? "").startsWith("web-") &&
+        !String(activeSubscription.planId ?? "").startsWith("ecom-")
+      ) {
         return deps.json({ error: "This wizard is only for website and ecommerce plans" }, 400);
       }
       if (!["active", "trialing"].includes(activeSubscription.status)) {
@@ -367,11 +385,12 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
       const websiteProject = await deps.createWebsiteProjectFromOnboarding({
         userId: session.user.id,
         subscription: activeSubscription,
-        invoiceId: (
-          await deps.db.query.invoice.findFirst({
-            where: eq(deps.invoice.id, activeSubscription.id),
-          })
-        )?.id ?? null,
+        invoiceId:
+          (
+            await deps.db.query.invoice.findFirst({
+              where: eq(deps.invoice.id, activeSubscription.id),
+            })
+          )?.id ?? null,
         answers: body.answers,
       });
 
@@ -383,7 +402,8 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
         userId: session.user.id,
         subscriptionId: activeSubscription.id,
         productType: activeSubscription.planId ? "plan" : "bundle",
-        productId: activeSubscription.planId ?? activeSubscription.bundleId ?? activeSubscription.id,
+        productId:
+          activeSubscription.planId ?? activeSubscription.bundleId ?? activeSubscription.id,
         status: "submitted",
         answers: JSON.stringify(body.answers),
         submittedAt,
@@ -410,19 +430,21 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
       const settings = await deps.getWorkspaceSettings();
       const adminEmail = settings?.adminNotificationEmail ?? process.env.ADMIN_NOTIFICATION_EMAIL;
       if (adminEmail) {
-        deps.sendEmail({
-          template: "onboarding_received",
-          to: adminEmail,
-          subject: `Website onboarding submitted: ${websiteProject.businessName || activeSubscription.name}`,
-          data: {
-            customerEmail: session.user.email,
-            firstName: "team",
-            subscriptionName: activeSubscription.name,
-            primaryCtaText: "Open website projects",
-            primaryCtaUrl: `${new URL(request.url).origin}/dashboard/website-projects`,
-          },
-          idempotencyKey: `website-onboarding:${websiteProject.id}:notification`,
-        }).catch(() => undefined);
+        deps
+          .sendEmail({
+            template: "onboarding_received",
+            to: adminEmail,
+            subject: `Website onboarding submitted: ${websiteProject.businessName || activeSubscription.name}`,
+            data: {
+              customerEmail: session.user.email,
+              firstName: "team",
+              subscriptionName: activeSubscription.name,
+              primaryCtaText: "Open website projects",
+              primaryCtaUrl: `${new URL(request.url).origin}/dashboard/website-projects`,
+            },
+            idempotencyKey: `website-onboarding:${websiteProject.id}:notification`,
+          })
+          .catch(() => undefined);
       }
 
       await deps.recordAudit({
@@ -453,6 +475,7 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
   async function handleUserWebsites(request: Request): Promise<Response> {
     const { session, response } = await deps.requireSession(request);
     if (response) return response;
+    const actingAsAdmin = isAdmin(session);
 
     const url = new URL(request.url);
     const parts = url.pathname.split("/").filter(Boolean);
@@ -708,10 +731,14 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
           });
           settled = true;
 
-          const options = Array.isArray((n8nResult as any).options) ? (n8nResult as any).options.slice(0, 4) : [];
+          const options = Array.isArray((n8nResult as any).options)
+            ? (n8nResult as any).options.slice(0, 4)
+            : [];
           if (!options.length) throw new Error("No design options were returned");
 
-          await deps.db.delete(deps.websiteDesignOption).where(eq(deps.websiteDesignOption.websiteId, websiteId));
+          await deps.db
+            .delete(deps.websiteDesignOption)
+            .where(eq(deps.websiteDesignOption.websiteId, websiteId));
           const saved = await deps.db
             .insert(deps.websiteDesignOption)
             .values(
@@ -723,7 +750,9 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
                 imageUrl: option.imageUrl || null,
                 thumbnailUrl: option.thumbnailUrl || option.imageUrl || null,
                 designManifest: JSON.stringify(option.designManifest || option),
-                promptVersion: String((n8nResult as any).workflow || "cloudmonkey-website-design-previews"),
+                promptVersion: String(
+                  (n8nResult as any).workflow || "cloudmonkey-website-design-previews",
+                ),
                 tokenCost: Number(option.tokenCost || 0),
                 imageCost: Number(option.imageCost || 0),
               })),
@@ -759,13 +788,18 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
           });
         } catch (error: any) {
           if (!settled) {
-            await deps.releaseWalletReservation({
-              reservationId: walletReservation.reservation.id,
-              reason: error.message,
-              metadata: { websiteId, state: detail.status },
-            }).catch((releaseError: any) => {
-              console.error("Failed to release wallet reservation after design preview failure:", releaseError);
-            });
+            await deps
+              .releaseWalletReservation({
+                reservationId: walletReservation.reservation.id,
+                reason: error.message,
+                metadata: { websiteId, state: detail.status },
+              })
+              .catch((releaseError: any) => {
+                console.error(
+                  "Failed to release wallet reservation after design preview failure:",
+                  releaseError,
+                );
+              });
           }
           throw error;
         }
@@ -786,9 +820,11 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
         const designOptionId = parts[5];
         if (!designOptionId) return deps.json({ error: "Design option id is required" }, 400);
 
-        const detail = await deps.getUserWebsiteDetail(session.user.id, websiteId);
+        const detail = await deps.getUserWebsiteDetail(session.user.id, websiteId, actingAsAdmin);
         if (!detail?.store) return deps.json({ error: "Website store not found" }, 404);
-        if (!["design_options_uploaded", "awaiting_design_selection"].includes(String(detail.status))) {
+        if (
+          !["design_options_uploaded", "awaiting_design_selection"].includes(String(detail.status))
+        ) {
           return deps.json(
             { error: "Design options can only be selected after the site is ready for review" },
             409,
@@ -798,7 +834,11 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
         const selectedOption = await deps.db.query.websiteDesignOption.findFirst({
           where: eq(deps.websiteDesignOption.id, designOptionId),
         });
-        if (!selectedOption || selectedOption.websiteId !== websiteId || selectedOption.userId !== session.user.id) {
+        if (
+          !selectedOption ||
+          selectedOption.websiteId !== websiteId ||
+          (!actingAsAdmin && selectedOption.userId !== session.user.id)
+        ) {
           return deps.json({ error: "Design option not found" }, 404);
         }
 
@@ -812,7 +852,10 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
           siteType: detail.siteType,
           businessName: detail.businessName,
           temporaryDomain: detail.temporaryDomain,
-          baseRepo: detail.siteType === "ecommerce" ? "cloudmonkey-commerce-template" : "cloudmonkey-website-template",
+          baseRepo:
+            detail.siteType === "ecommerce"
+              ? "cloudmonkey-commerce-template"
+              : "cloudmonkey-website-template",
           createdAt: selectedAt.toISOString(),
         };
 
@@ -840,11 +883,18 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
 
         await deps.recordAudit({
           actorUserId: session.user.id,
-          action: "website.design_option.selected",
+          action: actingAsAdmin
+            ? "admin.website.design_option.select"
+            : "website.design_option.selected",
           entityType: "website",
           entityId: websiteId,
-          message: `Design option selected for ${detail.businessName || detail.domain}`,
-          metadata: { designOptionId, styleLabel: selectedOption.styleLabel },
+          message: `${actingAsAdmin ? "Admin selected" : "Design option selected"} for ${detail.businessName || detail.domain}`,
+          metadata: {
+            designOptionId,
+            styleLabel: selectedOption.styleLabel,
+            targetUserId: selectedOption.userId,
+            actedOnBehalfOf: actingAsAdmin,
+          },
         });
 
         return deps.json({
@@ -860,7 +910,8 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
       const detail = await deps.getUserWebsiteDetail(session.user.id, websiteId);
       if (
         detail &&
-        (["active", "running"].includes(String(detail.status)) || detail.containerStatus === "running")
+        (["active", "running"].includes(String(detail.status)) ||
+          detail.containerStatus === "running")
       ) {
         return deps.json({ error: "Website runtime is already provisioned" }, 409);
       }
@@ -978,7 +1029,10 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
           siteType: body.siteType,
           database: databaseRecord ?? undefined,
         });
-        const baseRepo = body.siteType === "ecommerce" ? "cloudmonkey-commerce-template" : "cloudmonkey-website-template";
+        const baseRepo =
+          body.siteType === "ecommerce"
+            ? "cloudmonkey-commerce-template"
+            : "cloudmonkey-website-template";
 
         const [createdWebsite] = await deps.db
           .insert(deps.website)
@@ -1136,7 +1190,9 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
       if (!runtime.provisionerUrl)
         return deps.json({ error: "Runtime server has no provisioner URL" }, 400);
       try {
-        const healthResponse = await deps.fetchIpv4(`${runtime.provisionerUrl.replace(/\/+$/, "")}/health`);
+        const healthResponse = await deps.fetchIpv4(
+          `${runtime.provisionerUrl.replace(/\/+$/, "")}/health`,
+        );
         const text = await healthResponse.text();
         let payload: unknown = text;
         try {
@@ -1171,7 +1227,9 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
         const values = {
           ...body,
           id: runtimeId,
-          provisionerSecret: body.provisionerSecret ? `enc:${body.provisionerSecret}` : body.provisionerSecret,
+          provisionerSecret: body.provisionerSecret
+            ? `enc:${body.provisionerSecret}`
+            : body.provisionerSecret,
           updatedAt: new Date(),
         };
         const [saved] = await deps.db
@@ -1210,7 +1268,10 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
           entityId: saved.id,
           message: `Website runtime server saved: ${saved.hostname}`,
         });
-        return deps.json({ ...saved, provisionerSecret: "********" }, request.method === "POST" ? 201 : 200);
+        return deps.json(
+          { ...saved, provisionerSecret: "********" },
+          request.method === "POST" ? 201 : 200,
+        );
       } catch (error: any) {
         return deps.json({ error: error.message, issues: error.issues }, error.status ?? 500);
       }
@@ -1240,7 +1301,10 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
         const body = await deps.parseBody(request, deps.adminWebsiteProjectCreateSchema);
         const [targetUser, selectedPlan] = await Promise.all([
           deps.db.query.user.findFirst({ where: eq(deps.user.id, body.userId) }),
-          deps.db.query.servicePlan.findFirst({ where: eq(deps.servicePlan.id, body.planId), with: { service: true } }),
+          deps.db.query.servicePlan.findFirst({
+            where: eq(deps.servicePlan.id, body.planId),
+            with: { service: true },
+          }),
         ]);
         if (!targetUser) return deps.json({ error: "Customer not found" }, 404);
         if (!selectedPlan) return deps.json({ error: "Package not found" }, 404);
@@ -1251,7 +1315,9 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
           (body.siteType === "website" && !selectedPlan.id.startsWith("web-"))
         ) {
           return deps.json(
-            { error: `Choose a ${body.siteType === "ecommerce" ? "ecommerce" : "website"} package for this project` },
+            {
+              error: `Choose a ${body.siteType === "ecommerce" ? "ecommerce" : "website"} package for this project`,
+            },
             400,
           );
         }
@@ -1266,12 +1332,16 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
             return deps.json({ error: "Subscription does not belong to this customer" }, 400);
           }
           if (existingSubscription.planId !== selectedPlan.id) {
-            return deps.json({ error: "Selected subscription does not match the selected package" }, 400);
+            return deps.json(
+              { error: "Selected subscription does not match the selected package" },
+              400,
+            );
           }
           const existingProject = await deps.db.query.website.findFirst({
             where: eq(deps.website.subscriptionId, existingSubscription.id),
           });
-          if (existingProject) return deps.json({ error: "This subscription already has a website project" }, 409);
+          if (existingProject)
+            return deps.json({ error: "This subscription already has a website project" }, 409);
           linkedSubscription = existingSubscription;
         }
 
@@ -1314,11 +1384,16 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
         const temporaryDomain = `${slug}.cloudmonkey.co.za`;
         const websiteIdNew = deps.makeId("web");
         const storeId = deps.makeId("store");
-        const trialEndsAt = linkedSubscription.status === "trialing" ? linkedSubscription.currentPeriodEnd : null;
+        const trialEndsAt =
+          linkedSubscription.status === "trialing" ? linkedSubscription.currentPeriodEnd : null;
         const graceEndsAt = trialEndsAt ? deps.addDays(trialEndsAt, 30) : null;
         const databaseRecord =
           body.siteType === "ecommerce"
-            ? deps.buildStoreDatabaseRecord({ websiteId: websiteIdNew, storeId, userId: body.userId })
+            ? deps.buildStoreDatabaseRecord({
+                websiteId: websiteIdNew,
+                storeId,
+                userId: body.userId,
+              })
             : null;
         const provisioningPlan = deps.buildWebsiteProvisioningPlan({
           websiteId: websiteIdNew,
@@ -1327,7 +1402,10 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
           siteType: body.siteType,
           database: databaseRecord ?? undefined,
         });
-        const baseRepo = body.siteType === "ecommerce" ? "cloudmonkey-commerce-template" : "cloudmonkey-website-template";
+        const baseRepo =
+          body.siteType === "ecommerce"
+            ? "cloudmonkey-commerce-template"
+            : "cloudmonkey-website-template";
 
         const [createdWebsite] = await deps.db.transaction(async (tx: any) => {
           const [siteRow] = await tx
@@ -1360,7 +1438,10 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
               aiGenerationStatus: "manual_design_pending",
               containerStatus: "not_provisioned",
               baseRepo,
-              trialStartedAt: linkedSubscription.status === "trialing" ? linkedSubscription.currentPeriodStart : null,
+              trialStartedAt:
+                linkedSubscription.status === "trialing"
+                  ? linkedSubscription.currentPeriodStart
+                  : null,
               trialEndsAt,
               graceEndsAt,
               terminationScheduledAt: graceEndsAt,
@@ -1375,7 +1456,10 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
             siteType: body.siteType,
             status: linkedSubscription.status === "trialing" ? "trial" : "planned",
             paymentMode: "cloudmonkey_gateway",
-            trialStartedAt: linkedSubscription.status === "trialing" ? linkedSubscription.currentPeriodStart : null,
+            trialStartedAt:
+              linkedSubscription.status === "trialing"
+                ? linkedSubscription.currentPeriodStart
+                : null,
             trialEndsAt,
             terminationScheduledAt: graceEndsAt,
           });
@@ -1395,8 +1479,24 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
           });
           if (body.siteType === "ecommerce") {
             await tx.insert(deps.websitePluginInstall).values([
-              { id: deps.makeId("webplugin"), websiteId: websiteIdNew, storeId, userId: body.userId, pluginKey: "cloudmonkey-paystack-gateway", status: "planned", config: JSON.stringify({ transactionFeeBps: 700, currency: "ZAR" }) },
-              { id: deps.makeId("webplugin"), websiteId: websiteIdNew, storeId, userId: body.userId, pluginKey: "basic-seo", status: "planned", config: JSON.stringify({ sitemap: true, robots: true }) },
+              {
+                id: deps.makeId("webplugin"),
+                websiteId: websiteIdNew,
+                storeId,
+                userId: body.userId,
+                pluginKey: "cloudmonkey-paystack-gateway",
+                status: "planned",
+                config: JSON.stringify({ transactionFeeBps: 700, currency: "ZAR" }),
+              },
+              {
+                id: deps.makeId("webplugin"),
+                websiteId: websiteIdNew,
+                storeId,
+                userId: body.userId,
+                pluginKey: "basic-seo",
+                status: "planned",
+                config: JSON.stringify({ sitemap: true, robots: true }),
+              },
             ]);
           }
           return [siteRow];
@@ -1431,7 +1531,12 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
         orderBy: (website: any, { desc }: any) => [desc(website.createdAt)],
       });
       const rows = sites
-        .filter((site: any) => site.siteType === "ecommerce" || site.siteType === "website" || Boolean(site.subscriptionId))
+        .filter(
+          (site: any) =>
+            site.siteType === "ecommerce" ||
+            site.siteType === "website" ||
+            Boolean(site.subscriptionId),
+        )
         .map((site: any) => ({
           ...site,
           onboardingAnswers: deps.safeJsonParse(site.onboardingAnswers),
@@ -1568,14 +1673,24 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
           }
 
           if (database) {
-            await tx.delete(deps.websiteStoreDatabase).where(eq(deps.websiteStoreDatabase.id, database.id));
+            await tx
+              .delete(deps.websiteStoreDatabase)
+              .where(eq(deps.websiteStoreDatabase.id, database.id));
           }
 
           await tx.delete(deps.websiteDomain).where(eq(deps.websiteDomain.websiteId, websiteId));
-          await tx.delete(deps.websiteDesignOption).where(eq(deps.websiteDesignOption.websiteId, websiteId));
-          await tx.delete(deps.websiteReviewRequest).where(eq(deps.websiteReviewRequest.websiteId, websiteId));
-          await tx.delete(deps.websiteApprovalToken).where(eq(deps.websiteApprovalToken.websiteId, websiteId));
-          await tx.delete(deps.websitePluginInstall).where(eq(deps.websitePluginInstall.websiteId, websiteId));
+          await tx
+            .delete(deps.websiteDesignOption)
+            .where(eq(deps.websiteDesignOption.websiteId, websiteId));
+          await tx
+            .delete(deps.websiteReviewRequest)
+            .where(eq(deps.websiteReviewRequest.websiteId, websiteId));
+          await tx
+            .delete(deps.websiteApprovalToken)
+            .where(eq(deps.websiteApprovalToken.websiteId, websiteId));
+          await tx
+            .delete(deps.websitePluginInstall)
+            .where(eq(deps.websitePluginInstall.websiteId, websiteId));
         });
 
         await deps.recordAudit({
@@ -1619,12 +1734,19 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
             if (file.size > deps.WEBSITE_MAX_DESIGN_BYTES)
               return deps.json({ error: "Design image is too large" }, 413);
             const optionId = deps.makeId("design");
-            const extension = path.extname(file.name || "") || `.${mimeType.split("/")[1] || "bin"}`;
+            const extension =
+              path.extname(file.name || "") || `.${mimeType.split("/")[1] || "bin"}`;
             const storageDir = path.join(deps.WEBSITE_UPLOAD_DIR, websiteId);
             await deps.mkdir(storageDir, { recursive: true });
             const storagePath = path.join(storageDir, `${optionId}${extension}`);
             await deps.writeFile(storagePath, Buffer.from(await file.arrayBuffer()));
-            uploadMeta = { optionId, storagePath, mimeType, fileName: deps.sanitizeFileName(file.name || `${optionId}${extension}`), sizeBytes: file.size };
+            uploadMeta = {
+              optionId,
+              storagePath,
+              mimeType,
+              fileName: deps.sanitizeFileName(file.name || `${optionId}${extension}`),
+              sizeBytes: file.size,
+            };
             imageUrl = publicDesignImageUrl(optionId);
           }
         } else {
@@ -1643,13 +1765,22 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
             styleLabel,
             imageUrl: imageUrl || null,
             thumbnailUrl: imageUrl || null,
-            designManifest: JSON.stringify({ source: "admin_upload", notes, uploadedBy: session.user.id, ...uploadMeta }),
+            designManifest: JSON.stringify({
+              source: "admin_upload",
+              notes,
+              uploadedBy: session.user.id,
+              ...uploadMeta,
+            }),
             promptVersion: "admin-upload",
           })
           .returning();
         await deps.db
           .update(deps.website)
-          .set({ status: "design_options_uploaded", aiGenerationStatus: "awaiting_design_selection", updatedAt: new Date() })
+          .set({
+            status: "design_options_uploaded",
+            aiGenerationStatus: "awaiting_design_selection",
+            updatedAt: new Date(),
+          })
           .where(eq(deps.website.id, websiteId));
         await deps.recordAudit({
           actorUserId: session.user.id,
@@ -1659,7 +1790,10 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
           message: `Design option uploaded for ${site.businessName || site.domain}`,
           metadata: { designOptionId: created.id, styleLabel },
         });
-        return deps.json({ ...created, designManifest: deps.safeJsonParse(created.designManifest) }, 201);
+        return deps.json(
+          { ...created, designManifest: deps.safeJsonParse(created.designManifest) },
+          201,
+        );
       } catch (error: any) {
         return deps.json({ error: error.message, issues: error.issues }, error.status ?? 500);
       }
@@ -1682,22 +1816,33 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
           for (const file of files) {
             if (!deps.isUploadedFile(file) || file.size <= 0) continue;
             const mimeType = file.type || "application/octet-stream";
-            if (!deps.ALLOWED_WEBSITE_DESIGN_TYPES.has(mimeType)) return deps.json({ error: "Unsupported asset image type" }, 400);
-            if (file.size > deps.WEBSITE_MAX_DESIGN_BYTES) return deps.json({ error: "Asset image is too large" }, 413);
+            if (!deps.ALLOWED_WEBSITE_DESIGN_TYPES.has(mimeType))
+              return deps.json({ error: "Unsupported asset image type" }, 400);
+            if (file.size > deps.WEBSITE_MAX_DESIGN_BYTES)
+              return deps.json({ error: "Asset image is too large" }, 413);
             const assetId = deps.makeId("asset");
-            const extension = path.extname(file.name || "") || `.${mimeType.split("/")[1] || "bin"}`;
+            const extension =
+              path.extname(file.name || "") || `.${mimeType.split("/")[1] || "bin"}`;
             const storageDir = path.join(deps.WEBSITE_UPLOAD_DIR, websiteId, "assets");
             await deps.mkdir(storageDir, { recursive: true });
             const safeFileName = deps.sanitizeFileName(file.name || `${assetId}${extension}`);
             const storagePath = path.join(storageDir, `${assetId}${extension}`);
             await deps.writeFile(storagePath, Buffer.from(await file.arrayBuffer()));
-            uploadedAssets.push({ id: assetId, storagePath, fileName: safeFileName, mimeType, sizeBytes: file.size, uploadedAt: new Date().toISOString() });
+            uploadedAssets.push({
+              id: assetId,
+              storagePath,
+              fileName: safeFileName,
+              mimeType,
+              sizeBytes: file.size,
+              uploadedAt: new Date().toISOString(),
+            });
           }
         } else {
           body = await deps.parseBody(request, deps.adminWebsiteDesignInputsSchema);
         }
 
-        const currentRequirement = (deps.safeJsonParse(site.requirementManifest) as Record<string, any> | null) ?? {};
+        const currentRequirement =
+          (deps.safeJsonParse(site.requirementManifest) as Record<string, any> | null) ?? {};
         const existingInputs =
           currentRequirement.designInputs &&
           typeof currentRequirement.designInputs === "object" &&
@@ -1728,7 +1873,11 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
           message: `Design inputs saved for ${site.businessName || site.domain}`,
           metadata: { uploadedAssetCount: uploadedAssets.length },
         });
-        return deps.json({ ok: true, designInputs, requirementManifest: deps.safeJsonParse(updated.requirementManifest) });
+        return deps.json({
+          ok: true,
+          designInputs,
+          requirementManifest: deps.safeJsonParse(updated.requirementManifest),
+        });
       } catch (error: any) {
         return deps.json({ error: error.message, issues: error.issues }, error.status ?? 500);
       }
@@ -1772,7 +1921,8 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
           data: {
             firstName: project.user?.name,
             emailTitle: "Your website designs are ready",
-            emailIntro: "Please review the design concepts and approve the direction CloudMonkey should build.",
+            emailIntro:
+              "Please review the design concepts and approve the direction CloudMonkey should build.",
             emailBody: `Project: ${site.businessName || site.domain}\nTemporary domain: ${site.temporaryDomain || site.domain}`,
             primaryCtaText: "Review designs",
             primaryCtaUrl: approvalUrl,
@@ -1793,9 +1943,14 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
       try {
         let siteForProvision = site;
         if (!siteForProvision.buildManifest && !siteForProvision.githubRepo) {
-          const storeRow = await deps.db.query.websiteStore.findFirst({ where: eq(deps.websiteStore.websiteId, websiteId) });
-          if (!storeRow) return deps.json({ error: "Website store must exist before provisioning" }, 404);
-          const databaseRow = await deps.db.query.websiteStoreDatabase.findFirst({ where: eq(deps.websiteStoreDatabase.storeId, storeRow.id) });
+          const storeRow = await deps.db.query.websiteStore.findFirst({
+            where: eq(deps.websiteStore.websiteId, websiteId),
+          });
+          if (!storeRow)
+            return deps.json({ error: "Website store must exist before provisioning" }, 404);
+          const databaseRow = await deps.db.query.websiteStoreDatabase.findFirst({
+            where: eq(deps.websiteStoreDatabase.storeId, storeRow.id),
+          });
           const basicManifest = deps.buildBasicWebsiteManifest(siteForProvision);
           const walletReservation = await deps.reserveWalletUsage({
             userId: session.user.id,
@@ -1847,22 +2002,33 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
               entityType: "website",
               entityId: websiteId,
               message: `Basic runtime manifest created for ${site.businessName || site.domain}`,
-              metadata: { workflow: n8nResult.workflow, warning: n8nResult.warning ?? null, designApproved: Boolean(site.selectedDesignOptionId) },
+              metadata: {
+                workflow: n8nResult.workflow,
+                warning: n8nResult.warning ?? null,
+                designApproved: Boolean(site.selectedDesignOptionId),
+              },
             });
           } catch (error: any) {
             if (!settled) {
-              await deps.releaseWalletReservation({
-                reservationId: walletReservation.reservation.id,
-                reason: error.message,
-                metadata: { websiteId, state: siteForProvision.status },
-              }).catch((releaseError: any) => {
-                console.error("Failed to release wallet reservation after basic runtime failure:", releaseError);
-              });
+              await deps
+                .releaseWalletReservation({
+                  reservationId: walletReservation.reservation.id,
+                  reason: error.message,
+                  metadata: { websiteId, state: siteForProvision.status },
+                })
+                .catch((releaseError: any) => {
+                  console.error(
+                    "Failed to release wallet reservation after basic runtime failure:",
+                    releaseError,
+                  );
+                });
             }
             throw error;
           }
         }
-        const result = await deps.provisionWebsiteRuntime(site.userId, websiteId, { skipAgreementCheck: true });
+        const result = await deps.provisionWebsiteRuntime(site.userId, websiteId, {
+          skipAgreementCheck: true,
+        });
         return deps.json(result);
       } catch (error: any) {
         await deps.db
@@ -1936,7 +2102,8 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
         .update(deps.website)
         .set({
           status: "active",
-          containerStatus: site.containerStatus === "not_provisioned" ? "running" : site.containerStatus,
+          containerStatus:
+            site.containerStatus === "not_provisioned" ? "running" : site.containerStatus,
           updatedAt: now,
         })
         .where(eq(deps.website.id, websiteId))

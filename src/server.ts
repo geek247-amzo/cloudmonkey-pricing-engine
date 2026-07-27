@@ -3275,11 +3275,11 @@ async function getUserWebsiteDashboardRows(userId: string) {
   });
 }
 
-async function getUserWebsiteDetail(userId: string, websiteId: string) {
+async function getUserWebsiteDetail(userId: string, websiteId: string, actingAsAdmin = false) {
   const site = await db.query.website.findFirst({
     where: eq(website.id, websiteId),
   });
-  if (!site || site.userId !== userId) return null;
+  if (!site || (!actingAsAdmin && site.userId !== userId)) return null;
 
   const [store, domains, plugins, designOptions] = await Promise.all([
     db.query.websiteStore.findFirst({ where: eq(websiteStore.websiteId, site.id) }),
