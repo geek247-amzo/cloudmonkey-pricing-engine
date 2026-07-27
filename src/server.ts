@@ -2443,6 +2443,7 @@ async function callRuntimeProvisioner<T>(
       "X-CM-Signature": signed.signature,
     },
     body: bodyText,
+    timeoutMs: pathname === "/deploy" ? 180_000 : 30_000,
   });
   const text = await response.text();
   if (!response.ok) {

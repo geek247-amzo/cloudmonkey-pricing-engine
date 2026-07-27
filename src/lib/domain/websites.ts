@@ -804,6 +804,10 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
           throw error;
         }
       } catch (error: any) {
+        console.error("Admin website provisioning failed", {
+          websiteId,
+          message: error?.message ?? String(error),
+        });
         await deps.db
           .update(deps.website)
           .set({
