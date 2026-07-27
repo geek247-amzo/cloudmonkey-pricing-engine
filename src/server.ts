@@ -2433,7 +2433,8 @@ async function callRuntimeProvisioner<T>(
   const baseUrl = runtime.provisionerUrl.replace(/\/+$/, "");
   const bodyText = JSON.stringify(body ?? {});
   const signed = signRuntimeRequest(provisionerSecret, "POST", pathname, bodyText);
-  const response = await fetchIpv4(`${baseUrl}${pathname}`, {
+  const timeoutMs = pathname === "/deploy" ? 180_000 : 30_000;
+  const response = await fetch(`${baseUrl}${pathname}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -2443,7 +2444,7 @@ async function callRuntimeProvisioner<T>(
       "X-CM-Signature": signed.signature,
     },
     body: bodyText,
-    timeoutMs: pathname === "/deploy" ? 180_000 : 30_000,
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const text = await response.text();
   if (!response.ok) {
