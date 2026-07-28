@@ -1080,6 +1080,7 @@ export async function executeSupportToolCalls(
         if (!deps.provisionWebsiteRuntime) throw new Error("Website deployment is not configured");
         const data = await deps.provisionWebsiteRuntime(userId, toolCall.websiteId, {
           deploymentDomain: toolCall.deploymentDomain,
+          skipAgreementCheck: access.isAdmin === true,
         });
         await deps.recordAudit?.({
           actorUserId: access.actorUserId ?? userId,
