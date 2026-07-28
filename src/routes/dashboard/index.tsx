@@ -193,7 +193,6 @@ function DashboardOverviewPage() {
   const [selectedBundleId, setSelectedBundleId] = useState<string | null>(null);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [isStartingCheckout, setIsStartingCheckout] = useState(false);
-  const [bannerDismissed, setBannerDismissed] = useState(false);
   const [onboardingStateLoaded, setOnboardingStateLoaded] = useState(false);
   const [agreementAccepted, setAgreementAccepted] = useState(false);
   const isAdmin = session?.user?.role === "admin" || session?.user?.role === "owner";
@@ -207,9 +206,6 @@ function DashboardOverviewPage() {
     if (!session?.user?.id) return;
     setSelectedBundleId(localStorage.getItem("cloudmonkey:selected-bundle"));
     setSelectedPlanId(localStorage.getItem("cloudmonkey:selected-plan"));
-    setBannerDismissed(
-      localStorage.getItem(`cloudmonkey:onboarding-dismissed:${session.user.id}`) === "1",
-    );
     setOnboardingStateLoaded(true);
   }, [session?.user?.id]);
 
@@ -314,13 +310,9 @@ function DashboardOverviewPage() {
       !!agreementRequirementPath &&
       !hasPendingSubscription,
   });
-  const shouldShowOnboarding =
-    dashboardReady &&
-    !isAdmin &&
-    onboardingStateLoaded &&
-    !hasAccessSubscription &&
-    !bannerDismissed &&
-    (!!selectedPlanId || !!selectedBundleId);
+  // Temporarily hidden from customer surfaces. Restore once onboarding is gated by an
+  // order-level completion check, so only customers with an incomplete wizard see it.
+  const shouldShowOnboarding = false;
 
   async function startCheckout() {
     if (isStartingCheckout || hasPendingSubscription) return;
@@ -470,13 +462,6 @@ function DashboardOverviewPage() {
       to: "/dashboard/settings",
     },
   ];
-
-  const dismissOnboarding = () => {
-    if (session?.user?.id) {
-      localStorage.setItem(`cloudmonkey:onboarding-dismissed:${session.user.id}`, "1");
-    }
-    setBannerDismissed(true);
-  };
 
   return (
     <div className="min-w-0 space-y-4 sm:space-y-6">

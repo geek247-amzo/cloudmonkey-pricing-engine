@@ -44,15 +44,15 @@ import {
   SheetClose,
 } from "@/components/ui/sheet";
 
-const mainNav = [
-  { to: "/dashboard", label: "Overview", icon: Home },
-  { to: "/dashboard/ai-wizard", label: "Product Onboarding", icon: WandSparkles },
+const mainNav = [{ to: "/dashboard", label: "Overview", icon: Home }] as const;
+
+const userMenuNav = [
   { to: "/dashboard/agents", label: "AI Agents", icon: Bot },
   { to: "/dashboard/ai-website-builder", label: "AI Website Builder", icon: WandSparkles },
 ] as const;
 
 const cloudNav = [
-  { to: "/dashboard/domains", label: "Add Domains", icon: Globe },
+  { to: "/dashboard/domains", label: "Domains", icon: Globe },
   { to: "/dashboard/hosting", label: "Hosting", icon: Server },
   { to: "/dashboard/websites", label: "Websites", icon: HardDrive },
   { to: "/dashboard/reports", label: "Databases", icon: Database },
@@ -93,8 +93,6 @@ const adminNav = [
 
 const mobileNav = [
   mainNav[0],
-  mainNav[1],
-  mainNav[2],
   cloudNav[0],
   cloudNav[1],
   businessNav[2],
@@ -233,6 +231,12 @@ export function DashboardShell({ children }: { children: ReactNode }) {
             {isAdmin && (
               <div className="mt-6 border-t border-white/10 pt-5">
                 <div className="mb-2 px-3 text-sm font-semibold text-white">Administration</div>
+                <SidebarGroup
+                  label="User menu"
+                  icon={UserRound}
+                  items={userMenuNav}
+                  defaultOpen={false}
+                />
                 <nav className="space-y-1">
                   {adminNav.map((item) => (
                     <SidebarLink key={`${item.label}-${item.to}`} item={item} muted />
@@ -324,12 +328,20 @@ export function DashboardShell({ children }: { children: ReactNode }) {
                         </div>
 
                         {isAdmin ? (
-                          <MobileNavSection
-                            title="Administration"
-                            items={[mainNav[0], ...adminNav]}
-                            onNavigate={() => setMobileMenuOpen(false)}
-                            muted
-                          />
+                          <>
+                            <MobileNavSection
+                              title="Administration"
+                              items={[mainNav[0], ...adminNav]}
+                              onNavigate={() => setMobileMenuOpen(false)}
+                              muted
+                            />
+                            <MobileNavSection
+                              title="User menu"
+                              items={userMenuNav}
+                              onNavigate={() => setMobileMenuOpen(false)}
+                              muted
+                            />
+                          </>
                         ) : (
                           <>
                             <MobileNavSection
@@ -478,23 +490,38 @@ function SidebarGroup({
   label,
   icon: Icon,
   items,
+  defaultOpen = true,
 }: {
   label: string;
   icon: typeof Home;
   items: readonly SidebarItem[];
+  defaultOpen?: boolean;
 }) {
+  const [open, setOpen] = useState(defaultOpen);
+
   return (
     <div className="pt-1">
-      <div className="flex h-11 items-center gap-3 rounded-lg px-3 text-[15px] font-semibold text-white/88">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        aria-expanded={open}
+        className="flex h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-[15px] font-semibold text-white/88 transition-colors hover:bg-white/[0.07]"
+      >
         <Icon className="h-5 w-5" />
         <span className="min-w-0 flex-1 truncate">{label}</span>
-        <ChevronDown className="h-4 w-4 text-white/60" />
-      </div>
-      <nav className="mt-1 space-y-1 border-l border-white/10 pl-4">
-        {items.map((item) => (
-          <SidebarLink key={`${item.label}-${item.to}`} item={item} nested />
-        ))}
-      </nav>
+        {open ? (
+          <ChevronDown className="h-4 w-4 text-white/60" />
+        ) : (
+          <ChevronRight className="h-4 w-4 text-white/60" />
+        )}
+      </button>
+      {open && (
+        <nav className="mt-1 space-y-1 border-l border-white/10 pl-4">
+          {items.map((item) => (
+            <SidebarLink key={`${item.label}-${item.to}`} item={item} nested />
+          ))}
+        </nav>
+      )}
     </div>
   );
 }
