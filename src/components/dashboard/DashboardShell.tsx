@@ -166,19 +166,39 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isMounted || !session || isAdmin) return;
     let cancelled = false;
-    fetch("/api/user/vultr")
-      .then((response) => (response.ok ? response.json() : []))
-      .then((servers) => {
+    Promise.all([
+      fetch("/api/user/vultr").then((response) => (response.ok ? response.json() : [])),
+      fetch("/api/user/subscription").then((response) => (response.ok ? response.json() : [])),
+    ])
+      .then(([servers, subscriptions]) => {
         if (cancelled) return;
-        setHasPrivateVps(
+        const hasPrivateServer =
           Array.isArray(servers) &&
-            servers.some(
-              (server) =>
-                typeof server === "object" &&
-                server !== null &&
-                (server as { hostingMode?: string }).hostingMode === "private",
-            ),
-        );
+          servers.some(
+            (server) =>
+              typeof server === "object" &&
+              server !== null &&
+              (server as { hostingMode?: string }).hostingMode === "private",
+          );
+        const hasPrivateServerEntitlement =
+          Array.isArray(subscriptions) &&
+          subscriptions.some((subscription) => {
+            if (typeof subscription !== "object" || subscription === null) return false;
+            const row = subscription as {
+              status?: string;
+              planId?: string | null;
+              bundleId?: string | null;
+            };
+            if (row.status !== "active" && row.status !== "trialing") return false;
+            return Boolean(
+              row.bundleId === "bundle_managed_cloud_care" ||
+              row.planId?.startsWith("vultr-") ||
+              row.planId?.startsWith("vps-") ||
+              row.planId?.startsWith("managed_cloud_") ||
+              row.planId?.startsWith("build_"),
+            );
+          });
+        setHasPrivateVps(hasPrivateServer && hasPrivateServerEntitlement);
       })
       .catch(() => {
         if (!cancelled) setHasPrivateVps(false);
