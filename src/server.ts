@@ -7279,9 +7279,11 @@ async function createProposalInvoice(input: {
     return { invoice: existing, created: false, requiresRegistration: false };
   }
 
-  const targetUser = await db.query.user.findFirst({
-    where: sql`lower(${user.email}) = ${row.customerEmail.trim().toLowerCase()}`,
-  });
+  const targetUser = row.customerUserId
+    ? await db.query.user.findFirst({ where: eq(user.id, row.customerUserId) })
+    : await db.query.user.findFirst({
+        where: sql`lower(${user.email}) = ${row.customerEmail.trim().toLowerCase()}`,
+      });
   if (!targetUser) return { invoice: null, created: false, requiresRegistration: true };
 
   const fullInvoiceLines = document.items.flatMap((item) => {
