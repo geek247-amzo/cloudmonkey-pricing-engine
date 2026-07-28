@@ -1916,10 +1916,10 @@ function buildBusinessWebsiteConfig(input: {
       { label: "Contact", href: "/contact" },
     ],
     contact: {
-      email: "hello@example.co.za",
-      phone: "",
-      whatsapp: "",
-      address: "South Africa",
+      email: stringValue(manifest.contactEmail, "hello@example.co.za"),
+      phone: stringValue(manifest.phone, ""),
+      whatsapp: stringValue(manifest.whatsapp, ""),
+      address: stringValue(manifest.address, "South Africa"),
       socialLinks: [],
     },
     pages: [
