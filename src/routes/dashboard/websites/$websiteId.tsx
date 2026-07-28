@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -55,6 +55,7 @@ function formatDate(value?: string | null) {
 
 function WebsiteManagePage() {
   const { websiteId } = Route.useParams();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
   const queryClient = useQueryClient();
   const [showProductForm, setShowProductForm] = useState(false);
   const { authReady, isAdmin } = useAdminAccess();
@@ -150,6 +151,8 @@ function WebsiteManagePage() {
     },
     onError: (error: Error) => toast.error(error.message),
   });
+
+  if (pathname.endsWith("/growth")) return <Outlet />;
 
   const openPreview = (option: any) => {
     if (!option.imageUrl) {
