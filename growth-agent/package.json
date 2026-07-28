@@ -1,0 +1,9 @@
+{
+  "name": "cloudmonkey-growth-agent-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun src/index.ts",
+    "check": "bun --check src/index.ts"
+  }
+}

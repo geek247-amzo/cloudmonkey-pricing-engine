@@ -42,6 +42,7 @@ import { Route as DashboardWebsitesRouteImport } from './routes/dashboard/websit
 import { Route as DashboardWebsiteWizardRouteImport } from './routes/dashboard/website-wizard'
 import { Route as DashboardWebsiteProjectsRouteImport } from './routes/dashboard/website-projects'
 import { Route as DashboardWebsiteHealthRouteImport } from './routes/dashboard/website-health'
+import { Route as DashboardWebsiteGrowthRouteImport } from './routes/dashboard/website-growth'
 import { Route as DashboardWalletRouteImport } from './routes/dashboard/wallet'
 import { Route as DashboardUsersRouteImport } from './routes/dashboard/users'
 import { Route as DashboardSupportRouteImport } from './routes/dashboard/support'
@@ -83,6 +84,7 @@ import { Route as DashboardUsersUserIdRouteImport } from './routes/dashboard/use
 import { Route as DashboardSupportTicketIdRouteImport } from './routes/dashboard/support/$ticketId'
 import { Route as DashboardDomainsNewRouteImport } from './routes/dashboard/domains/new'
 import { Route as AuthTwoFactorSetupRouteImport } from './routes/auth/two-factor/setup'
+import { Route as DashboardWebsitesWebsiteIdGrowthRouteImport } from './routes/dashboard/websites/$websiteId/growth'
 import { Route as DashboardBillingInvoicesInvoiceIdRouteImport } from './routes/dashboard/billing/invoices/$invoiceId'
 
 const VoiceRoute = VoiceRouteImport.update({
@@ -249,6 +251,11 @@ const DashboardWebsiteProjectsRoute =
 const DashboardWebsiteHealthRoute = DashboardWebsiteHealthRouteImport.update({
   id: '/dashboard/website-health',
   path: '/dashboard/website-health',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardWebsiteGrowthRoute = DashboardWebsiteGrowthRouteImport.update({
+  id: '/dashboard/website-growth',
+  path: '/dashboard/website-growth',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardWalletRoute = DashboardWalletRouteImport.update({
@@ -461,6 +468,12 @@ const AuthTwoFactorSetupRoute = AuthTwoFactorSetupRouteImport.update({
   path: '/setup',
   getParentRoute: () => AuthTwoFactorRoute,
 } as any)
+const DashboardWebsitesWebsiteIdGrowthRoute =
+  DashboardWebsitesWebsiteIdGrowthRouteImport.update({
+    id: '/growth',
+    path: '/growth',
+    getParentRoute: () => DashboardWebsitesWebsiteIdRoute,
+  } as any)
 const DashboardBillingInvoicesInvoiceIdRoute =
   DashboardBillingInvoicesInvoiceIdRouteImport.update({
     id: '/invoices/$invoiceId',
@@ -520,6 +533,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/support': typeof DashboardSupportRouteWithChildren
   '/dashboard/users': typeof DashboardUsersRouteWithChildren
   '/dashboard/wallet': typeof DashboardWalletRoute
+  '/dashboard/website-growth': typeof DashboardWebsiteGrowthRoute
   '/dashboard/website-health': typeof DashboardWebsiteHealthRoute
   '/dashboard/website-projects': typeof DashboardWebsiteProjectsRoute
   '/dashboard/website-wizard': typeof DashboardWebsiteWizardRoute
@@ -541,9 +555,10 @@ export interface FileRoutesByFullPath {
   '/dashboard/domains/new': typeof DashboardDomainsNewRoute
   '/dashboard/support/$ticketId': typeof DashboardSupportTicketIdRoute
   '/dashboard/users/$userId': typeof DashboardUsersUserIdRoute
-  '/dashboard/websites/$websiteId': typeof DashboardWebsitesWebsiteIdRoute
+  '/dashboard/websites/$websiteId': typeof DashboardWebsitesWebsiteIdRouteWithChildren
   '/auth/two-factor/': typeof AuthTwoFactorIndexRoute
   '/dashboard/billing/invoices/$invoiceId': typeof DashboardBillingInvoicesInvoiceIdRoute
+  '/dashboard/websites/$websiteId/growth': typeof DashboardWebsitesWebsiteIdGrowthRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -596,6 +611,7 @@ export interface FileRoutesByTo {
   '/dashboard/support': typeof DashboardSupportRouteWithChildren
   '/dashboard/users': typeof DashboardUsersRouteWithChildren
   '/dashboard/wallet': typeof DashboardWalletRoute
+  '/dashboard/website-growth': typeof DashboardWebsiteGrowthRoute
   '/dashboard/website-health': typeof DashboardWebsiteHealthRoute
   '/dashboard/website-projects': typeof DashboardWebsiteProjectsRoute
   '/dashboard/website-wizard': typeof DashboardWebsiteWizardRoute
@@ -616,9 +632,10 @@ export interface FileRoutesByTo {
   '/dashboard/domains/new': typeof DashboardDomainsNewRoute
   '/dashboard/support/$ticketId': typeof DashboardSupportTicketIdRoute
   '/dashboard/users/$userId': typeof DashboardUsersUserIdRoute
-  '/dashboard/websites/$websiteId': typeof DashboardWebsitesWebsiteIdRoute
+  '/dashboard/websites/$websiteId': typeof DashboardWebsitesWebsiteIdRouteWithChildren
   '/auth/two-factor': typeof AuthTwoFactorIndexRoute
   '/dashboard/billing/invoices/$invoiceId': typeof DashboardBillingInvoicesInvoiceIdRoute
+  '/dashboard/websites/$websiteId/growth': typeof DashboardWebsitesWebsiteIdGrowthRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -673,6 +690,7 @@ export interface FileRoutesById {
   '/dashboard/support': typeof DashboardSupportRouteWithChildren
   '/dashboard/users': typeof DashboardUsersRouteWithChildren
   '/dashboard/wallet': typeof DashboardWalletRoute
+  '/dashboard/website-growth': typeof DashboardWebsiteGrowthRoute
   '/dashboard/website-health': typeof DashboardWebsiteHealthRoute
   '/dashboard/website-projects': typeof DashboardWebsiteProjectsRoute
   '/dashboard/website-wizard': typeof DashboardWebsiteWizardRoute
@@ -694,9 +712,10 @@ export interface FileRoutesById {
   '/dashboard/domains/new': typeof DashboardDomainsNewRoute
   '/dashboard/support/$ticketId': typeof DashboardSupportTicketIdRoute
   '/dashboard/users/$userId': typeof DashboardUsersUserIdRoute
-  '/dashboard/websites/$websiteId': typeof DashboardWebsitesWebsiteIdRoute
+  '/dashboard/websites/$websiteId': typeof DashboardWebsitesWebsiteIdRouteWithChildren
   '/auth/two-factor/': typeof AuthTwoFactorIndexRoute
   '/dashboard/billing/invoices/$invoiceId': typeof DashboardBillingInvoicesInvoiceIdRoute
+  '/dashboard/websites/$websiteId/growth': typeof DashboardWebsitesWebsiteIdGrowthRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -752,6 +771,7 @@ export interface FileRouteTypes {
     | '/dashboard/support'
     | '/dashboard/users'
     | '/dashboard/wallet'
+    | '/dashboard/website-growth'
     | '/dashboard/website-health'
     | '/dashboard/website-projects'
     | '/dashboard/website-wizard'
@@ -776,6 +796,7 @@ export interface FileRouteTypes {
     | '/dashboard/websites/$websiteId'
     | '/auth/two-factor/'
     | '/dashboard/billing/invoices/$invoiceId'
+    | '/dashboard/websites/$websiteId/growth'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -828,6 +849,7 @@ export interface FileRouteTypes {
     | '/dashboard/support'
     | '/dashboard/users'
     | '/dashboard/wallet'
+    | '/dashboard/website-growth'
     | '/dashboard/website-health'
     | '/dashboard/website-projects'
     | '/dashboard/website-wizard'
@@ -851,6 +873,7 @@ export interface FileRouteTypes {
     | '/dashboard/websites/$websiteId'
     | '/auth/two-factor'
     | '/dashboard/billing/invoices/$invoiceId'
+    | '/dashboard/websites/$websiteId/growth'
   id:
     | '__root__'
     | '/'
@@ -904,6 +927,7 @@ export interface FileRouteTypes {
     | '/dashboard/support'
     | '/dashboard/users'
     | '/dashboard/wallet'
+    | '/dashboard/website-growth'
     | '/dashboard/website-health'
     | '/dashboard/website-projects'
     | '/dashboard/website-wizard'
@@ -928,6 +952,7 @@ export interface FileRouteTypes {
     | '/dashboard/websites/$websiteId'
     | '/auth/two-factor/'
     | '/dashboard/billing/invoices/$invoiceId'
+    | '/dashboard/websites/$websiteId/growth'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -982,6 +1007,7 @@ export interface RootRouteChildren {
   DashboardSupportRoute: typeof DashboardSupportRouteWithChildren
   DashboardUsersRoute: typeof DashboardUsersRouteWithChildren
   DashboardWalletRoute: typeof DashboardWalletRoute
+  DashboardWebsiteGrowthRoute: typeof DashboardWebsiteGrowthRoute
   DashboardWebsiteHealthRoute: typeof DashboardWebsiteHealthRoute
   DashboardWebsiteProjectsRoute: typeof DashboardWebsiteProjectsRoute
   DashboardWebsiteWizardRoute: typeof DashboardWebsiteWizardRoute
@@ -1223,6 +1249,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard/website-health'
       fullPath: '/dashboard/website-health'
       preLoaderRoute: typeof DashboardWebsiteHealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/website-growth': {
+      id: '/dashboard/website-growth'
+      path: '/dashboard/website-growth'
+      fullPath: '/dashboard/website-growth'
+      preLoaderRoute: typeof DashboardWebsiteGrowthRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard/wallet': {
@@ -1512,6 +1545,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthTwoFactorSetupRouteImport
       parentRoute: typeof AuthTwoFactorRoute
     }
+    '/dashboard/websites/$websiteId/growth': {
+      id: '/dashboard/websites/$websiteId/growth'
+      path: '/growth'
+      fullPath: '/dashboard/websites/$websiteId/growth'
+      preLoaderRoute: typeof DashboardWebsitesWebsiteIdGrowthRouteImport
+      parentRoute: typeof DashboardWebsitesWebsiteIdRoute
+    }
     '/dashboard/billing/invoices/$invoiceId': {
       id: '/dashboard/billing/invoices/$invoiceId'
       path: '/invoices/$invoiceId'
@@ -1616,12 +1656,27 @@ const DashboardUsersRouteWithChildren = DashboardUsersRoute._addFileChildren(
   DashboardUsersRouteChildren,
 )
 
+interface DashboardWebsitesWebsiteIdRouteChildren {
+  DashboardWebsitesWebsiteIdGrowthRoute: typeof DashboardWebsitesWebsiteIdGrowthRoute
+}
+
+const DashboardWebsitesWebsiteIdRouteChildren: DashboardWebsitesWebsiteIdRouteChildren =
+  {
+    DashboardWebsitesWebsiteIdGrowthRoute:
+      DashboardWebsitesWebsiteIdGrowthRoute,
+  }
+
+const DashboardWebsitesWebsiteIdRouteWithChildren =
+  DashboardWebsitesWebsiteIdRoute._addFileChildren(
+    DashboardWebsitesWebsiteIdRouteChildren,
+  )
+
 interface DashboardWebsitesRouteChildren {
-  DashboardWebsitesWebsiteIdRoute: typeof DashboardWebsitesWebsiteIdRoute
+  DashboardWebsitesWebsiteIdRoute: typeof DashboardWebsitesWebsiteIdRouteWithChildren
 }
 
 const DashboardWebsitesRouteChildren: DashboardWebsitesRouteChildren = {
-  DashboardWebsitesWebsiteIdRoute: DashboardWebsitesWebsiteIdRoute,
+  DashboardWebsitesWebsiteIdRoute: DashboardWebsitesWebsiteIdRouteWithChildren,
 }
 
 const DashboardWebsitesRouteWithChildren =
@@ -1679,6 +1734,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardSupportRoute: DashboardSupportRouteWithChildren,
   DashboardUsersRoute: DashboardUsersRouteWithChildren,
   DashboardWalletRoute: DashboardWalletRoute,
+  DashboardWebsiteGrowthRoute: DashboardWebsiteGrowthRoute,
   DashboardWebsiteHealthRoute: DashboardWebsiteHealthRoute,
   DashboardWebsiteProjectsRoute: DashboardWebsiteProjectsRoute,
   DashboardWebsiteWizardRoute: DashboardWebsiteWizardRoute,

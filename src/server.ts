@@ -87,6 +87,10 @@ import {
   user,
   vultrInstance,
   website,
+  websiteGrowthAgent,
+  websiteGrowthRun,
+  websiteGrowthMessage,
+  websiteGrowthProposal,
   websiteHealthCheck,
   remediationAttempt,
   websiteApprovalToken,
@@ -121,6 +125,7 @@ import { captureInvoicePaymentAtomically } from "./lib/invoice-payment-capture";
 import { createPublicScanHandlers } from "./lib/public-scans";
 import { initializePayment, verifyPayment } from "./lib/paystack";
 import { sendEmail } from "./lib/email";
+import { createWebsiteGrowthHandlers } from "./lib/domain/website-growth";
 import { stripPii, stripPiiJson } from "./lib/pii";
 import { createSecureToken, hashSecureToken, isUnexpired } from "./lib/secure-handout";
 import { isAdmin, requireAdmin, requireSession } from "./lib/auth-guards";
@@ -8266,6 +8271,26 @@ const walletServiceDeps = {
   user,
 };
 
+const websiteGrowthHandlers = createWebsiteGrowthHandlers({
+  db,
+  json,
+  parseBody,
+  requireSession,
+  requireAdmin,
+  recordAudit,
+  sendEmail,
+  makeId,
+  website,
+  user,
+  websiteGrowthAgent,
+  websiteGrowthRun,
+  websiteGrowthMessage,
+  websiteGrowthProposal,
+  platformApiUsage,
+  provisionWebsiteRuntime: (ownerUserId, websiteId, options) =>
+    provisionWebsiteRuntime(ownerUserId, websiteId, options),
+});
+
 const reserveWalletUsageBound = (input: Parameters<typeof reserveWalletUsage>[1]) =>
   reserveWalletUsage(walletServiceDeps, input);
 const commitWalletReservationBound = (input: Parameters<typeof commitWalletReservation>[1]) =>
@@ -10843,6 +10868,10 @@ echo "CloudMonkey agent installed."
       return domainsHandlers.handleUserDomains(request);
     }
 
+    if (url.pathname.match(/^\/api\/user\/websites\/[^/]+\/growth(?:\/.*)?$/)) {
+      return websiteGrowthHandlers.handleUser(request);
+    }
+
     if (url.pathname.startsWith("/api/user/websites/")) {
       return websiteHandlers.handleUserWebsites(request);
     }
@@ -10857,6 +10886,10 @@ echo "CloudMonkey agent installed."
 
     if (url.pathname.startsWith("/api/admin/website-health")) {
       return adminHandlers.handleAdminWebsiteHealth(request);
+    }
+
+    if (url.pathname.startsWith("/api/admin/website-growth")) {
+      return websiteGrowthHandlers.handleAdmin(request);
     }
 
     if (url.pathname.startsWith("/api/admin/website-projects")) {
@@ -10958,6 +10991,10 @@ echo "CloudMonkey agent installed."
       } catch (error: any) {
         return json({ error: error.message, issues: error.issues }, error.status ?? 400);
       }
+    }
+
+    if (url.pathname.startsWith("/api/internal/growth-agent/")) {
+      return websiteGrowthHandlers.handleWorker(request);
     }
 
     if (url.pathname === "/api/internal/admin/sql" && request.method === "POST") {

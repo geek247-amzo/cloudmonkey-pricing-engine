@@ -15,6 +15,7 @@ import {
   ReceiptText,
   Rocket,
   Server,
+  Sparkles,
   ShoppingBag,
 } from "lucide-react";
 import { useState } from "react";
@@ -232,6 +233,12 @@ function WebsiteManagePage() {
                 <ExternalLink className="h-4 w-4" />
                 Open
               </a>
+            </Button>
+            <Button asChild variant="outline" className="rounded-xl border-[var(--ai)] text-[var(--ai)] shadow-none">
+              <Link to="/dashboard/websites/$websiteId/growth" params={{ websiteId }}>
+                <Sparkles className="h-4 w-4" />
+                Growth agent
+              </Link>
             </Button>
           </div>
         }

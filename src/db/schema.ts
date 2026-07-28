@@ -366,6 +366,9 @@ export const platformApiUsage = pgTable("platform_api_usage", {
     onDelete: "set null",
   }),
   userId: text("userId").references(() => user.id, { onDelete: "set null" }),
+  growthAgentRunId: text("growthAgentRunId").references(() => websiteGrowthRun.id, {
+    onDelete: "set null",
+  }),
   provider: text("provider").notNull(),
   model: text("model").notNull(),
   featureKey: text("featureKey").notNull(),
@@ -837,6 +840,94 @@ export const website = pgTable("website", {
   suspendedAt: timestamp("suspendedAt"),
   suspensionReason: text("suspensionReason"),
   terminationScheduledAt: timestamp("terminationScheduledAt"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+});
+
+export const websiteGrowthAgent = pgTable(
+  "website_growth_agent",
+  {
+    id: text("id").primaryKey(),
+    websiteId: text("websiteId")
+      .notNull()
+      .references(() => website.id, { onDelete: "cascade" }),
+    userId: text("userId")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    status: text("status").notNull().default("active"),
+    schedule: text("schedule").notNull().default("daily"),
+    nextRunAt: timestamp("nextRunAt").notNull().defaultNow(),
+    kpi: text("kpi").notNull().default("qualified_leads"),
+    dailyBudgetTokens: integer("dailyBudgetTokens").notNull().default(50000),
+    maxChangesPerRun: integer("maxChangesPerRun").notNull().default(10),
+    lastRunAt: timestamp("lastRunAt"),
+    createdAt: timestamp("createdAt").notNull().defaultNow(),
+    updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+  },
+  (table) => ({ websiteUnique: unique("website_growth_agent_website_unique").on(table.websiteId) }),
+);
+
+export const websiteGrowthRun = pgTable("website_growth_run", {
+  id: text("id").primaryKey(),
+  agentId: text("agentId")
+    .notNull()
+    .references(() => websiteGrowthAgent.id, { onDelete: "cascade" }),
+  websiteId: text("websiteId")
+    .notNull()
+    .references(() => website.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("queued"),
+  scheduledAt: timestamp("scheduledAt").notNull().defaultNow(),
+  claimedAt: timestamp("claimedAt"),
+  heartbeatAt: timestamp("heartbeatAt"),
+  completedAt: timestamp("completedAt"),
+  error: text("error"),
+  proposalId: text("proposalId"),
+  provider: text("provider"),
+  model: text("model"),
+  inputTokens: integer("inputTokens").notNull().default(0),
+  outputTokens: integer("outputTokens").notNull().default(0),
+  totalTokens: integer("totalTokens").notNull().default(0),
+  providerCostMicrousd: integer("providerCostMicrousd").notNull().default(0),
+  usageAvailable: boolean("usageAvailable").notNull().default(false),
+  metadataJson: text("metadataJson"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+});
+
+export const websiteGrowthMessage = pgTable("website_growth_message", {
+  id: text("id").primaryKey(),
+  agentId: text("agentId")
+    .notNull()
+    .references(() => websiteGrowthAgent.id, { onDelete: "cascade" }),
+  websiteId: text("websiteId")
+    .notNull()
+    .references(() => website.id, { onDelete: "cascade" }),
+  runId: text("runId").references(() => websiteGrowthRun.id, { onDelete: "set null" }),
+  userId: text("userId").references(() => user.id, { onDelete: "set null" }),
+  senderRole: text("senderRole").notNull(),
+  body: text("body").notNull(),
+  metadataJson: text("metadataJson"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+});
+
+export const websiteGrowthProposal = pgTable("website_growth_proposal", {
+  id: text("id").primaryKey(),
+  agentId: text("agentId")
+    .notNull()
+    .references(() => websiteGrowthAgent.id, { onDelete: "cascade" }),
+  websiteId: text("websiteId")
+    .notNull()
+    .references(() => website.id, { onDelete: "cascade" }),
+  runId: text("runId")
+    .notNull()
+    .references(() => websiteGrowthRun.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  summary: text("summary").notNull(),
+  diffJson: text("diffJson").notNull(),
+  status: text("status").notNull().default("pending"),
+  decidedByUserId: text("decidedByUserId").references(() => user.id, { onDelete: "set null" }),
+  decisionNote: text("decisionNote"),
+  decidedAt: timestamp("decidedAt"),
+  deploymentStatus: text("deploymentStatus").notNull().default("not_started"),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 });
