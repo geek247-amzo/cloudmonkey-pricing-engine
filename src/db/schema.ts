@@ -761,6 +761,7 @@ export const proposal = pgTable("proposal", {
   title: text("title").notNull(),
   status: text("status").notNull().default("draft"),
   customerName: text("customerName").notNull(),
+  approvalName: text("approvalName"),
   customerEmail: text("customerEmail").notNull(),
   customerCompany: text("customerCompany"),
   introduction: text("introduction"),

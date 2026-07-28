@@ -30,6 +30,7 @@ import { Route as AuthIndexRouteImport } from './routes/auth/index'
 import { Route as WebsiteApprovalTokenRouteImport } from './routes/website-approval/$token'
 import { Route as ToolsUptimeCheckerRouteImport } from './routes/tools/uptime-checker'
 import { Route as ToolsSslCheckerRouteImport } from './routes/tools/ssl-checker'
+import { Route as ProposalsPublicTokenRouteImport } from './routes/proposals/$publicToken'
 import { Route as LegalTermsRouteImport } from './routes/legal/terms'
 import { Route as LegalSlaRouteImport } from './routes/legal/sla'
 import { Route as LegalRefundsRouteImport } from './routes/legal/refunds'
@@ -191,6 +192,11 @@ const ToolsSslCheckerRoute = ToolsSslCheckerRouteImport.update({
   id: '/ssl-checker',
   path: '/ssl-checker',
   getParentRoute: () => ToolsRoute,
+} as any)
+const ProposalsPublicTokenRoute = ProposalsPublicTokenRouteImport.update({
+  id: '/proposals/$publicToken',
+  path: '/proposals/$publicToken',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const LegalTermsRoute = LegalTermsRouteImport.update({
   id: '/terms',
@@ -546,6 +552,7 @@ export interface FileRoutesByFullPath {
   '/legal/refunds': typeof LegalRefundsRoute
   '/legal/sla': typeof LegalSlaRoute
   '/legal/terms': typeof LegalTermsRoute
+  '/proposals/$publicToken': typeof ProposalsPublicTokenRoute
   '/tools/ssl-checker': typeof ToolsSslCheckerRoute
   '/tools/uptime-checker': typeof ToolsUptimeCheckerRoute
   '/website-approval/$token': typeof WebsiteApprovalTokenRoute
@@ -624,6 +631,7 @@ export interface FileRoutesByTo {
   '/legal/refunds': typeof LegalRefundsRoute
   '/legal/sla': typeof LegalSlaRoute
   '/legal/terms': typeof LegalTermsRoute
+  '/proposals/$publicToken': typeof ProposalsPublicTokenRoute
   '/tools/ssl-checker': typeof ToolsSslCheckerRoute
   '/tools/uptime-checker': typeof ToolsUptimeCheckerRoute
   '/website-approval/$token': typeof WebsiteApprovalTokenRoute
@@ -703,6 +711,7 @@ export interface FileRoutesById {
   '/legal/refunds': typeof LegalRefundsRoute
   '/legal/sla': typeof LegalSlaRoute
   '/legal/terms': typeof LegalTermsRoute
+  '/proposals/$publicToken': typeof ProposalsPublicTokenRoute
   '/tools/ssl-checker': typeof ToolsSslCheckerRoute
   '/tools/uptime-checker': typeof ToolsUptimeCheckerRoute
   '/website-approval/$token': typeof WebsiteApprovalTokenRoute
@@ -784,6 +793,7 @@ export interface FileRouteTypes {
     | '/legal/refunds'
     | '/legal/sla'
     | '/legal/terms'
+    | '/proposals/$publicToken'
     | '/tools/ssl-checker'
     | '/tools/uptime-checker'
     | '/website-approval/$token'
@@ -862,6 +872,7 @@ export interface FileRouteTypes {
     | '/legal/refunds'
     | '/legal/sla'
     | '/legal/terms'
+    | '/proposals/$publicToken'
     | '/tools/ssl-checker'
     | '/tools/uptime-checker'
     | '/website-approval/$token'
@@ -940,6 +951,7 @@ export interface FileRouteTypes {
     | '/legal/refunds'
     | '/legal/sla'
     | '/legal/terms'
+    | '/proposals/$publicToken'
     | '/tools/ssl-checker'
     | '/tools/uptime-checker'
     | '/website-approval/$token'
@@ -1013,6 +1025,7 @@ export interface RootRouteChildren {
   DashboardWebsiteWizardRoute: typeof DashboardWebsiteWizardRoute
   DashboardWebsitesRoute: typeof DashboardWebsitesRouteWithChildren
   HandoutTokenRoute: typeof HandoutTokenRoute
+  ProposalsPublicTokenRoute: typeof ProposalsPublicTokenRoute
   WebsiteApprovalTokenRoute: typeof WebsiteApprovalTokenRoute
   AuthIndexRoute: typeof AuthIndexRoute
   DashboardIndexRoute: typeof DashboardIndexRoute
@@ -1166,6 +1179,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/tools/ssl-checker'
       preLoaderRoute: typeof ToolsSslCheckerRouteImport
       parentRoute: typeof ToolsRoute
+    }
+    '/proposals/$publicToken': {
+      id: '/proposals/$publicToken'
+      path: '/proposals/$publicToken'
+      fullPath: '/proposals/$publicToken'
+      preLoaderRoute: typeof ProposalsPublicTokenRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/legal/terms': {
       id: '/legal/terms'
@@ -1740,6 +1760,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardWebsiteWizardRoute: DashboardWebsiteWizardRoute,
   DashboardWebsitesRoute: DashboardWebsitesRouteWithChildren,
   HandoutTokenRoute: HandoutTokenRoute,
+  ProposalsPublicTokenRoute: ProposalsPublicTokenRoute,
   WebsiteApprovalTokenRoute: WebsiteApprovalTokenRoute,
   AuthIndexRoute: AuthIndexRoute,
   DashboardIndexRoute: DashboardIndexRoute,

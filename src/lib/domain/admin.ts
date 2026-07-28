@@ -880,7 +880,7 @@ export function createAdminHandlers(deps: AdminDeps) {
         if (!row) return deps.json({ error: "Proposal not found" }, 404);
         return deps.json({
           ...row,
-          publicUrl: `${origin}/api/proposals/${encodeURIComponent(row.publicToken)}`,
+          publicUrl: `${origin}/proposals/${encodeURIComponent(row.publicToken)}`,
         });
       }
 
@@ -891,7 +891,7 @@ export function createAdminHandlers(deps: AdminDeps) {
       return deps.json(
         rows.map((row: any) => ({
           ...row,
-          publicUrl: `${origin}/api/proposals/${encodeURIComponent(row.publicToken)}`,
+          publicUrl: `${origin}/proposals/${encodeURIComponent(row.publicToken)}`,
         })),
       );
     }
@@ -977,7 +977,7 @@ export function createAdminHandlers(deps: AdminDeps) {
           {
             ...created,
             items: lines,
-            publicUrl: `${origin}/api/proposals/${encodeURIComponent(publicToken)}`,
+            publicUrl: `${origin}/proposals/${encodeURIComponent(publicToken)}`,
           },
           201,
         );
@@ -997,7 +997,7 @@ export function createAdminHandlers(deps: AdminDeps) {
       if (row.status === "void")
         return deps.json({ error: "Voided proposals cannot be sent" }, 409);
 
-      const publicUrl = `${origin}/api/proposals/${encodeURIComponent(row.publicToken)}`;
+      const publicUrl = `${origin}/proposals/${encodeURIComponent(row.publicToken)}`;
       const sentAt = new Date();
       const [updated] = await deps.db
         .update(proposal)
@@ -1931,7 +1931,9 @@ export function createAdminHandlers(deps: AdminDeps) {
         });
         const normalizedResponse = unwrapAiResponseEnvelope(responseData);
         const responseRecord =
-          normalizedResponse && typeof normalizedResponse === "object" && !Array.isArray(normalizedResponse)
+          normalizedResponse &&
+          typeof normalizedResponse === "object" &&
+          !Array.isArray(normalizedResponse)
             ? (normalizedResponse as Record<string, any>)
             : {};
         const responseTicket =
@@ -1953,11 +1955,17 @@ export function createAdminHandlers(deps: AdminDeps) {
         ].find((value) => typeof value === "string" && value.includes("@"));
         const targetUserId =
           body.customerUserId ??
-          (typeof responseTicket.customerUserId === "string" ? responseTicket.customerUserId : null) ??
-          (typeof responseRecord.customerUserId === "string" ? responseRecord.customerUserId : null) ??
+          (typeof responseTicket.customerUserId === "string"
+            ? responseTicket.customerUserId
+            : null) ??
+          (typeof responseRecord.customerUserId === "string"
+            ? responseRecord.customerUserId
+            : null) ??
           (typeof responseRecord.userId === "string" ? responseRecord.userId : null);
         let ticket: any = null;
-        let ticketCreation: { created: boolean; reason?: string; ticket?: any } = { created: false };
+        let ticketCreation: { created: boolean; reason?: string; ticket?: any } = {
+          created: false,
+        };
         if (ticketCreationRequested) {
           const resolvedUser = targetUserId
             ? await deps.db.query.user.findFirst({ where: eq(user.id, targetUserId) })
@@ -1983,9 +1991,10 @@ export function createAdminHandlers(deps: AdminDeps) {
             if (existingTicket) {
               ticket = existingTicket;
             } else {
-              const subject = String(
-                responseTicket.subject ?? responseRecord.subject ?? body.message,
-              ).slice(0, 120).trim() || "Admin AI support request";
+              const subject =
+                String(responseTicket.subject ?? responseRecord.subject ?? body.message)
+                  .slice(0, 120)
+                  .trim() || "Admin AI support request";
               const description = String(
                 responseTicket.description ?? responseRecord.description ?? body.message,
               ).slice(0, 10000);

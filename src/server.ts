@@ -6793,7 +6793,7 @@ function addMonths(date: Date, months: number) {
   return next;
 }
 
-function proposalUrl(origin: string, token: string | null | undefined) {
+function proposalApiUrl(origin: string, token: string | null | undefined) {
   return token ? `${origin}/api/proposals/${encodeURIComponent(token)}` : null;
 }
 
@@ -7284,7 +7284,7 @@ async function createProposalInvoice(input: {
   });
   if (!targetUser) return { invoice: null, created: false, requiresRegistration: true };
 
-  const invoiceLines = document.items.flatMap((item) => {
+  const fullInvoiceLines = document.items.flatMap((item) => {
     const lines = [];
     if (item.setupPrice > 0) {
       lines.push({
@@ -7312,12 +7312,29 @@ async function createProposalInvoice(input: {
     }
     return lines;
   });
-  const amount = invoiceLines.reduce((sum, line) => sum + line.amount, 0);
-  if (amount <= 0) {
+  const fullAmount = fullInvoiceLines.reduce((sum, line) => sum + line.amount, 0);
+  if (fullAmount <= 0) {
     throw Object.assign(new Error("Proposal has no payable line items to invoice"), {
       status: 400,
     });
   }
+  const hasMilestoneSchedule = /\b50\s*\/\s*25\s*\/\s*25\b/.test(row.terms ?? "");
+  const firstMilestonePercent = hasMilestoneSchedule ? 50 : 100;
+  const firstMilestoneAmount = Math.ceil((fullAmount * firstMilestonePercent) / 100);
+  const invoiceLines = fullInvoiceLines.map((line, index) => ({
+    ...line,
+    amount:
+      index === fullInvoiceLines.length - 1
+        ? firstMilestoneAmount -
+          fullInvoiceLines
+            .slice(0, -1)
+            .reduce(
+              (sum, previous) => sum + Math.round((previous.amount * firstMilestonePercent) / 100),
+              0,
+            )
+        : Math.round((line.amount * firstMilestonePercent) / 100),
+  }));
+  const amount = invoiceLines.reduce((sum, line) => sum + line.amount, 0);
 
   const issuedAt = new Date();
   const dueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -7359,7 +7376,7 @@ async function createProposalInvoice(input: {
         customerCompany: row.customerCompany ?? null,
         workspaceBillingSnapshot: JSON.stringify(getWorkspaceBillingDetails(settings)),
         notes:
-          `Generated from proposal ${row.proposalNumber ?? row.id}. ${settings?.billingInvoiceNotes ?? ""}`.trim(),
+          `Generated from proposal ${row.proposalNumber ?? row.id}${hasMilestoneSchedule ? " — milestone 1 of 3 (50%)" : ""}. ${settings?.billingInvoiceNotes ?? ""}`.trim(),
         paystackReference: payment.data.reference,
         paystackUrl: payment.data.authorization_url,
       })
@@ -10691,8 +10708,16 @@ echo "CloudMonkey agent installed."
           { status: 404, headers: { "content-type": "text/html; charset=utf-8" } },
         );
 
+      if (action === "data" && request.method === "GET") {
+        return json({
+          proposal: document.proposal,
+          items: document.items,
+          workspaceBilling: getWorkspaceBillingDetails(await getWorkspaceSettings()),
+        });
+      }
+
       if (request.method === "GET") {
-        const publicUrl = proposalUrl(origin, document.proposal.publicToken) ?? undefined;
+        const publicUrl = proposalApiUrl(origin, document.proposal.publicToken) ?? undefined;
         const workspaceBilling = getWorkspaceBillingDetails(await getWorkspaceSettings());
         return new Response(renderProposalHtml({ ...document, publicUrl, workspaceBilling }), {
           headers: { "content-type": "text/html; charset=utf-8" },
@@ -10700,6 +10725,14 @@ echo "CloudMonkey agent installed."
       }
 
       if (action === "approve" && request.method === "POST") {
+        const wantsJson = request.headers.get("accept")?.includes("application/json") ?? false;
+        let approvalName = document.proposal.customerName;
+        if (wantsJson) {
+          const body = await request.json().catch(() => ({}));
+          if (typeof body?.approvalName === "string" && body.approvalName.trim()) {
+            approvalName = body.approvalName.trim().slice(0, 160);
+          }
+        }
         if (document.proposal.status === "void") {
           return new Response(
             renderProposalResultHtml({
@@ -10726,6 +10759,7 @@ echo "CloudMonkey agent installed."
           .update(proposal)
           .set({
             status: document.proposal.status === "converted" ? "converted" : "approved",
+            approvalName,
             approvedAt: document.proposal.approvedAt ?? approvedAt,
             approvalIp:
               request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
@@ -10743,10 +10777,16 @@ echo "CloudMonkey agent installed."
           created: false,
           requiresRegistration: true,
         };
+        let conversionError: Error | null = null;
         try {
           conversion = await createProposalInvoice({ proposalId: document.proposal.id, origin });
         } catch (error) {
+          conversionError = error instanceof Error ? error : new Error(String(error));
           console.error("Proposal invoice conversion failed:", error);
+        }
+
+        if (conversionError && wantsJson) {
+          return json({ error: conversionError.message }, 500);
         }
 
         await recordAudit({
@@ -10763,6 +10803,14 @@ echo "CloudMonkey agent installed."
 
         if (conversion.invoice) {
           const invoiceUrl = `${origin}/dashboard/billing/invoices/${encodeURIComponent(conversion.invoice.id)}`;
+          if (wantsJson) {
+            return json({
+              approved: true,
+              invoiceId: conversion.invoice.id,
+              paystackUrl: conversion.invoice.paystackUrl,
+              invoiceUrl,
+            });
+          }
           return new Response(
             renderProposalResultHtml({
               title: "Proposal approved",
@@ -10772,6 +10820,14 @@ echo "CloudMonkey agent installed."
             }),
             { headers: { "content-type": "text/html; charset=utf-8" } },
           );
+        }
+
+        if (wantsJson) {
+          return json({
+            approved: true,
+            requiresRegistration: true,
+            registerUrl: `${origin}/auth/sign-up`,
+          });
         }
 
         return new Response(
