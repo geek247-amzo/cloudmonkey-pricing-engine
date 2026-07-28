@@ -115,6 +115,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   const [isMounted, setIsMounted] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [requiresTwoFactorSetup, setRequiresTwoFactorSetup] = useState(false);
+  const [hasPrivateVps, setHasPrivateVps] = useState(false);
   const hydratedSession = isMounted ? session : null;
   const userName = hydratedSession?.user?.name || "User";
   const userEmail = hydratedSession?.user?.email || "";
@@ -162,6 +163,31 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     };
   }, [isMounted, router, session]);
 
+  useEffect(() => {
+    if (!isMounted || !session || isAdmin) return;
+    let cancelled = false;
+    fetch("/api/user/vultr")
+      .then((response) => (response.ok ? response.json() : []))
+      .then((servers) => {
+        if (cancelled) return;
+        setHasPrivateVps(
+          Array.isArray(servers) &&
+            servers.some(
+              (server) =>
+                typeof server === "object" &&
+                server !== null &&
+                (server as { hostingMode?: string }).hostingMode === "private",
+            ),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setHasPrivateVps(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin, isMounted, session]);
+
   if (!isMounted || isSessionPending || !session || requiresTwoFactorSetup) {
     return (
       <section className="flex min-h-screen items-center justify-center bg-[#f6f8fc] px-4 text-[#07102c]">
@@ -171,6 +197,10 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       </section>
     );
   }
+
+  const visibleCloudNav = hasPrivateVps
+    ? cloudNav
+    : cloudNav.filter((item) => item.label !== "Hosting");
 
   return (
     <section className="dashboard-zoom-shell min-h-screen overflow-x-clip bg-[#f6f8fc] text-[#07102c]">
@@ -209,7 +239,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
                   {mainNav.slice(1).map((item) => (
                     <SidebarLink key={`${item.label}-${item.to}`} item={item} />
                   ))}
-                  <SidebarGroup label="Cloud" icon={Cloud} items={cloudNav} />
+                  <SidebarGroup label="Cloud" icon={Cloud} items={visibleCloudNav} />
                 </>
               )}
             </nav>
@@ -351,7 +381,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
                             />
                             <MobileNavSection
                               title="Cloud"
-                              items={cloudNav}
+                              items={visibleCloudNav}
                               onNavigate={() => setMobileMenuOpen(false)}
                               nested
                             />
@@ -408,20 +438,22 @@ export function DashboardShell({ children }: { children: ReactNode }) {
               </div>
             </div>
             <div className="mt-3 grid grid-cols-3 gap-2">
-              {(isAdmin ? adminMobileNav : mobileNav).map((item) => (
-                <Link
-                  key={`${item.label}-${item.to}`}
-                  to={item.to}
-                  className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-full border border-[#dfe4ef] bg-white px-2 py-2 text-xs font-semibold text-[#58637e]"
-                  activeProps={{
-                    className:
-                      "inline-flex min-w-0 items-center justify-center gap-1.5 rounded-full border border-transparent bg-[#5d2fe8] px-2 py-2 text-xs font-semibold text-white",
-                  }}
-                >
-                  <item.icon className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">{item.label}</span>
-                </Link>
-              ))}
+              {(isAdmin ? adminMobileNav : mobileNav)
+                .filter((item) => item.label !== "Hosting" || hasPrivateVps)
+                .map((item) => (
+                  <Link
+                    key={`${item.label}-${item.to}`}
+                    to={item.to}
+                    className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-full border border-[#dfe4ef] bg-white px-2 py-2 text-xs font-semibold text-[#58637e]"
+                    activeProps={{
+                      className:
+                        "inline-flex min-w-0 items-center justify-center gap-1.5 rounded-full border border-transparent bg-[#5d2fe8] px-2 py-2 text-xs font-semibold text-white",
+                    }}
+                  >
+                    <item.icon className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{item.label}</span>
+                  </Link>
+                ))}
             </div>
           </header>
 
