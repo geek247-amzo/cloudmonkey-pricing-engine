@@ -31,6 +31,7 @@ import { Route as WebsiteApprovalTokenRouteImport } from './routes/website-appro
 import { Route as ToolsUptimeCheckerRouteImport } from './routes/tools/uptime-checker'
 import { Route as ToolsSslCheckerRouteImport } from './routes/tools/ssl-checker'
 import { Route as ProposalsPublicTokenRouteImport } from './routes/proposals/$publicToken'
+import { Route as PitchDecksPublicTokenRouteImport } from './routes/pitch-decks/$publicToken'
 import { Route as LegalTermsRouteImport } from './routes/legal/terms'
 import { Route as LegalSlaRouteImport } from './routes/legal/sla'
 import { Route as LegalRefundsRouteImport } from './routes/legal/refunds'
@@ -54,6 +55,7 @@ import { Route as DashboardReportsRouteImport } from './routes/dashboard/reports
 import { Route as DashboardProposalsRouteImport } from './routes/dashboard/proposals'
 import { Route as DashboardProductsRouteImport } from './routes/dashboard/products'
 import { Route as DashboardPlatformCredentialsRouteImport } from './routes/dashboard/platform-credentials'
+import { Route as DashboardPitchDecksRouteImport } from './routes/dashboard/pitch-decks'
 import { Route as DashboardIntelligenceWizardRouteImport } from './routes/dashboard/intelligence-wizard'
 import { Route as DashboardIntelligenceRouteImport } from './routes/dashboard/intelligence'
 import { Route as DashboardHostingRouteImport } from './routes/dashboard/hosting'
@@ -198,6 +200,11 @@ const ProposalsPublicTokenRoute = ProposalsPublicTokenRouteImport.update({
   path: '/proposals/$publicToken',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PitchDecksPublicTokenRoute = PitchDecksPublicTokenRouteImport.update({
+  id: '/pitch-decks/$publicToken',
+  path: '/pitch-decks/$publicToken',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LegalTermsRoute = LegalTermsRouteImport.update({
   id: '/terms',
   path: '/terms',
@@ -315,6 +322,11 @@ const DashboardPlatformCredentialsRoute =
     path: '/dashboard/platform-credentials',
     getParentRoute: () => rootRouteImport,
   } as any)
+const DashboardPitchDecksRoute = DashboardPitchDecksRouteImport.update({
+  id: '/dashboard/pitch-decks',
+  path: '/dashboard/pitch-decks',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardIntelligenceWizardRoute =
   DashboardIntelligenceWizardRouteImport.update({
     id: '/dashboard/intelligence-wizard',
@@ -529,6 +541,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/hosting': typeof DashboardHostingRoute
   '/dashboard/intelligence': typeof DashboardIntelligenceRoute
   '/dashboard/intelligence-wizard': typeof DashboardIntelligenceWizardRoute
+  '/dashboard/pitch-decks': typeof DashboardPitchDecksRoute
   '/dashboard/platform-credentials': typeof DashboardPlatformCredentialsRoute
   '/dashboard/products': typeof DashboardProductsRoute
   '/dashboard/proposals': typeof DashboardProposalsRoute
@@ -552,6 +565,7 @@ export interface FileRoutesByFullPath {
   '/legal/refunds': typeof LegalRefundsRoute
   '/legal/sla': typeof LegalSlaRoute
   '/legal/terms': typeof LegalTermsRoute
+  '/pitch-decks/$publicToken': typeof PitchDecksPublicTokenRoute
   '/proposals/$publicToken': typeof ProposalsPublicTokenRoute
   '/tools/ssl-checker': typeof ToolsSslCheckerRoute
   '/tools/uptime-checker': typeof ToolsUptimeCheckerRoute
@@ -608,6 +622,7 @@ export interface FileRoutesByTo {
   '/dashboard/hosting': typeof DashboardHostingRoute
   '/dashboard/intelligence': typeof DashboardIntelligenceRoute
   '/dashboard/intelligence-wizard': typeof DashboardIntelligenceWizardRoute
+  '/dashboard/pitch-decks': typeof DashboardPitchDecksRoute
   '/dashboard/platform-credentials': typeof DashboardPlatformCredentialsRoute
   '/dashboard/products': typeof DashboardProductsRoute
   '/dashboard/proposals': typeof DashboardProposalsRoute
@@ -631,6 +646,7 @@ export interface FileRoutesByTo {
   '/legal/refunds': typeof LegalRefundsRoute
   '/legal/sla': typeof LegalSlaRoute
   '/legal/terms': typeof LegalTermsRoute
+  '/pitch-decks/$publicToken': typeof PitchDecksPublicTokenRoute
   '/proposals/$publicToken': typeof ProposalsPublicTokenRoute
   '/tools/ssl-checker': typeof ToolsSslCheckerRoute
   '/tools/uptime-checker': typeof ToolsUptimeCheckerRoute
@@ -688,6 +704,7 @@ export interface FileRoutesById {
   '/dashboard/hosting': typeof DashboardHostingRoute
   '/dashboard/intelligence': typeof DashboardIntelligenceRoute
   '/dashboard/intelligence-wizard': typeof DashboardIntelligenceWizardRoute
+  '/dashboard/pitch-decks': typeof DashboardPitchDecksRoute
   '/dashboard/platform-credentials': typeof DashboardPlatformCredentialsRoute
   '/dashboard/products': typeof DashboardProductsRoute
   '/dashboard/proposals': typeof DashboardProposalsRoute
@@ -711,6 +728,7 @@ export interface FileRoutesById {
   '/legal/refunds': typeof LegalRefundsRoute
   '/legal/sla': typeof LegalSlaRoute
   '/legal/terms': typeof LegalTermsRoute
+  '/pitch-decks/$publicToken': typeof PitchDecksPublicTokenRoute
   '/proposals/$publicToken': typeof ProposalsPublicTokenRoute
   '/tools/ssl-checker': typeof ToolsSslCheckerRoute
   '/tools/uptime-checker': typeof ToolsUptimeCheckerRoute
@@ -770,6 +788,7 @@ export interface FileRouteTypes {
     | '/dashboard/hosting'
     | '/dashboard/intelligence'
     | '/dashboard/intelligence-wizard'
+    | '/dashboard/pitch-decks'
     | '/dashboard/platform-credentials'
     | '/dashboard/products'
     | '/dashboard/proposals'
@@ -793,6 +812,7 @@ export interface FileRouteTypes {
     | '/legal/refunds'
     | '/legal/sla'
     | '/legal/terms'
+    | '/pitch-decks/$publicToken'
     | '/proposals/$publicToken'
     | '/tools/ssl-checker'
     | '/tools/uptime-checker'
@@ -849,6 +869,7 @@ export interface FileRouteTypes {
     | '/dashboard/hosting'
     | '/dashboard/intelligence'
     | '/dashboard/intelligence-wizard'
+    | '/dashboard/pitch-decks'
     | '/dashboard/platform-credentials'
     | '/dashboard/products'
     | '/dashboard/proposals'
@@ -872,6 +893,7 @@ export interface FileRouteTypes {
     | '/legal/refunds'
     | '/legal/sla'
     | '/legal/terms'
+    | '/pitch-decks/$publicToken'
     | '/proposals/$publicToken'
     | '/tools/ssl-checker'
     | '/tools/uptime-checker'
@@ -928,6 +950,7 @@ export interface FileRouteTypes {
     | '/dashboard/hosting'
     | '/dashboard/intelligence'
     | '/dashboard/intelligence-wizard'
+    | '/dashboard/pitch-decks'
     | '/dashboard/platform-credentials'
     | '/dashboard/products'
     | '/dashboard/proposals'
@@ -951,6 +974,7 @@ export interface FileRouteTypes {
     | '/legal/refunds'
     | '/legal/sla'
     | '/legal/terms'
+    | '/pitch-decks/$publicToken'
     | '/proposals/$publicToken'
     | '/tools/ssl-checker'
     | '/tools/uptime-checker'
@@ -1009,6 +1033,7 @@ export interface RootRouteChildren {
   DashboardHostingRoute: typeof DashboardHostingRoute
   DashboardIntelligenceRoute: typeof DashboardIntelligenceRoute
   DashboardIntelligenceWizardRoute: typeof DashboardIntelligenceWizardRoute
+  DashboardPitchDecksRoute: typeof DashboardPitchDecksRoute
   DashboardPlatformCredentialsRoute: typeof DashboardPlatformCredentialsRoute
   DashboardProductsRoute: typeof DashboardProductsRoute
   DashboardProposalsRoute: typeof DashboardProposalsRoute
@@ -1025,6 +1050,7 @@ export interface RootRouteChildren {
   DashboardWebsiteWizardRoute: typeof DashboardWebsiteWizardRoute
   DashboardWebsitesRoute: typeof DashboardWebsitesRouteWithChildren
   HandoutTokenRoute: typeof HandoutTokenRoute
+  PitchDecksPublicTokenRoute: typeof PitchDecksPublicTokenRoute
   ProposalsPublicTokenRoute: typeof ProposalsPublicTokenRoute
   WebsiteApprovalTokenRoute: typeof WebsiteApprovalTokenRoute
   AuthIndexRoute: typeof AuthIndexRoute
@@ -1187,6 +1213,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProposalsPublicTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/pitch-decks/$publicToken': {
+      id: '/pitch-decks/$publicToken'
+      path: '/pitch-decks/$publicToken'
+      fullPath: '/pitch-decks/$publicToken'
+      preLoaderRoute: typeof PitchDecksPublicTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/legal/terms': {
       id: '/legal/terms'
       path: '/terms'
@@ -1346,6 +1379,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard/platform-credentials'
       fullPath: '/dashboard/platform-credentials'
       preLoaderRoute: typeof DashboardPlatformCredentialsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/pitch-decks': {
+      id: '/dashboard/pitch-decks'
+      path: '/dashboard/pitch-decks'
+      fullPath: '/dashboard/pitch-decks'
+      preLoaderRoute: typeof DashboardPitchDecksRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard/intelligence-wizard': {
@@ -1744,6 +1784,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardHostingRoute: DashboardHostingRoute,
   DashboardIntelligenceRoute: DashboardIntelligenceRoute,
   DashboardIntelligenceWizardRoute: DashboardIntelligenceWizardRoute,
+  DashboardPitchDecksRoute: DashboardPitchDecksRoute,
   DashboardPlatformCredentialsRoute: DashboardPlatformCredentialsRoute,
   DashboardProductsRoute: DashboardProductsRoute,
   DashboardProposalsRoute: DashboardProposalsRoute,
@@ -1760,6 +1801,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardWebsiteWizardRoute: DashboardWebsiteWizardRoute,
   DashboardWebsitesRoute: DashboardWebsitesRouteWithChildren,
   HandoutTokenRoute: HandoutTokenRoute,
+  PitchDecksPublicTokenRoute: PitchDecksPublicTokenRoute,
   ProposalsPublicTokenRoute: ProposalsPublicTokenRoute,
   WebsiteApprovalTokenRoute: WebsiteApprovalTokenRoute,
   AuthIndexRoute: AuthIndexRoute,

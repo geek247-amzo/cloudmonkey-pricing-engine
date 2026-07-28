@@ -11,6 +11,7 @@ import { isIP } from "node:net";
 const execAsync = promisify(exec);
 import postgres from "postgres";
 import { db } from "./db";
+import { STI_ELECTRICAL_PHASE_2_DECK } from "./lib/pitch-deck-content";
 import {
   aiAgent,
   agreementTemplate,
@@ -47,6 +48,7 @@ import {
   onboardingSubmission,
   proposal,
   proposalItem,
+  pitchDeck,
   registeredDomain,
   service,
   serviceCategory,
@@ -439,6 +441,26 @@ function websiteWizardReturnPath(planId: string | null | undefined) {
 
 function makeId(prefix: string) {
   return `${prefix}_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
+}
+
+async function ensureStiElectricalPitchDeck() {
+  const slug = "sti-electrical-phase-2";
+  const existing = await db.query.pitchDeck.findFirst({ where: eq(pitchDeck.slug, slug) });
+  if (existing) return existing;
+  const customer = await db.query.user.findFirst({ where: eq(user.email, "accounts@stielectrical.co.za") });
+  const stiLead = await db.query.lead.findFirst({ where: eq(lead.email, "kiril.kutchoukov@gmail.com") });
+  const [created] = await db.insert(pitchDeck).values({
+    id: makeId("deck"),
+    customerUserId: customer?.id ?? null,
+    leadId: stiLead?.id ?? null,
+    slug,
+    publicToken: slug,
+    title: "STI Electrical — Phase 2 ERP Proposal",
+    status: "published",
+    content: JSON.stringify(STI_ELECTRICAL_PHASE_2_DECK),
+    publishedAt: new Date(),
+  }).onConflictDoNothing({ target: pitchDeck.slug }).returning();
+  return created ?? (await db.query.pitchDeck.findFirst({ where: eq(pitchDeck.slug, slug) }));
 }
 
 function sha256(value: string) {
@@ -10691,6 +10713,24 @@ echo "CloudMonkey agent installed."
           comments: ticket.comments.filter((comment) => !comment.isInternal),
         })),
       );
+    }
+
+    if (url.pathname.startsWith("/api/pitch-decks/")) {
+      const token = decodeURIComponent(url.pathname.split("/").filter(Boolean)[2] ?? "");
+      const row = token === "sti-electrical-phase-2"
+        ? await ensureStiElectricalPitchDeck()
+        : await db.query.pitchDeck.findFirst({ where: or(eq(pitchDeck.publicToken, token), eq(pitchDeck.slug, token)) });
+      if (!row || row.status !== "published") return json({ error: "Pitch deck not found" }, 404);
+      let content: unknown = null;
+      try { content = JSON.parse(row.content); } catch { return json({ error: "Pitch deck content is invalid" }, 500); }
+      return json({
+        id: row.id,
+        title: row.title,
+        status: row.status,
+        customerUserId: row.customerUserId,
+        publicToken: row.publicToken,
+        content,
+      });
     }
 
     if (url.pathname.startsWith("/api/proposals")) {

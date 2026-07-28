@@ -808,6 +808,21 @@ export const proposalItem = pgTable("proposal_item", {
   createdAt: timestamp("createdAt").notNull().defaultNow(),
 });
 
+export const pitchDeck = pgTable("pitch_deck", {
+  id: text("id").primaryKey(),
+  customerUserId: text("customerUserId").references(() => user.id),
+  leadId: text("leadId").references(() => lead.id),
+  createdByUserId: text("createdByUserId").references(() => user.id),
+  slug: text("slug").notNull().unique(),
+  publicToken: text("publicToken").notNull().unique(),
+  title: text("title").notNull(),
+  status: text("status").notNull().default("draft"),
+  content: text("content").notNull(),
+  publishedAt: timestamp("publishedAt"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+});
+
 export const website = pgTable("website", {
   id: text("id").primaryKey(),
   userId: text("userId")
@@ -2258,6 +2273,12 @@ export const proposalItemRelations = relations(proposalItem, ({ one }) => ({
     fields: [proposalItem.bundleId],
     references: [bundle.id],
   }),
+}));
+
+export const pitchDeckRelations = relations(pitchDeck, ({ one }) => ({
+  customer: one(user, { fields: [pitchDeck.customerUserId], references: [user.id] }),
+  lead: one(lead, { fields: [pitchDeck.leadId], references: [lead.id] }),
+  createdBy: one(user, { fields: [pitchDeck.createdByUserId], references: [user.id] }),
 }));
 
 export const websiteRelations = relations(website, ({ one, many }) => ({

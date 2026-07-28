@@ -35,6 +35,7 @@ import {
   microsoft365TenantScan,
   platformApiCredential,
   platformApiUsage,
+  pitchDeck,
   proposal,
   proposalItem,
   registeredDomain,
@@ -70,6 +71,7 @@ import {
   workspaceSettings,
   adminChatMessage,
 } from "../../db/schema";
+import { STI_ELECTRICAL_PHASE_2_DECK } from "../pitch-deck-content";
 import { PLATFORM_CREDENTIAL_STATUSES, PLATFORM_PROVIDERS } from "../platform-usage";
 
 function toCentsFromZarInput(value: unknown) {
@@ -1085,6 +1087,85 @@ export function createAdminHandlers(deps: AdminDeps) {
         message: `Proposal ${updated.proposalNumber ?? updated.id} voided`,
       });
       return deps.json(updated);
+    }
+
+    return deps.json({ error: "Method not allowed" }, 405);
+  }
+
+  async function handleAdminPitchDecks(request: Request): Promise<Response> {
+    const { session, response } = await deps.requireAdmin(request);
+    if (response) return response;
+    const url = new URL(request.url);
+    const parts = url.pathname.split("/").filter(Boolean);
+    const deckId = parts[3] ? decodeURIComponent(parts[3]) : null;
+    const action = parts[4];
+
+    if (request.method === "GET") {
+      const existingSti = await deps.db.query.pitchDeck.findFirst({ where: eq(pitchDeck.slug, "sti-electrical-phase-2") });
+      if (!existingSti) {
+        const customer = await deps.db.query.user.findFirst({ where: eq(user.email, "accounts@stielectrical.co.za") });
+        const stiLead = await deps.db.query.lead.findFirst({ where: eq(lead.email, "kiril.kutchoukov@gmail.com") });
+        await deps.db.insert(pitchDeck).values({
+          id: deps.makeId("deck"),
+          customerUserId: customer?.id ?? null,
+          leadId: stiLead?.id ?? null,
+          createdByUserId: session?.user?.id ?? null,
+          slug: "sti-electrical-phase-2",
+          publicToken: "sti-electrical-phase-2",
+          title: "STI Electrical — Phase 2 ERP Proposal",
+          status: "published",
+          content: JSON.stringify(STI_ELECTRICAL_PHASE_2_DECK),
+          publishedAt: new Date(),
+        }).onConflictDoNothing({ target: pitchDeck.slug });
+      }
+      const rows = await deps.db.query.pitchDeck.findMany({
+        orderBy: (row: any, { desc }: any) => [desc(row.updatedAt)],
+        with: { customer: true, lead: true, createdBy: true },
+      });
+      return deps.json(rows.map((row: any) => ({
+        ...row,
+        content: undefined,
+        publicUrl: `${url.origin}/pitch-decks/${encodeURIComponent(row.publicToken)}`,
+      })));
+    }
+
+    if (request.method === "POST" && !deckId) {
+      const body = await request.json().catch(() => ({}));
+      const slug = String(body.slug ?? "").trim() || "sti-electrical-phase-2";
+      const existing = await deps.db.query.pitchDeck.findFirst({ where: eq(pitchDeck.slug, slug) });
+      if (existing) return deps.json({ ...existing, content: undefined, publicUrl: `${url.origin}/pitch-decks/${existing.publicToken}` });
+      const customer = await deps.db.query.user.findFirst({ where: eq(user.email, "accounts@stielectrical.co.za") });
+      const stiLead = await deps.db.query.lead.findFirst({ where: eq(lead.email, "kiril.kutchoukov@gmail.com") });
+      const createdId = deps.makeId("deck");
+      const token = crypto.randomBytes(24).toString("base64url");
+      const [created] = await deps.db.insert(pitchDeck).values({
+        id: createdId,
+        customerUserId: customer?.id ?? null,
+        leadId: stiLead?.id ?? null,
+        createdByUserId: session?.user?.id ?? null,
+        slug,
+        publicToken: token,
+        title: String(body.title ?? "STI Electrical — Phase 2 ERP Proposal"),
+        status: body.status === "draft" ? "draft" : "published",
+        content: JSON.stringify(body.content ?? STI_ELECTRICAL_PHASE_2_DECK),
+        publishedAt: body.status === "draft" ? null : new Date(),
+      }).returning();
+      await deps.recordAudit({
+        actorUserId: session?.user?.id,
+        action: "pitch_deck.created",
+        entityType: "pitch_deck",
+        entityId: created.id,
+        message: `Created pitch deck ${created.title}`,
+        metadata: { slug, customerUserId: customer?.id ?? null },
+      });
+      return deps.json({ ...created, content: undefined, publicUrl: `${url.origin}/pitch-decks/${token}` }, 201);
+    }
+
+    if (deckId && action === "publish" && request.method === "POST") {
+      const [updated] = await deps.db.update(pitchDeck).set({ status: "published", publishedAt: new Date(), updatedAt: new Date() }).where(eq(pitchDeck.id, deckId)).returning();
+      if (!updated) return deps.json({ error: "Pitch deck not found" }, 404);
+      await deps.recordAudit({ actorUserId: session?.user?.id, action: "pitch_deck.published", entityType: "pitch_deck", entityId: deckId, message: `Published pitch deck ${updated.title}` });
+      return deps.json({ ...updated, content: undefined, publicUrl: `${url.origin}/pitch-decks/${updated.publicToken}` });
     }
 
     return deps.json({ error: "Method not allowed" }, 405);
@@ -2418,6 +2499,7 @@ export function createAdminHandlers(deps: AdminDeps) {
     if (url.pathname.startsWith("/api/admin/users")) return handleAdminUsers(request);
     if (url.pathname.startsWith("/api/admin/leads")) return handleAdminLeads(request);
     if (url.pathname.startsWith("/api/admin/proposals")) return handleAdminProposals(request);
+    if (url.pathname.startsWith("/api/admin/pitch-decks")) return handleAdminPitchDecks(request);
     if (url.pathname.startsWith("/api/admin/onboarding")) return handleAdminOnboarding(request);
     if (url.pathname.startsWith("/api/admin/assign-vultr") && request.method === "POST") {
       return handleAssignVultr(request);
@@ -2446,6 +2528,7 @@ export function createAdminHandlers(deps: AdminDeps) {
     handleAdminUsers,
     handleAdminLeads,
     handleAdminProposals,
+    handleAdminPitchDecks,
     handleAdminOnboarding,
     handleAssignVultr,
     handleAdminTickets,
