@@ -2531,6 +2531,40 @@ async function callRuntimeProvisioner<T>(
     body: compressedBody,
     signal: AbortSignal.timeout(timeoutMs),
   } as RequestInit;
+  if (compressedBody.length > 900) {
+    const chunkSize = 400;
+    const totalChunks = Math.ceil(compressedBody.length / chunkSize);
+    const uploadId = crypto.randomBytes(16).toString("hex");
+    let chunkResponse: Response | null = null;
+    for (let index = 0; index < totalChunks; index += 1) {
+      const chunkBody = JSON.stringify({
+        uploadId,
+        index,
+        totalChunks,
+        data: compressedBody.subarray(index * chunkSize, (index + 1) * chunkSize).toString("base64"),
+      });
+      const chunkSigned = signRuntimeRequest(provisionerSecret, "POST", "/deploy-chunk", chunkBody);
+      chunkResponse = await fetch(`${baseUrl}/deploy-chunk`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": String(Buffer.byteLength(chunkBody)),
+          "X-CM-Runtime-Id": runtime.id,
+          "X-CM-Timestamp": chunkSigned.timestamp,
+          "X-CM-Nonce": chunkSigned.nonce,
+          "X-CM-Signature": chunkSigned.signature,
+        },
+        body: chunkBody,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (!chunkResponse.ok) {
+        const text = await chunkResponse.text();
+        throw new Error(`Runtime provisioner /deploy-chunk failed: ${chunkResponse.status} ${text.slice(0, 800)}`);
+      }
+    }
+    const chunkText = await chunkResponse!.text();
+    return chunkText ? (JSON.parse(chunkText) as T) : ({} as T);
+  }
   let response: Response;
   try {
     response = await fetch(`${baseUrl}${pathname}`, requestInit);
