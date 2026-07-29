@@ -2519,7 +2519,6 @@ async function callRuntimeProvisioner<T>(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Connection: "close",
       "X-CM-Runtime-Id": runtime.id,
       "X-CM-Timestamp": signed.timestamp,
       "X-CM-Nonce": signed.nonce,
