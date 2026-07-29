@@ -2540,6 +2540,7 @@ async function callRuntimeProvisioner<T>(
       runtimeId: runtime.id,
       url: `${baseUrl}${pathname}`,
       bodyBytes: Buffer.byteLength(bodyText),
+      compressedBodyBytes: compressedBody.length,
       message: error?.message ?? String(error),
       cause: error?.cause?.message ?? error?.cause?.code ?? null,
     });
