@@ -2512,7 +2512,9 @@ async function callRuntimeProvisioner<T>(
   const baseUrl = runtime.provisionerUrl.replace(/\/+$/, "");
   const bodyText = JSON.stringify(body ?? {});
   const signed = signRuntimeRequest(provisionerSecret, "POST", pathname, bodyText);
-  const timeoutMs = pathname === "/deploy" ? 180_000 : 30_000;
+  // A first ecommerce deployment builds both Medusa and the storefront images
+  // on the runtime host; allow the remote build to finish before aborting.
+  const timeoutMs = pathname === "/deploy" ? 10 * 60_000 : 30_000;
   const requestInit = {
     method: "POST",
     headers: {
