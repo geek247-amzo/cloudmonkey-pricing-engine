@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ArrowLeft, ArrowRight, Check, Circle, ExternalLink, Menu, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
+import logo from "@/assets/cm-logo.png";
 import type { PitchDeckContent, PitchDeckSlide } from "@/lib/pitch-deck-content";
 
 export const Route = createFileRoute("/pitch-decks/$publicToken")({
@@ -89,58 +90,46 @@ function PitchDeckPage() {
           style={{ width: `${progress}%` }}
         />
       </div>
-      <header className="fixed inset-x-0 top-0 z-40 flex items-center justify-between px-5 py-5 sm:px-10">
-        <div className="flex items-center gap-3 text-sm font-bold tracking-wide">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#7445ff] text-xs">
-            CM
-          </div>
-          <span className="hidden sm:inline">CloudMonkey</span>
-          <span className="text-white/30">/</span>
-          <span className="max-w-[180px] truncate text-white/60">{deck.content.client}</span>
-        </div>
-        <button
-          type="button"
-          onClick={() => setMenuOpen(true)}
-          className="rounded-full border border-white/15 bg-white/8 p-3 text-white/80 transition hover:bg-white/15"
-          aria-label="Open slide overview"
-        >
-          <Menu className="h-5 w-5" />
-        </button>
-      </header>
+      <div className="fixed inset-x-0 top-0 z-40 flex justify-center px-5 py-5">
+        <img
+          src={logo}
+          alt="CloudMonkey"
+          className="h-12 w-12 drop-shadow-[0_8px_20px_rgba(116,69,255,.45)] sm:h-14 sm:w-14"
+        />
+      </div>
+      <button
+        type="button"
+        onClick={() => setMenuOpen(true)}
+        className="fixed right-5 top-5 z-40 rounded-full border border-white/15 bg-white/8 p-3 text-white/80 transition hover:bg-white/15 sm:right-10"
+        aria-label="Open slide overview"
+      >
+        <Menu className="h-5 w-5" />
+      </button>
 
-      <main className="mx-auto flex min-h-screen max-w-7xl items-center px-6 pb-28 pt-28 sm:px-12 lg:px-20">
+      <main className="mx-auto flex min-h-screen w-full max-w-[1600px] items-center px-8 pb-16 pt-28 sm:px-14 lg:px-24">
         <div className="w-full">
           <Slide slide={slide} index={active} total={slides.length} deck={deck.content} />
         </div>
       </main>
 
-      <footer className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-between border-t border-white/10 bg-[#070d23]/90 px-5 py-4 backdrop-blur sm:px-10">
-        <div className="text-xs text-white/45">
-          <span className="font-semibold text-white/75">{String(active + 1).padStart(2, "0")}</span>{" "}
-          / {String(slides.length).padStart(2, "0")} <span className="mx-2 text-white/20">·</span>{" "}
-          Use ← → or swipe through the proposal
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => go(active - 1)}
-            disabled={active === 0}
-            className="rounded-full border border-white/15 p-2.5 text-white/75 transition hover:bg-white/10 disabled:opacity-25"
-            aria-label="Previous slide"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => go(active + 1)}
-            disabled={active === slides.length - 1}
-            className="rounded-full bg-white p-2.5 text-[#17103b] transition hover:bg-white/85 disabled:opacity-25"
-            aria-label="Next slide"
-          >
-            <ArrowRight className="h-4 w-4" />
-          </button>
-        </div>
-      </footer>
+      <button
+        type="button"
+        onClick={() => go(active - 1)}
+        disabled={active === 0}
+        className="fixed left-3 top-1/2 z-40 -translate-y-1/2 rounded-full border border-white/15 bg-[#070d23]/70 p-3 text-white/75 backdrop-blur transition hover:bg-white/10 disabled:opacity-0 sm:left-8"
+        aria-label="Previous slide"
+      >
+        <ArrowLeft className="h-5 w-5" />
+      </button>
+      <button
+        type="button"
+        onClick={() => go(active + 1)}
+        disabled={active === slides.length - 1}
+        className="fixed right-3 top-1/2 z-40 -translate-y-1/2 rounded-full bg-white p-3 text-[#17103b] shadow-lg transition hover:bg-white/85 disabled:opacity-0 sm:right-8"
+        aria-label="Next slide"
+      >
+        <ArrowRight className="h-5 w-5" />
+      </button>
 
       {menuOpen && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-[#070d23]/98 p-6 sm:p-12">

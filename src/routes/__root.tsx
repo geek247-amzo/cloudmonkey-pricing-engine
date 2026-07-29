@@ -81,7 +81,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "CloudMonkey — Cloud, Business & AI in one platform" },
-      { name: "description", content: "CloudMonkey brings together cloud infrastructure, managed IT, and AI agents in one platform with a single invoice and dashboard." },
+      {
+        name: "description",
+        content:
+          "CloudMonkey brings together cloud infrastructure, managed IT, and AI agents in one platform with a single invoice and dashboard.",
+      },
       { name: "author", content: "CloudMonkey" },
       { property: "og:title", content: "CloudMonkey — One platform for cloud, business & AI" },
       { property: "og:description", content: "Cloud, managed IT and AI agents in one platform." },
@@ -97,7 +101,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "icon", type: "image/png", href: logo },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
-      { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap",
+      },
     ],
   }),
   shellComponent: RootShell,
@@ -157,11 +164,14 @@ function RootComponent() {
   });
   const isDashboardRoute = pathname.startsWith("/dashboard");
   const isAppRoute = pathname.startsWith("/auth") || isDashboardRoute;
+  const isPitchDeckRoute = pathname.startsWith("/pitch-decks/");
 
   return (
     <QueryClientProvider client={queryClient}>
       <CurrencyProvider>
-        {isDashboardRoute ? (
+        {isPitchDeckRoute ? (
+          <Outlet />
+        ) : isDashboardRoute ? (
           <DashboardShell>
             <Outlet />
           </DashboardShell>
@@ -174,7 +184,7 @@ function RootComponent() {
             {!isAppRoute && <Footer />}
           </div>
         )}
-        <GlobalChat />
+        {!isPitchDeckRoute && <GlobalChat />}
       </CurrencyProvider>
     </QueryClientProvider>
   );
