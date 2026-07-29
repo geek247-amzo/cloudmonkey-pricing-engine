@@ -8,6 +8,7 @@ import path from "path";
 import { exec } from "child_process";
 import { promisify } from "util";
 import { isIP } from "node:net";
+import { gzipSync } from "node:zlib";
 const execAsync = promisify(exec);
 import postgres from "postgres";
 import { db } from "./db";
@@ -2511,6 +2512,7 @@ async function callRuntimeProvisioner<T>(
   const provisionerSecret = decryptMaybeSecret(runtime.provisionerSecret);
   const baseUrl = runtime.provisionerUrl.replace(/\/+$/, "");
   const bodyText = JSON.stringify(body ?? {});
+  const compressedBody = gzipSync(Buffer.from(bodyText, "utf8"));
   const signed = signRuntimeRequest(provisionerSecret, "POST", pathname, bodyText);
   // A first ecommerce deployment builds both Medusa and the storefront images
   // on the runtime host; allow the remote build to finish before aborting.
@@ -2519,13 +2521,14 @@ async function callRuntimeProvisioner<T>(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Content-Length": String(Buffer.byteLength(bodyText)),
+      "Content-Encoding": "gzip",
+      "Content-Length": String(compressedBody.length),
       "X-CM-Runtime-Id": runtime.id,
       "X-CM-Timestamp": signed.timestamp,
       "X-CM-Nonce": signed.nonce,
       "X-CM-Signature": signed.signature,
     },
-    body: bodyText,
+    body: compressedBody,
     signal: AbortSignal.timeout(timeoutMs),
   } as RequestInit;
   let response: Response;
