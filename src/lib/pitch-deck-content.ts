@@ -19,377 +19,317 @@ export type PitchDeckContent = {
 };
 
 export const STI_ELECTRICAL_PHASE_2_DECK: PitchDeckContent = {
-  version: 1,
+  version: 2,
   client: "STI Electrical (Pty) Ltd",
-  preparedBy: "CloudMonkey — a trading division of H44S (Pty) Ltd T/A Geek247",
-  date: "28 July 2026",
+  preparedBy: "H44S (Pty) Ltd t/a CloudMonkey",
+  date: "29 July 2026",
   slides: [
     {
       id: "cover",
-      eyebrow: "Phase 2 ERP proposal · Business optimization retainer",
-      title: "From a validated ERP to an operationally visible business.",
+      eyebrow: "Confidential commercial proposal · STI-ONSITE-2026-07",
+      title: "On-site ERP enablement and technology optimisation.",
       subtitle:
-        "A transparent path to complete Phase 2, consolidate the technology stack, and give STI Electrical a system it can run independently.",
+        "An optional 70-hour on-site service bundle supporting the original Phase 2 close-out, live-data consolidation, user enablement and production-floor implementation.",
       metrics: [
-        { value: "R70,000", label: "proposed Phase 2 close-out" },
-        { value: "4 weeks", label: "on-site implementation window" },
-        { value: "R1,000/hr", label: "on-site rate" },
+        { value: "Option A", label: "Standard SLA completion · no additional professional-services fee" },
+        { value: "Option B", label: "Accelerated on-site enablement · 70 hours" },
+        { value: "29 Jul 2026", label: "Prepared for Kiril Kutchoukov and the STI Electrical management team" },
       ],
     },
     {
-      id: "why-now",
-      eyebrow: "The context",
-      title: "The ERP is validated. The remaining dependency is real operational data.",
-      body: "Phase 1 business analysis was completed and approved under the Master SLA & NDA signed 26 March 2026. Nexus ERP was built and tested against seed data: sales and quotations, workshop workflows, clients, suppliers, and invoice data were migrated and proven. The next step was always to use STI Electrical's real operational data.",
+      id: "executive-position",
+      eyebrow: "1 · Executive position",
+      title: "The original Phase 2 remains honoured. The on-site bundle is optional.",
+      body:
+        "STI Electrical has paid the full amount under the Master SLA. CloudMonkey remains committed to honouring the original Phase 2 deliverables. The R70,000 in Option B is not a second charge for those deliverables; it purchases a separate 70-hour embedded on-site service allocation requested to accelerate data consolidation, user enablement and production-floor implementation.",
       bullets: [
-        "Real asset data, financial data, and stock data are still required for the final operational rollout.",
-        "The original Phase 2 window has lapsed because the data dependency remained open; this is not presented as blame on either party.",
-        "The proposed on-site format turns that dependency into a practical working programme with evidence, job cards, and weekly close-offs.",
+        "Phase 1 was completed and signed off by STI Electrical staff and management.",
+        "Nexus ERP was configured, built, deployed and tested against approved workflows, using supplied operational information and seed data where live data was incomplete.",
+        "The principal remaining dependency is operational adoption using STI's live data, with access to data owners, production personnel and decision-makers.",
       ],
     },
     {
-      id: "outcome",
-      eyebrow: "What this closes",
-      title: "A working ERP, a clearer business, and an independent handover.",
+      id: "current-status",
+      eyebrow: "2 · Current delivery status",
+      title: "The platform is ready for the next stage: live-data validation and user adoption.",
       columns: [
         {
-          title: "Complete Phase 2",
-          body: "Finish the real-data implementation, security fixes, UAT, training, documentation, and go-live readiness.",
+          title: "Completed",
+          body: "The analysis and core application work are in place.",
+          bullets: [
+            "Phase 1 completed and signed off",
+            "ERP built, deployed and tested",
+            "Approved workflows configured",
+          ],
           accent: "violet",
         },
         {
-          title: "See the whole operation",
-          body: "Audit the current technology stack, plant and machinery, workflows, redundancies, gaps, and consolidation opportunities.",
+          title: "Data available",
+          body: "Information supplied by STI has been migrated where available.",
+          bullets: [
+            "Clients",
+            "Suppliers",
+            "Invoice information",
+            "Seed data for incomplete live-data areas",
+          ],
           accent: "cyan",
         },
         {
-          title: "Leave a fair exit",
-          body: "STI Electrical owns the configured outputs and receives documentation and knowledge transfer to operate independently or use another provider.",
+          title: "Still required",
+          body: "The remaining work depends on reliable live data and participation.",
+          bullets: [
+            "Assets",
+            "Financial information",
+            "Stock/inventory",
+            "User participation and formal UAT",
+          ],
           accent: "amber",
         },
       ],
     },
     {
-      id: "scope",
-      eyebrow: "Proposed scope",
-      title: "The work goes beyond an ERP screen — but the boundaries stay visible.",
-      bullets: [
-        "Complete remaining ERP data imports and consolidation across clients, suppliers, invoices, assets, financials, and stock.",
-        "Fix identified systems and security issues and validate real user workflows across sales, workshop, procurement, and finance.",
-        "Business technology audit: tools in use, overlaps, gaps, redundant costs, and a centralised data/system architecture recommendation.",
-        "Plant and machinery audit to establish the asset register and create an evidence base for future improvements.",
-        "IoT readiness verification only at this stage; implementation, hardware, and future automation are separately scoped under the SLA exclusions.",
-        "AI learning and owner dashboards/insights are proposed as a layer on top of consolidated ERP data, subject to data quality and agreed scope.",
+      id: "routes",
+      eyebrow: "3 · Delivery options",
+      title: "Two routes are available. The original Phase 2 deliverables remain honoured under both.",
+      columns: [
+        {
+          title: "Option A · Standard SLA completion",
+          body: "No additional professional-services fee for the original Phase 2 deliverables.",
+          bullets: [
+            "STI compiles, cleans and supplies data in agreed templates",
+            "Scheduled remote sessions and planned implementation touchpoints",
+            "Timing depends on data readiness and user availability",
+            "No dedicated daily on-site resource allocation",
+          ],
+          accent: "cyan",
+        },
+        {
+          title: "Option B · Accelerated on-site enablement",
+          body: "R70,000 for 70 on-site hours at R1,000 per hour at STI's Johannesburg manufacturing facility.",
+          bullets: [
+            "CloudMonkey works directly with data owners and users",
+            "Dedicated production-floor sessions",
+            "Barcode/QR workflow implementation within the defined scope",
+            "Target four-week programme, subject to readiness",
+          ],
+          accent: "violet",
+        },
       ],
+      body:
+        "Option B is an acceleration service, not a replacement for STI's rights under the Master SLA. Purchased hours are first allocated to ERP close-out, live-data consolidation, user enablement and the agreed barcode/QR scope.",
     },
     {
       id: "option-a",
-      eyebrow: "Commercial option A",
-      title: "On-site hourly delivery with job cards",
-      subtitle:
-        "R1,000 per hour · 3–4 hours per day · Monday to Friday · Johannesburg manufacturing plant",
-      columns: [
-        {
-          title: "How it works",
-          body: "Only time physically on-site is billed. Every session closes with a job card showing time, work completed, outcomes, and next actions.",
-          bullets: [
-            "Target: minimum 3 hours/day",
-            "Approximately R3,000/day or R60,000/month at 20 working days",
-            "Additional time is requested and billed at R1,000/hour",
-          ],
-        },
-        {
-          title: "Advantages",
-          body: "The lowest-commitment opening path and easiest to scale up or down as the operational need becomes clearer.",
-          bullets: [
-            "Pay for time delivered",
-            "Tangible, auditable work record",
-            "Lower initial approval barrier",
-            "ERP and broader optimisation time remain visible",
-          ],
-        },
-        {
-          title: "Trade-offs",
-          body: "Income and availability vary with attendance, and daily time tracking and invoicing remain part of the operating model.",
-          bullets: [
-            "Variable monthly cost",
-            "Efficiency can reduce billable hours",
-            "Hours may be negotiated down after stabilisation",
-          ],
-        },
-      ],
-    },
-    {
-      id: "option-b",
-      eyebrow: "Commercial option B",
-      title: "Fixed monthly technology optimisation retainer",
-      subtitle:
-        "Indicative range: R55,000–R60,000 per month, with a written scope boundary and review point",
-      columns: [
-        {
-          title: "How it works",
-          body: "CloudMonkey operates as an outsourced technology lead / fractional CTO with a defined monthly service boundary and regular review.",
-          bullets: [
-            "Predictable monthly cost",
-            "No daily time-tracking friction",
-            "Rewards efficient delivery",
-            "Best reviewed after trust and baseline scope are established",
-          ],
-        },
-        {
-          title: "Advantages",
-          body: "A stronger long-term operating relationship with predictable MRR and a single accountable technology partner.",
-          bullets: [
-            "Stable planning for STI",
-            "Stable recurring revenue model",
-            "Supports ongoing optimisation and governance",
-          ],
-        },
-        {
-          title: "Trade-offs",
-          body: "A fixed fee must not become an unlimited promise. Scope, hours or outcomes, exclusions, and a 60–90 day review must be written clearly.",
-          bullets: [
-            "Higher approval hurdle",
-            "Scope creep risk",
-            "Capacity must be actively managed",
-          ],
-        },
-      ],
-    },
-    {
-      id: "option-c",
-      eyebrow: "Alternative path",
-      title: "Self-implementation with remote CloudMonkey backend support",
-      subtitle: "CloudMonkey Build plan: R4,999 per month",
-      body: "If STI Electrical prefers to implement internally and only wants CloudMonkey for backend and remote support, the engagement can move to the Build plan. This is a lower-commitment alternative to the on-site Phase 2 close-out and retainer model.",
+      eyebrow: "4 · Option A",
+      title: "Complete the original Phase 2 through a structured, data-ready process.",
+      body:
+        "Under Option A, CloudMonkey completes the outstanding original Phase 2 deliverables without an additional professional-services fee once STI provides the required live data, appoints responsible data owners and makes the relevant users available.",
       bullets: [
-        "No on-site component and no R70,000 milestone project fee.",
-        "CloudMonkey completes the remaining agreed ERP service remotely, within the selected Build plan and service boundaries.",
-        "STI Electrical retains responsibility for locating data, coordinating internal users, and completing operational adoption.",
-        "This route is honest about the trade-off: lower cost and commitment, but slower access to on-site operational discovery and process embedding.",
+        "STI provides complete asset, financial, stock, user and production information in agreed templates.",
+        "STI assigns data owners and an authorised decision-maker.",
+        "Users attend scheduled configuration, validation, training and UAT sessions.",
+        "CloudMonkey completes configuration, testing, training, handover and the agreed remedy process.",
+        "Dedicated daily on-site attendance, barcode/QR change scope and broader technology assessments are excluded from this route.",
       ],
     },
     {
-      id: "phase-2-commercial",
-      eyebrow: "Recommended Phase 2 close-out structure",
-      title: "R70,000 total, tied to verified close-offs rather than calendar promises.",
-      metrics: [
-        { value: "R35,000", label: "50% upfront · start and data foundation" },
-        { value: "R17,500", label: "25% · Week 3 close-off" },
-        { value: "R17,500", label: "25% · Week 4 acceptance" },
-      ],
-      body: "The estimate is approximately 70 on-site hours over four weeks. The payment schedule is milestone-based: the first payment starts the engagement, the second follows the Week 3 close-off, and the final payment follows documented UAT, training, and handover acceptance at Week 4.",
-      bullets: [
-        "The R1,000 rate covers travel to the Johannesburg manufacturing plant only; travel elsewhere is quoted separately.",
-        "The Phase 2 fee completes the core build and handover. It does not require STI Electrical to buy a later retainer.",
-      ],
-    },
-    {
-      id: "plan",
-      eyebrow: "Delivery plan",
-      title: "Four weeks from data dependency to operational handover.",
-      gantt: [
-        {
-          label: "Data, asset register & IT inventory",
-          weeks: [1, 1],
-          detail: "Locate and import missing data; open plant and stack audits.",
-        },
-        {
-          label: "Consolidation, security & audit close-out",
-          weeks: [2, 2],
-          detail:
-            "Real data across modules; fix known issues; complete audits; assess IoT readiness.",
-        },
-        {
-          label: "Process implementation & validation",
-          weeks: [3, 3],
-          detail:
-            "Embed workflow changes, validate real operations, document proposed layouts, deliver IoT readiness report.",
-        },
-        {
-          label: "Training, UAT & handover",
-          weeks: [4, 4],
-          detail:
-            "Train users, go-live checklist, documentation, access handover, signed acceptance.",
-        },
-        {
-          label: "Optional CloudMonkey retainer",
-          weeks: [5, 8],
-          detail:
-            "Only if STI Electrical elects to continue after Phase 2; monthly hour bundle or agreed fixed retainer.",
-        },
-      ],
-      bullets: [
-        "Every on-site day closes with a job card: hours, work completed, outcomes, evidence, and next actions.",
-        "Weekly close-offs are decision points. If required data is still unavailable, the impact is recorded rather than hidden.",
-      ],
-    },
-    {
-      id: "week-detail",
-      eyebrow: "Milestone detail",
-      title: "What each close-off means in practical terms",
+      id: "option-b-priority",
+      eyebrow: "5 · Option B",
+      title: "Buy speed, proximity and embedded enablement—not the same Phase 2 twice.",
+      subtitle: "70 on-site hours · R70,000 maximum bundle value · R1,000 per on-site hour",
       columns: [
         {
-          title: "Week 1",
-          body: "A documented data capture plan is in motion.",
+          title: "Priority 1",
+          body: "Hours are first used for ERP close-out and production-floor enablement.",
           bullets: [
-            "Assets register drafted",
-            "IT stack inventory started",
-            "Data captured vs outstanding visible",
+            "Live-data preparation and consolidation",
+            "Reconciliation against source records",
+            "Real-user workflow validation",
+            "Access, training and UAT preparation",
+            "Job card after every session",
           ],
+          accent: "violet",
         },
         {
-          title: "Week 2",
-          body: "The ERP reflects consolidated real data and known issues are closed or logged.",
+          title: "Production-floor scope",
+          body: "The agreed barcode/QR scope turns traceability requirements into a tested Nexus workflow.",
           bullets: [
-            "Module consolidation",
-            "Security fixes",
-            "IT and plant audits complete",
-            "IoT readiness assessment started",
+            "Mother coil to slit coil, cropping and final assembly stages",
+            "Identifiers and scanning steps",
+            "Material movement, loss and stage timing",
+            "Floor-level user testing and training",
           ],
+          accent: "cyan",
         },
         {
-          title: "Week 3",
-          body: "Users begin operating improved processes against real workflows.",
+          title: "Priority 2",
+          body: "Only if hours remain, or if STI approves additional hours in writing.",
           bullets: [
-            "Sales/workshop/procurement support",
-            "Layout evidence",
-            "User-level validation",
-            "IoT readiness report",
+            "IT and software stack inventory",
+            "Plant and machinery baseline",
+            "Current versus proposed process flow",
+            "IoT readiness assessment and recommendations",
           ],
-        },
-        {
-          title: "Week 4",
-          body: "STI Electrical can run the platform independently.",
-          bullets: [
-            "Training",
-            "Go-live readiness",
-            "Documentation and access handover",
-            "Signed UAT acceptance",
-          ],
-        },
-      ],
-    },
-    {
-      id: "infrastructure",
-      eyebrow: "Separate infrastructure cost",
-      title: "ERP hosting is transparent and separate from on-site work.",
-      body: "The ERP is already deployed to cloud infrastructure. Server, backups, SSL, monitoring, security, and restore support are infrastructure services, not on-site consulting time. Once the final hosting footprint is confirmed, STI Electrical can select the appropriate Managed Cloud plan.",
-      columns: [
-        {
-          title: "Managed Standard",
-          body: "R1,450/month · setup R4,250",
-          bullets: [
-            "Managed hosting/VPS",
-            "SSL and DNS",
-            "Automated backups",
-            "Uptime monitoring",
-            "Standard support",
-          ],
-        },
-        {
-          title: "Managed Business",
-          body: "R2,600/month · setup R7,000",
-          bullets: [
-            "Everything in Standard",
-            "Performance tuning",
-            "Database support",
-            "Security updates",
-            "Priority support",
-          ],
-        },
-        {
-          title: "Managed Enterprise",
-          body: "R4,750/month · setup R12,500",
-          bullets: [
-            "Everything in Business",
-            "Advanced monitoring",
-            "Restore testing",
-            "Scaling support",
-            "Architecture reviews",
-          ],
+          accent: "amber",
         },
       ],
     },
     {
       id: "boundaries",
-      eyebrow: "Full truth and openness",
-      title: "What is included, what depends on STI, and what is not being promised.",
+      eyebrow: "6 · Boundaries and responsibilities",
+      title: "The proposal is deliberately specific about what is—and is not—in the bundle.",
       columns: [
         {
-          title: "Included in Phase 2",
-          body: "ERP completion, real-data consolidation, security fixes, process validation, training, documentation, UAT, and handover.",
+          title: "STI provides",
+          body: "Safe access, systems access, people and reliable source information.",
           bullets: [
-            "Job cards and weekly close-offs",
-            "Technology and plant audits",
-            "IoT readiness assessment",
+            "Finance, operations, production and management availability",
+            "Data owners and one authorised decision-maker",
+            "Timely review of job cards, decisions and outputs",
+            "Hardware and third-party procurement where required",
           ],
-        },
-        {
-          title: "STI dependencies",
-          body: "Access to finance, stock, asset, and operational data; availability of users; timely decisions; and access to the plant and systems.",
-          bullets: [
-            "Data quality affects timing",
-            "Third-party systems may need cooperation",
-            "Hardware or service-provider costs are separate",
-          ],
-        },
-        {
-          title: "Not silently included",
-          body: "IoT implementation, new hardware, major custom integrations, travel outside the Johannesburg plant, and unlimited support are separately scoped or quoted.",
-          bullets: [
-            "No guaranteed business result",
-            "No hidden lock-in",
-            "No requirement to continue after handover",
-          ],
-        },
-      ],
-    },
-    {
-      id: "after-phase-2",
-      eyebrow: "Optional transition",
-      title: "After Week 4, STI Electrical decides what happens next.",
-      body: "If the core ERP is accepted, STI Electrical can operate independently. If continued support is valuable, the relationship can transition to a 10- or 20-hour monthly bundle, additional on-site time at R1,000/hour, or a defined fixed retainer. A six-month agreement can receive a 10% monthly discount and can be expanded across related STI ventures by mutual agreement.",
-      bullets: [
-        "The retainer can cover ongoing optimisation, layout/process work, barcode and scanning implementation, and access to service providers at cost.",
-        "CloudMonkey maintenance and infrastructure plans remain separate from consulting hours.",
-        "There is no automatic continuation and no Phase 2 dependency on accepting a retainer.",
-      ],
-    },
-    {
-      id: "decision",
-      eyebrow: "Decision point",
-      title: "Choose the operating model that fits STI Electrical now.",
-      columns: [
-        {
-          title: "A · On-site close-out",
-          body: "R70,000 over four weeks, milestone-billed, job-card backed, then an optional retainer.",
-          accent: "violet",
-        },
-        {
-          title: "B · Defined monthly retainer",
-          body: "Approximately R55,000–R60,000/month with a written boundary and review point.",
           accent: "cyan",
         },
         {
-          title: "C · Self-implementation",
-          body: "R4,999/month Build plan with remote CloudMonkey backend support and no on-site close-out fee.",
+          title: "Excluded",
+          body: "Costs and work outside the defined 70-hour service are not silently absorbed.",
+          bullets: [
+            "Scanners, printers, tablets, labels and consumables",
+            "Wi-Fi, networking, electrical work and installation",
+            "Machinery, PLC, sensor and advanced IoT integration",
+            "AI, predictive systems, bespoke dashboards and custom automation",
+            "Third-party licences and service-provider charges",
+          ],
+          accent: "amber",
+        },
+        {
+          title: "Control point",
+          body: "No work beyond the purchased bundle without STI's prior written approval.",
+          bullets: [
+            "Only physically delivered on-site hours are deducted unless approved otherwise",
+            "Minimum on-site session: three hours",
+            "Job cards submitted after each session",
+            "Bundle intended for use within 60 calendar days",
+          ],
+          accent: "violet",
+        },
+      ],
+    },
+    {
+      id: "plan",
+      eyebrow: "7 · Indicative four-week plan",
+      title: "A practical sequence from data and floor foundation to UAT and handover.",
+      gantt: [
+        {
+          label: "Data and floor foundation",
+          weeks: [1, 1],
+          detail: "Confirm data owners; consolidate assets, financials and stock; confirm production stages and barcode/QR requirements.",
+        },
+        {
+          label: "Consolidation and configuration",
+          weeks: [2, 2],
+          detail: "Import and validate live data; complete pre-production hardening; configure production tracking and scanning steps.",
+        },
+        {
+          label: "Operational validation",
+          weeks: [3, 3],
+          detail: "Test real workflows; validate traceability; correct configuration defects; begin training.",
+        },
+        {
+          label: "Training and close-out",
+          weeks: [4, 4],
+          detail: "Complete training; prepare handover; run UAT and the readiness walkthrough.",
+        },
+      ],
+      bullets: [
+        "Week 1 evidence: data register, issue log and approved implementation sequence.",
+        "Week 2 evidence: validated data set, configuration record and security-hardening checklist.",
+        "Week 3 evidence: user-test evidence, job cards and documented outstanding items.",
+        "Week 4 evidence: training record, handover pack and UAT decision.",
+        "The sequence is indicative. Hours are controlled by the purchased bundle and job cards, not by the passage of calendar weeks.",
+      ],
+    },
+    {
+      id: "commercial",
+      eyebrow: "8 · Option B commercial terms",
+      title: "Release the on-site hours in three clear blocks.",
+      metrics: [
+        { value: "35 hours", label: "Engagement confirmation · R35,000 · reserves the initial block" },
+        { value: "17.5 hours", label: "After 35 logged hours · R17,500 · releases the next block" },
+        { value: "17.5 hours", label: "After 52.5 logged hours · R17,500 · releases the final block" },
+      ],
+      bullets: [
+        "The maximum bundle value is R70,000. A minimum on-site session of three hours applies.",
+        "Travel to STI Electrical's Johannesburg manufacturing facility is included; travel elsewhere is separately quoted.",
+        "Remote or administrative time is not deducted unless STI approves it in writing.",
+        "Additional hours require prior written approval at the agreed R1,000/hour rate.",
+        "Amounts are in South African rand; VAT, if applicable, will be shown on the tax invoice.",
+        "This proposal is valid for 14 calendar days from 29 July 2026.",
+      ],
+    },
+    {
+      id: "hosting-independence",
+      eyebrow: "9 · Hosting, ownership and handover",
+      title: "STI keeps the choice of where and how the completed system is operated.",
+      columns: [
+        {
+          title: "Self-hosted",
+          body: "STI operates the deployed implementation independently and assumes responsibility for infrastructure, backups, monitoring, security operations and ongoing support.",
+          accent: "cyan",
+        },
+        {
+          title: "CloudMonkey Managed Standard",
+          body: "From R1,450 per month, subject to final infrastructure confirmation.",
+          bullets: ["Managed hosting/VPS", "SSL and DNS", "Automated backups", "Uptime monitoring", "Standard support"],
+          accent: "violet",
+        },
+        {
+          title: "Ownership and exit",
+          body: "STI retains ownership of its data and configured system outputs. Handover includes documentation, configurations, access credentials, data exports and knowledge transfer required by the Master SLA.",
           accent: "amber",
         },
       ],
-      body: "Recommended opening: Option A is the lower-friction, lower-scope-risk path for closing the existing Phase 2 gap. Option B is the stronger long-term model once the baseline is established. Option C remains available if STI Electrical prefers to retain more internal implementation responsibility.",
+      body:
+        "The exact server specification, monthly charge, backup retention, support targets and any setup or migration charge will be confirmed in a separate hosting order before billing begins. Selecting Option B does not force future hosting, retainers or technology-assessment services.",
     },
     {
-      id: "next-steps",
-      eyebrow: "Next steps",
-      title: "If STI Electrical wants to proceed",
-      bullets: [
-        "Confirm the preferred commercial option and the decision-maker for UAT and weekly close-offs.",
-        "Confirm on-site days, plant access, user availability, and the source systems for assets, finance, and stock.",
-        "Approve the written Phase 2 addendum under the existing 26 March 2026 Master SLA & NDA.",
-        "Pay the 50% start milestone of R35,000; schedule Week 1 and begin data/foundation work.",
+      id: "decision",
+      eyebrow: "10 · Decision point",
+      title: "Choose the route that matches STI Electrical's readiness and preferred level of on-site support.",
+      columns: [
+        {
+          title: "Option A",
+          body: "Standard SLA completion with no additional professional-services fee.",
+          bullets: ["STI prepares and supplies data", "Scheduled sessions", "Timing follows readiness", "No dedicated daily on-site resource"],
+          accent: "cyan",
+        },
+        {
+          title: "Option B",
+          body: "Accelerated on-site enablement: 70 hours at R1,000/hour, maximum R70,000.",
+          bullets: ["First 35-hour block: R35,000", "Production-floor barcode/QR scope", "Job-card accountability", "Four-week target, subject to readiness"],
+          accent: "violet",
+        },
       ],
-      body: "This proposal is intended to make the decision clear, auditable, and reversible. Questions, requested changes, and a decision can be recorded through CloudMonkey alongside the shared deck.",
+      body:
+        "If Option A is selected, confirm the data-readiness checklist, responsible owners and session schedule. If Option B is selected, confirm the commencement date, on-site schedule and first 35-hour block. In either case, STI confirms its preferred hosting path before production go-live.",
+    },
+    {
+      id: "acceptance",
+      eyebrow: "11 · Acceptance",
+      title: "A clear decision, with the original agreement still protecting both parties.",
+      body:
+        "This proposal is an optional service addendum between the same contracting parties: H44S (Pty) Ltd t/a CloudMonkey and STI Electrical (Pty) Ltd. The Master SLA remains in force for the original Phase 2 deliverables and prevails if there is a conflict, except for the expressly accepted commercial and operational terms governing the new 70-hour bundle.",
+      bullets: [
+        "Select Option A or Option B.",
+        "Confirm the authorised decision-maker, data owners and access requirements.",
+        "For Option B, confirm the start date, on-site schedule and first 35-hour block.",
+        "Record the selected route, purchase order/reference and authorised signatures.",
+      ],
+      metrics: [
+        { value: "STI Electrical", label: "Authorised representative" },
+        { value: "Amrish Seunarain", label: "CEO / Programme Lead · H44S (Pty) Ltd t/a CloudMonkey" },
+        { value: "STI-ONSITE-2026-07", label: "Proposal reference · valid 14 calendar days" },
+      ],
     },
   ],
 };

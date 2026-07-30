@@ -8,7 +8,7 @@ import type { PitchDeckContent, PitchDeckSlide } from "@/lib/pitch-deck-content"
 export const Route = createFileRoute("/pitch-decks/$publicToken")({
   head: () => ({
     meta: [
-      { title: "STI Electrical — Phase 2 ERP Proposal | CloudMonkey" },
+      { title: "STI Electrical — On-site ERP Enablement | CloudMonkey" },
       {
         name: "description",
         content:

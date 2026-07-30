@@ -447,7 +447,22 @@ function makeId(prefix: string) {
 async function ensureStiElectricalPitchDeck() {
   const slug = "sti-electrical-phase-2";
   const existing = await db.query.pitchDeck.findFirst({ where: eq(pitchDeck.slug, slug) });
-  if (existing) return existing;
+  const content = JSON.stringify(STI_ELECTRICAL_PHASE_2_DECK);
+  if (existing) {
+    if (existing.content !== content || existing.title !== "STI Electrical — On-site ERP Enablement & Technology Optimisation") {
+      const [updated] = await db
+        .update(pitchDeck)
+        .set({
+          title: "STI Electrical — On-site ERP Enablement & Technology Optimisation",
+          content,
+          updatedAt: new Date(),
+        })
+        .where(eq(pitchDeck.id, existing.id))
+        .returning();
+      return updated ?? existing;
+    }
+    return existing;
+  }
   const customer = await db.query.user.findFirst({ where: eq(user.email, "accounts@stielectrical.co.za") });
   const stiLead = await db.query.lead.findFirst({ where: eq(lead.email, "kiril.kutchoukov@gmail.com") });
   const [created] = await db.insert(pitchDeck).values({
@@ -456,9 +471,9 @@ async function ensureStiElectricalPitchDeck() {
     leadId: stiLead?.id ?? null,
     slug,
     publicToken: slug,
-    title: "STI Electrical — Phase 2 ERP Proposal",
+    title: "STI Electrical — On-site ERP Enablement & Technology Optimisation",
     status: "published",
-    content: JSON.stringify(STI_ELECTRICAL_PHASE_2_DECK),
+    content,
     publishedAt: new Date(),
   }).onConflictDoNothing({ target: pitchDeck.slug }).returning();
   return created ?? (await db.query.pitchDeck.findFirst({ where: eq(pitchDeck.slug, slug) }));
