@@ -3537,6 +3537,7 @@ async function fetchMedusaProductsForWebsite(site: typeof website.$inferSelect) 
     title: product.title,
     slug: product.handle || product.slug || product.id,
     description: product.description,
+    image_url: product.thumbnail || product.image_url || null,
     sku: product.sku || product.variants?.[0]?.sku || null,
     status: product.status || "published",
     price: Number(product.price_amount ?? product.variants?.[0]?.prices?.[0]?.amount ?? 0),
@@ -3583,6 +3584,32 @@ async function createMedusaProductForWebsite(
   const text = await response.text();
   if (!response.ok)
     throw new Error(`Medusa product create failed: ${response.status} ${text.slice(0, 800)}`);
+  return text ? JSON.parse(text) : {};
+}
+
+async function updateMedusaProductForWebsite(
+  site: typeof website.$inferSelect,
+  productId: string,
+  body: z.infer<typeof storeProductCreateSchema>,
+) {
+  const baseUrl = site.temporaryDomain || site.primaryDomain;
+  if (!baseUrl) throw new Error("Website has no domain for Medusa API");
+  const response = await fetch(`https://${baseUrl}/api/cloudmonkey/admin/products/${encodeURIComponent(productId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      title: body.title,
+      description: body.description,
+      sku: body.sku,
+      price: body.price,
+      inventoryQuantity: body.inventoryQuantity,
+      image_url: body.imageUrl || null,
+      status: body.status === "archived" ? "draft" : body.status === "draft" ? "draft" : "published",
+    }),
+  });
+  const text = await response.text();
+  if (!response.ok)
+    throw new Error(`Medusa product update failed: ${response.status} ${text.slice(0, 800)}`);
   return text ? JSON.parse(text) : {};
 }
 
@@ -8858,6 +8885,7 @@ const storeProductCreateSchema = z.object({
   title: z.string().min(2).max(160),
   description: z.string().max(2000).optional().default(""),
   sku: z.string().max(80).optional().default(""),
+  imageUrl: z.string().max(8_000_000).optional().default(""),
   price: z.coerce.number().min(0).max(100000000).default(0),
   inventoryQuantity: z.coerce.number().int().min(0).max(1000000).default(0),
   trackInventory: z.boolean().optional().default(true),
@@ -8885,6 +8913,7 @@ const websiteHandlers = createWebsiteHandlers({
   sendN8nWebsiteDesignPreviews,
   getWebsiteDesignGenerationContext,
   createMedusaProductForWebsite,
+  updateMedusaProductForWebsite,
   storeProductCreateSchema,
   buildBasicWebsiteManifest,
   sendN8nBasicWebsiteBuild,

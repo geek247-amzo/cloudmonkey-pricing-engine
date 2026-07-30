@@ -11,6 +11,7 @@ import {
   Image,
   Loader2,
   PackagePlus,
+  Pencil,
   Plug,
   ReceiptText,
   Rocket,
@@ -53,11 +54,27 @@ function formatDate(value?: string | null) {
   }).format(new Date(value));
 }
 
+async function readImageValue(form: FormData) {
+  const file = form.get("imageFile");
+  if (file instanceof File && file.size > 0) {
+    if (!file.type.startsWith("image/")) throw new Error("Please choose an image file");
+    if (file.size > 6 * 1024 * 1024) throw new Error("Product images must be 6 MB or smaller");
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("Could not read product image"));
+      reader.readAsDataURL(file);
+    });
+  }
+  return String(form.get("imageUrl") ?? "").trim();
+}
+
 function WebsiteManagePage() {
   const { websiteId } = Route.useParams();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const queryClient = useQueryClient();
   const [showProductForm, setShowProductForm] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<any | null>(null);
   const { authReady, isAdmin } = useAdminAccess();
 
   const { data: site, isLoading } = useQuery({
@@ -80,6 +97,7 @@ function WebsiteManagePage() {
         sku: String(form.get("sku") ?? ""),
         price: Number(form.get("price") || 0),
         inventoryQuantity: Number(form.get("inventoryQuantity") || 0),
+        imageUrl: await readImageValue(form),
         status: String(form.get("status") ?? "active"),
         trackInventory: true,
       };
@@ -95,6 +113,35 @@ function WebsiteManagePage() {
     onSuccess: async () => {
       toast.success("Product added");
       setShowProductForm(false);
+      await queryClient.invalidateQueries({ queryKey: [isAdmin ? "admin" : "user", "websites", websiteId] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const updateProduct = useMutation({
+    mutationFn: async ({ productId, form }: { productId: string; form: FormData }) => {
+      const payload = {
+        title: String(form.get("title") ?? ""),
+        description: String(form.get("description") ?? ""),
+        sku: String(form.get("sku") ?? ""),
+        price: Number(form.get("price") || 0),
+        inventoryQuantity: Number(form.get("inventoryQuantity") || 0),
+        imageUrl: await readImageValue(form),
+        status: String(form.get("status") ?? "active"),
+        trackInventory: true,
+      };
+      const res = await fetch(`/api/user/websites/${websiteId}/products/${encodeURIComponent(productId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error ?? "Failed to update product");
+      return data;
+    },
+    onSuccess: async () => {
+      toast.success("Product updated");
+      setEditingProduct(null);
       await queryClient.invalidateQueries({ queryKey: [isAdmin ? "admin" : "user", "websites", websiteId] });
     },
     onError: (error: Error) => toast.error(error.message),
@@ -378,6 +425,12 @@ function WebsiteManagePage() {
                     <Label htmlFor="inventoryQuantity">Stock</Label>
                     <Input id="inventoryQuantity" name="inventoryQuantity" type="number" min="0" defaultValue="0" />
                   </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label htmlFor="imageUrl">Product image</Label>
+                    <Input id="imageUrl" name="imageUrl" type="text" placeholder="https://… or /ketiwe/assets/product.png" />
+                    <Input id="imageFile" name="imageFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
+                    <p className="text-xs text-muted-foreground">Use an image URL or upload an image. Uploaded images are stored with the Medusa product.</p>
+                  </div>
                   <input type="hidden" name="status" value="active" />
                   <div className="space-y-2 md:col-span-2">
                     <Label htmlFor="description">Description</Label>
@@ -395,6 +448,51 @@ function WebsiteManagePage() {
                 </form>
               )}
 
+              {editingProduct && (
+                <form
+                  className="grid gap-4 border-b border-border/60 bg-[#f6f8ff] p-5 md:grid-cols-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    updateProduct.mutate({ productId: editingProduct.id, form: new FormData(event.currentTarget) });
+                  }}
+                >
+                  <div className="md:col-span-2 flex items-center justify-between">
+                    <div className="font-semibold">Edit {editingProduct.title}</div>
+                    <Button type="button" variant="outline" className="rounded-xl" onClick={() => setEditingProduct(null)}>Cancel</Button>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-title">Product title</Label>
+                    <Input id="edit-title" name="title" required defaultValue={editingProduct.title} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-sku">SKU</Label>
+                    <Input id="edit-sku" name="sku" defaultValue={editingProduct.sku || editingProduct.variants?.[0]?.sku || ""} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-price">Price (ZAR)</Label>
+                    <Input id="edit-price" name="price" type="number" min="0" step="0.01" required defaultValue={((editingProduct.price || 0) / 100).toFixed(2)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-inventoryQuantity">Stock</Label>
+                    <Input id="edit-inventoryQuantity" name="inventoryQuantity" type="number" min="0" defaultValue={editingProduct.variants?.[0]?.inventoryQuantity ?? 0} />
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label htmlFor="edit-imageUrl">Product image</Label>
+                    <Input id="edit-imageUrl" name="imageUrl" type="text" defaultValue={editingProduct.image_url || ""} placeholder="https://… or /ketiwe/assets/product.png" />
+                    <Input id="edit-imageFile" name="imageFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
+                    <p className="text-xs text-muted-foreground">Upload a new image to replace the current image, or edit the image URL.</p>
+                  </div>
+                  <input type="hidden" name="description" value={editingProduct.description || ""} />
+                  <input type="hidden" name="status" value={editingProduct.status === "draft" ? "draft" : "active"} />
+                  <div className="md:col-span-2 flex justify-end">
+                    <Button type="submit" className="rounded-xl bg-[var(--ai)]" disabled={updateProduct.isPending}>
+                      {updateProduct.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
+                      Save changes
+                    </Button>
+                  </div>
+                </form>
+              )}
+
               {products.length === 0 ? (
                 <div className="p-10 text-center text-sm text-muted-foreground">
                   No products yet. Add your first product to start building the store catalogue.
@@ -405,10 +503,12 @@ function WebsiteManagePage() {
                     <thead className="border-b border-border/60 bg-muted/20 text-xs uppercase text-muted-foreground">
                       <tr>
                         <th className="px-5 py-3">Product</th>
+                        <th className="px-5 py-3">Image</th>
                         <th className="px-5 py-3">SKU</th>
                         <th className="px-5 py-3">Price</th>
                         <th className="px-5 py-3">Stock</th>
                         <th className="px-5 py-3">Status</th>
+                        <th className="px-5 py-3">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -420,11 +520,24 @@ function WebsiteManagePage() {
                               <div className="font-semibold text-[#07102c]">{product.title}</div>
                               <div className="max-w-lg truncate text-xs text-muted-foreground">{product.description || "No description"}</div>
                             </td>
+                            <td className="px-5 py-4">
+                              {product.image_url ? (
+                                <img src={product.image_url} alt="" className="h-12 w-12 rounded-lg border border-border/60 object-cover" />
+                              ) : (
+                                <span className="text-xs text-muted-foreground">No image</span>
+                              )}
+                            </td>
                             <td className="px-5 py-4 font-mono text-xs">{product.sku || variant?.sku || "-"}</td>
                             <td className="px-5 py-4 font-semibold">{money(product.price)}</td>
                             <td className="px-5 py-4">{variant?.inventoryQuantity ?? 0}</td>
                             <td className="px-5 py-4">
                               <Badge variant="outline" className="rounded-full capitalize">{product.status}</Badge>
+                            </td>
+                            <td className="px-5 py-4">
+                              <Button size="sm" variant="outline" className="rounded-xl" onClick={() => setEditingProduct(product)}>
+                                <Pencil className="h-3.5 w-3.5" />
+                                Edit
+                              </Button>
                             </td>
                           </tr>
                         );

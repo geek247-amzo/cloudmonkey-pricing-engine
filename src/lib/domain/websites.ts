@@ -61,6 +61,7 @@ export type WebsitesDeps = {
   sendN8nWebsiteDesignPreviews: (input: any) => Promise<any>;
   getWebsiteDesignGenerationContext: (siteType: string) => any;
   createMedusaProductForWebsite: (site: any, body: any) => Promise<any>;
+  updateMedusaProductForWebsite: (site: any, productId: string, body: any) => Promise<any>;
   storeProductCreateSchema: any;
   buildBasicWebsiteManifest: (site: any) => any;
   sendN8nBasicWebsiteBuild: (input: any) => Promise<any>;
@@ -996,6 +997,31 @@ export function createWebsiteHandlers(deps: WebsitesDeps) {
         });
 
         return deps.json({ ...createdProduct, variants: [createdVariant] }, 201);
+      } catch (error: any) {
+        return deps.json({ error: error.message, issues: error.issues }, error.status ?? 500);
+      }
+    }
+
+    if (subresource === "products" && parts[5] && request.method === "PATCH") {
+      try {
+        const detail = await deps.getUserWebsiteDetail(session.user.id, websiteId, actingAsAdmin);
+        if (!detail?.store) return deps.json({ error: "Website store not found" }, 404);
+        if (detail.siteType !== "ecommerce")
+          return deps.json({ error: "Products are only available for ecommerce stores" }, 400);
+        if (detail.containerStatus !== "running")
+          return deps.json({ error: "Website runtime is not running" }, 409);
+
+        const body = await deps.parseBody(request, deps.storeProductCreateSchema);
+        const updated = await deps.updateMedusaProductForWebsite(detail, decodeURIComponent(parts[5]), body);
+        await deps.recordAudit({
+          actorUserId: session.user.id,
+          action: "store.medusa_product.updated",
+          entityType: "website",
+          entityId: websiteId,
+          message: `${body.title} updated on ${detail.businessName || detail.domain} through Medusa`,
+          metadata: { websiteId, storeId: detail.store.id, productId: parts[5], engine: "medusa", actedOnBehalfOf: actingAsAdmin },
+        });
+        return deps.json(updated);
       } catch (error: any) {
         return deps.json({ error: error.message, issues: error.issues }, error.status ?? 500);
       }
