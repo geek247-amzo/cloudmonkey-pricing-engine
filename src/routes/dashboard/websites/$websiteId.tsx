@@ -93,7 +93,9 @@ function WebsiteManagePage() {
     mutationFn: async (form: FormData) => {
       const payload = {
         title: String(form.get("title") ?? ""),
-        description: String(form.get("description") ?? ""),
+        description: String(form.get("longDescription") ?? form.get("description") ?? ""),
+        shortDescription: String(form.get("shortDescription") ?? ""),
+        longDescription: String(form.get("longDescription") ?? form.get("description") ?? ""),
         sku: String(form.get("sku") ?? ""),
         price: Number(form.get("price") || 0),
         inventoryQuantity: Number(form.get("inventoryQuantity") || 0),
@@ -122,7 +124,9 @@ function WebsiteManagePage() {
     mutationFn: async ({ productId, form }: { productId: string; form: FormData }) => {
       const payload = {
         title: String(form.get("title") ?? ""),
-        description: String(form.get("description") ?? ""),
+        description: String(form.get("longDescription") ?? form.get("description") ?? ""),
+        shortDescription: String(form.get("shortDescription") ?? ""),
+        longDescription: String(form.get("longDescription") ?? form.get("description") ?? ""),
         sku: String(form.get("sku") ?? ""),
         price: Number(form.get("price") || 0),
         inventoryQuantity: Number(form.get("inventoryQuantity") || 0),
@@ -433,8 +437,12 @@ function WebsiteManagePage() {
                   </div>
                   <input type="hidden" name="status" value="active" />
                   <div className="space-y-2 md:col-span-2">
-                    <Label htmlFor="description">Description</Label>
-                    <Textarea id="description" name="description" rows={3} placeholder="Short product description" />
+                    <Label htmlFor="shortDescription">Short description</Label>
+                    <Textarea id="shortDescription" name="shortDescription" rows={2} maxLength={500} placeholder="A concise summary shown on product cards" />
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label htmlFor="longDescription">Long description</Label>
+                    <Textarea id="longDescription" name="longDescription" rows={5} maxLength={12000} placeholder="The full product description shown on the product page" />
                   </div>
                   <div className="md:col-span-2 flex justify-end gap-2">
                     <Button type="button" variant="outline" className="rounded-xl" onClick={() => setShowProductForm(false)}>
@@ -482,7 +490,14 @@ function WebsiteManagePage() {
                     <Input id="edit-imageFile" name="imageFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
                     <p className="text-xs text-muted-foreground">Upload a new image to replace the current image, or edit the image URL.</p>
                   </div>
-                  <input type="hidden" name="description" value={editingProduct.description || ""} />
+                  <div className="space-y-2 md:col-span-2">
+                    <Label htmlFor="edit-shortDescription">Short description</Label>
+                    <Textarea id="edit-shortDescription" name="shortDescription" rows={2} maxLength={500} defaultValue={editingProduct.shortDescription || editingProduct.short_description || editingProduct.description || ""} placeholder="A concise summary shown on product cards" />
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label htmlFor="edit-longDescription">Long description</Label>
+                    <Textarea id="edit-longDescription" name="longDescription" rows={5} maxLength={12000} defaultValue={editingProduct.longDescription || editingProduct.long_description || editingProduct.description || ""} placeholder="The full product description shown on the product page" />
+                  </div>
                   <input type="hidden" name="status" value={editingProduct.status === "draft" ? "draft" : "active"} />
                   <div className="md:col-span-2 flex justify-end">
                     <Button type="submit" className="rounded-xl bg-[var(--ai)]" disabled={updateProduct.isPending}>
@@ -518,7 +533,7 @@ function WebsiteManagePage() {
                           <tr key={product.id} className="border-b border-border/40 last:border-0">
                             <td className="px-5 py-4">
                               <div className="font-semibold text-[#07102c]">{product.title}</div>
-                              <div className="max-w-lg truncate text-xs text-muted-foreground">{product.description || "No description"}</div>
+                              <div className="max-w-lg truncate text-xs text-muted-foreground">{product.shortDescription || product.short_description || product.description || "No description"}</div>
                             </td>
                             <td className="px-5 py-4">
                               {product.image_url ? (
