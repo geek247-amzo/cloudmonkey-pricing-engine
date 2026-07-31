@@ -38,6 +38,7 @@ const deliverableSchema = z.object({
   status: z.enum(["planned", "in_progress", "ready", "approved"]).default("planned"),
 });
 const commentSchema = z.object({ body: z.string().min(1).max(5000), taskId: z.string().optional().nullable(), isInternal: z.boolean().default(false) });
+const noteSchema = z.object({ body: z.string().min(1).max(5000) });
 
 type ProjectDeps = {
   db: any;
@@ -179,7 +180,8 @@ export function createProjectHandlers(deps: ProjectDeps) {
           deps.db.select({ activity: deps.projectActivity, actor: deps.user }).from(deps.projectActivity).leftJoin(deps.user, eq(deps.projectActivity.actorUserId, deps.user.id)).where(eq(deps.projectActivity.projectId, projectId)).orderBy(desc(deps.projectActivity.createdAt)).limit(40),
           deps.db.select({ member: deps.projectMember, user: deps.user }).from(deps.projectMember).leftJoin(deps.user, eq(deps.projectMember.userId, deps.user.id)).where(eq(deps.projectMember.projectId, projectId)),
         ]);
-        return deps.json({ project: projectRow, tasks: tasks.map((r: any) => ({ ...r.task, assignee: r.assignee })), milestones, deliverables, comments: comments.map((r: any) => ({ ...r.comment, author: r.author })), activities: activities.map((r: any) => ({ ...r.activity, actor: r.actor })), members: members.map((r: any) => ({ ...r.member, user: r.user })) });
+        const formattedComments = comments.map((r: any) => ({ ...r.comment, author: r.author }));
+        return deps.json({ project: projectRow, tasks: tasks.map((r: any) => ({ ...r.task, assignee: r.assignee })), milestones, deliverables, comments: formattedComments.filter((item: any) => !item.isInternal), notes: formattedComments.filter((item: any) => item.isInternal), activities: activities.map((r: any) => ({ ...r.activity, actor: r.actor })), members: members.map((r: any) => ({ ...r.member, user: r.user })) });
       }
       if (request.method === "PATCH" && !resource) {
         const body = await deps.parseBody(request, projectUpdateSchema); const [updated] = await deps.db.update(deps.project).set({ ...body, targetDate: body.targetDate === undefined ? undefined : asDate(body.targetDate), updatedAt: new Date() }).where(eq(deps.project.id, projectId)).returning();
@@ -197,6 +199,8 @@ export function createProjectHandlers(deps: ProjectDeps) {
       if (resource === "milestones" && request.method === "POST") { const body = await deps.parseBody(request, milestoneSchema); const [row] = await deps.db.insert(deps.projectMilestone).values({ ...body, id: deps.makeId("milestone"), projectId, dueDate: asDate(body.dueDate), updatedAt: new Date() }).returning(); return deps.json(row, 201); }
       if (resource === "deliverables" && request.method === "POST") { const body = await deps.parseBody(request, deliverableSchema); const [row] = await deps.db.insert(deps.projectDeliverable).values({ ...body, id: deps.makeId("deliverable"), projectId, createdAt: new Date(), updatedAt: new Date() }).returning(); return deps.json(row, 201); }
       if (resource === "comments" && request.method === "POST") { const body = await deps.parseBody(request, commentSchema); const [comment] = await deps.db.insert(deps.projectComment).values({ ...body, id: deps.makeId("comment"), projectId, authorUserId: access.session?.user.id }).returning(); await deps.db.insert(deps.projectActivity).values({ id: deps.makeId("activity"), projectId, actorUserId: access.session?.user.id, action: "project.comment_added", message: "A project comment was added.", metadata: { commentId: comment.id } }); if (!body.isInternal) await notifyCustomer(deps, projectRow, "New update on your CloudMonkey project", body.body, "project_comment"); return deps.json(comment, 201); }
+      if (resource === "notes" && request.method === "POST" && !resourceId) { const body = await deps.parseBody(request, noteSchema); const [note] = await deps.db.insert(deps.projectComment).values({ id: deps.makeId("note"), projectId, authorUserId: access.session?.user.id, body: body.body, isInternal: true }).returning(); await deps.db.insert(deps.projectActivity).values({ id: deps.makeId("activity"), projectId, actorUserId: access.session?.user.id, action: "project.internal_note_added", message: "An internal project note was added.", metadata: { noteId: note.id } }); return deps.json(note, 201); }
+      if (resource === "notes" && resourceId && request.method === "DELETE") { const [note] = await deps.db.delete(deps.projectComment).where(and(eq(deps.projectComment.id, resourceId), eq(deps.projectComment.projectId, projectId), eq(deps.projectComment.isInternal, true))).returning(); if (!note) return deps.json({ error: "Note not found" }, 404); await deps.db.insert(deps.projectActivity).values({ id: deps.makeId("activity"), projectId, actorUserId: access.session?.user.id, action: "project.internal_note_deleted", message: "An internal project note was deleted.", metadata: { noteId: resourceId } }); return deps.json({ ok: true }); }
       return deps.json({ error: "Method not allowed" }, 405);
     } catch (error: any) { return deps.json({ error: error.message, issues: error.issues }, error.status ?? 500); }
   }
