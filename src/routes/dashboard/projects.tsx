@@ -1,0 +1,75 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { CheckCircle2, CircleDot, ClipboardList, KanbanSquare, Loader2, MessageSquare, Plus, Target, UserRound } from "lucide-react";
+import { useMemo, useState } from "react";
+import { toast } from "sonner";
+
+import { PageHeader } from "@/components/dashboard/PageHeader";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { useAdminAccess } from "@/hooks/use-admin-access";
+
+export const Route = createFileRoute("/dashboard/projects")({
+  head: () => ({ meta: [{ title: "Project Management - CloudMonkey Dashboard" }] }),
+  component: ProjectsPage,
+});
+
+async function requestJson<T = any>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, init);
+  const data = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(data?.error || "Request failed");
+  return data;
+}
+
+const columns = [
+  ["backlog", "Backlog"], ["todo", "To do"], ["in_progress", "In progress"], ["blocked", "Blocked"], ["review", "Review"], ["done", "Done"],
+] as const;
+
+function ProjectsPage() {
+  const { authReady, isAdmin } = useAdminAccess();
+  const queryClient = useQueryClient();
+  const [selectedId, setSelectedId] = useState("");
+  const [view, setView] = useState<"kanban" | "list">("kanban");
+  const [showTaskForm, setShowTaskForm] = useState(false);
+  const [comment, setComment] = useState("");
+
+  const projects = useQuery({ queryKey: ["admin", "projects"], queryFn: () => requestJson<any[]>("/api/admin/projects"), enabled: authReady && isAdmin });
+  const selected = selectedId || projects.data?.[0]?.id || "";
+  const detail = useQuery({ queryKey: ["admin", "projects", selected], queryFn: () => requestJson<any>(`/api/admin/projects/${selected}`), enabled: authReady && isAdmin && !!selected });
+  const users = useQuery({ queryKey: ["admin", "users", "project-members"], queryFn: () => requestJson<any[]>("/api/admin/users"), enabled: authReady && isAdmin });
+  const project = detail.data?.project;
+  const tasks = detail.data?.tasks || [];
+  const admins = (users.data || []).filter((user: any) => ["admin", "owner", "support"].includes(user.role));
+
+  const refresh = () => Promise.all([queryClient.invalidateQueries({ queryKey: ["admin", "projects"] }), queryClient.invalidateQueries({ queryKey: ["admin", "projects", selected] })]);
+  const updateProject = useMutation({ mutationFn: (body: any) => requestJson(`/api/admin/projects/${selected}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }), onSuccess: refresh, onError: (error: Error) => toast.error(error.message) });
+  const updateTask = useMutation({ mutationFn: ({ taskId, body }: any) => requestJson(`/api/admin/projects/${selected}/tasks/${taskId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }), onSuccess: refresh, onError: (error: Error) => toast.error(error.message) });
+  const addTask = useMutation({ mutationFn: (body: any) => requestJson(`/api/admin/projects/${selected}/tasks`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }), onSuccess: async () => { setShowTaskForm(false); toast.success("Task added"); await refresh(); }, onError: (error: Error) => toast.error(error.message) });
+  const addComment = useMutation({ mutationFn: () => requestJson(`/api/admin/projects/${selected}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ body: comment, isInternal: false }) }), onSuccess: async () => { setComment(""); toast.success("Customer notified"); await refresh(); }, onError: (error: Error) => toast.error(error.message) });
+
+  const counts = useMemo(() => columns.map(([status]) => [status, tasks.filter((task: any) => task.status === status).length] as const), [tasks]);
+  if (!authReady || !isAdmin) return <div className="p-8 text-center">Checking permissions...</div>;
+
+  return <div className="space-y-6">
+    <PageHeader eyebrow="Administration" title="Project management" subtitle="Turn signed setup and development services into accountable delivery: tasks, milestones, deliverables, ownership and customer-visible progress." actions={<div className="flex gap-2"><Button variant={view === "kanban" ? "default" : "outline"} className="rounded-xl" onClick={() => setView("kanban")}><KanbanSquare className="h-4 w-4" />Kanban</Button><Button variant={view === "list" ? "default" : "outline"} className="rounded-xl" onClick={() => setView("list")}><ClipboardList className="h-4 w-4" />List</Button></div>} />
+    <div className="grid gap-4 md:grid-cols-4"><Metric label="Projects" value={projects.data?.length || 0} icon={Target} /><Metric label="Active" value={projects.data?.filter((item: any) => item.status === "active").length || 0} icon={CircleDot} /><Metric label="Open tasks" value={tasks.filter((item: any) => item.status !== "done").length} icon={ClipboardList} /><Metric label="Done tasks" value={tasks.filter((item: any) => item.status === "done").length} icon={CheckCircle2} /></div>
+    <div className="grid gap-6 xl:grid-cols-[280px_1fr]">
+      <Card><CardHeader><CardTitle className="text-base">Client projects</CardTitle></CardHeader><CardContent className="space-y-2">{projects.isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : projects.data?.length ? projects.data.map((item: any) => <button key={item.id} type="button" onClick={() => setSelectedId(item.id)} className={`w-full rounded-xl border p-3 text-left transition ${selected === item.id ? "border-[var(--ai)] bg-[var(--ai)]/5" : "border-border/70 hover:bg-muted/40"}`}><div className="font-semibold">{item.name}</div><div className="mt-1 text-xs text-muted-foreground">{item.customer?.name || item.customer?.email}</div><div className="mt-2 flex items-center justify-between"><Badge variant="outline" className="capitalize">{String(item.status).replaceAll("_", " ")}</Badge><span className="text-xs text-muted-foreground">{item.serviceName}</span></div></button>) : <p className="text-sm text-muted-foreground">Projects appear here when eligible setup or development services are signed.</p>}</CardContent></Card>
+      <div className="space-y-6">{!project ? <Card><CardContent className="p-10 text-center text-muted-foreground">Select a project to manage delivery.</CardContent></Card> : <>
+        <Card><CardContent className="space-y-4 p-5"><div className="flex flex-wrap items-start justify-between gap-4"><div><div className="flex items-center gap-2"><h2 className="text-xl font-bold">{project.name}</h2><Badge className="capitalize">{String(project.status).replaceAll("_", " ")}</Badge></div><p className="mt-1 text-sm text-muted-foreground">{project.customer?.name || project.userId} · {project.serviceName} · {project.template}</p><p className="mt-3 max-w-3xl text-sm">{project.description || "Implementation project created from a signed CloudMonkey service."}</p></div><div className="flex items-center gap-2"><select className="h-9 rounded-lg border bg-background px-3 text-sm" value={project.status} onChange={(event) => updateProject.mutate({ status: event.target.value })}>{["planned", "active", "on_hold", "completed", "cancelled"].map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}</select><Button className="rounded-xl" onClick={() => setShowTaskForm((value) => !value)}><Plus className="h-4 w-4" />Task</Button></div></div>{counts.map(([status, count]) => <span key={status} className="mr-3 text-xs text-muted-foreground">{status.replaceAll("_", " ")}: <strong>{count}</strong></span>)}</CardContent></Card>
+        {showTaskForm && <TaskForm milestones={detail.data?.milestones || []} admins={admins} onCancel={() => setShowTaskForm(false)} onSubmit={(body) => addTask.mutate(body)} pending={addTask.isPending} />}
+        {view === "kanban" ? <div className="grid gap-3 overflow-x-auto lg:grid-cols-6">{columns.map(([status, label]) => <div key={status} className="min-w-[190px] rounded-xl bg-muted/35 p-3"><div className="mb-3 flex items-center justify-between text-xs font-bold uppercase"><span>{label}</span><Badge variant="outline">{tasks.filter((task: any) => task.status === status).length}</Badge></div><div className="space-y-3">{tasks.filter((task: any) => task.status === status).map((task: any) => <TaskCard key={task.id} task={task} admins={admins} onChange={(body) => updateTask.mutate({ taskId: task.id, body })} />)}</div></div>)}</div> : <Card><CardContent className="divide-y p-0">{tasks.map((task: any) => <div key={task.id} className="grid gap-3 p-4 md:grid-cols-[1fr_160px_180px]"><div><div className="font-semibold">{task.title}</div><div className="text-sm text-muted-foreground">{task.description || "No task description"}</div></div><select className="h-9 rounded-lg border bg-background px-2 text-sm" value={task.status} onChange={(event) => updateTask.mutate({ taskId: task.id, body: { status: event.target.value } })}>{columns.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><select className="h-9 rounded-lg border bg-background px-2 text-sm" value={task.assignedToUserId || ""} onChange={(event) => updateTask.mutate({ taskId: task.id, body: { assignedToUserId: event.target.value || null } })}><option value="">Unassigned</option>{admins.map((admin: any) => <option key={admin.id} value={admin.id}>{admin.name || admin.email}</option>)}</select></div>)}</CardContent></Card>}
+        <div className="grid gap-6 lg:grid-cols-2"><Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Target className="h-4 w-4" />Milestones</CardTitle></CardHeader><CardContent className="space-y-3">{(detail.data?.milestones || []).map((milestone: any) => <div key={milestone.id} className="rounded-lg border p-3"><div className="font-semibold">{milestone.name}</div><div className="text-xs capitalize text-muted-foreground">{milestone.status.replaceAll("_", " ")}</div></div>)}</CardContent></Card><Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><CheckCircle2 className="h-4 w-4" />Deliverables</CardTitle></CardHeader><CardContent className="space-y-3">{(detail.data?.deliverables || []).length ? detail.data.deliverables.map((item: any) => <div key={item.id} className="rounded-lg border p-3"><div className="font-semibold">{item.name}</div><div className="text-xs capitalize text-muted-foreground">{item.status.replaceAll("_", " ")}</div></div>) : <p className="text-sm text-muted-foreground">Add deliverables from the project API as scope is confirmed.</p>}</CardContent></Card></div>
+        <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><MessageSquare className="h-4 w-4" />Customer communication</CardTitle></CardHeader><CardContent className="space-y-4"><Textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Write an update for the customer..." rows={3} /><div className="flex justify-end"><Button className="rounded-xl" disabled={!comment.trim() || addComment.isPending} onClick={() => addComment.mutate()}><MessageSquare className="h-4 w-4" />Post update and notify customer</Button></div>{(detail.data?.comments || []).slice(0, 6).map((item: any) => <div key={item.id} className="border-t pt-3 text-sm"><div className="font-semibold">{item.author?.name || "CloudMonkey"}</div><p className="text-muted-foreground">{item.body}</p></div>)}</CardContent></Card>
+      </>}</div>
+    </div>
+  </div>;
+}
+
+function TaskForm({ milestones, admins, onCancel, onSubmit, pending }: any) { const [form, setForm] = useState({ title: "", description: "", milestoneId: "", assignedToUserId: "", priority: "medium" }); return <Card><CardHeader><CardTitle className="text-base">New project task</CardTitle></CardHeader><CardContent className="grid gap-4 md:grid-cols-2"><div className="space-y-2 md:col-span-2"><Label>Task</Label><Input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="Configure payment provider" /></div><div className="space-y-2 md:col-span-2"><Label>Description</Label><Textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></div><div className="space-y-2"><Label>Milestone</Label><select className="h-10 w-full rounded-lg border bg-background px-3 text-sm" value={form.milestoneId} onChange={(event) => setForm({ ...form, milestoneId: event.target.value })}><option value="">No milestone</option>{milestones.map((item: any) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div><div className="space-y-2"><Label>Assigned admin</Label><select className="h-10 w-full rounded-lg border bg-background px-3 text-sm" value={form.assignedToUserId} onChange={(event) => setForm({ ...form, assignedToUserId: event.target.value })}><option value="">Unassigned</option>{admins.map((item: any) => <option key={item.id} value={item.id}>{item.name || item.email}</option>)}</select></div><div className="flex justify-end gap-2 md:col-span-2"><Button variant="outline" onClick={onCancel}>Cancel</Button><Button disabled={!form.title.trim() || pending} onClick={() => onSubmit(form)}>{pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}Create task</Button></div></CardContent></Card>; }
+function TaskCard({ task, admins, onChange }: any) { return <div className="rounded-lg border bg-card p-3 shadow-sm"><div className="text-sm font-semibold">{task.title}</div><div className="mt-2 flex items-center gap-1 text-xs text-muted-foreground"><UserRound className="h-3 w-3" />{task.assignee?.name || "Unassigned"}</div><div className="mt-3 space-y-2"><select className="h-8 w-full rounded border bg-background px-2 text-xs" value={task.status} onChange={(event) => onChange({ status: event.target.value })}>{columns.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><select className="h-8 w-full rounded border bg-background px-2 text-xs" value={task.assignedToUserId || ""} onChange={(event) => onChange({ assignedToUserId: event.target.value || null })}><option value="">Unassigned</option>{admins.map((item: any) => <option key={item.id} value={item.id}>{item.name || item.email}</option>)}</select></div></div>; }
+function Metric({ label, value, icon: Icon }: any) { return <Card><CardContent className="p-4"><div className="flex items-center gap-2 text-xs font-bold uppercase text-muted-foreground"><Icon className="h-4 w-4" />{label}</div><div className="mt-2 text-2xl font-bold">{value}</div></CardContent></Card>; }

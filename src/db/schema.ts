@@ -153,6 +153,8 @@ export const servicePlan = pgTable("service_plan", {
   includedTokenAllowanceTokens: integer("includedTokenAllowanceTokens").notNull().default(0),
   autoTopUpThresholdTokens: integer("autoTopUpThresholdTokens").notNull().default(0),
   autoTopUpAmountTokens: integer("autoTopUpAmountTokens").notNull().default(0),
+  projectEligible: boolean("projectEligible").notNull().default(false),
+  projectTemplate: text("projectTemplate"),
 });
 
 export const serviceFeature = pgTable("service_feature", {
@@ -1293,6 +1295,104 @@ export const subscription = pgTable("subscription", {
   requiredAgreementTemplateId: text("requiredAgreementTemplateId"),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+});
+
+export const project = pgTable("project", {
+  id: text("id").primaryKey(),
+  userId: text("userId").notNull().references(() => user.id),
+  subscriptionId: text("subscriptionId").references(() => subscription.id),
+  planId: text("planId").references(() => servicePlan.id),
+  name: text("name").notNull(),
+  serviceName: text("serviceName").notNull(),
+  template: text("template").notNull().default("service-implementation"),
+  description: text("description"),
+  status: text("status").notNull().default("planned"),
+  priority: text("priority").notNull().default("medium"),
+  startDate: timestamp("startDate"),
+  targetDate: timestamp("targetDate"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+});
+
+export const projectMember = pgTable("project_member", {
+  id: text("id").primaryKey(),
+  projectId: text("projectId").notNull().references(() => project.id, { onDelete: "cascade" }),
+  userId: text("userId").notNull().references(() => user.id),
+  role: text("role").notNull().default("member"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+}, (table) => ({
+  projectUserUnique: unique("project_member_project_user_unique").on(table.projectId, table.userId),
+}));
+
+export const projectMilestone = pgTable("project_milestone", {
+  id: text("id").primaryKey(),
+  projectId: text("projectId").notNull().references(() => project.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  status: text("status").notNull().default("not_started"),
+  dueDate: timestamp("dueDate"),
+  sortOrder: integer("sortOrder").notNull().default(0),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+});
+
+export const projectTask = pgTable("project_task", {
+  id: text("id").primaryKey(),
+  projectId: text("projectId").notNull().references(() => project.id, { onDelete: "cascade" }),
+  milestoneId: text("milestoneId").references(() => projectMilestone.id, { onDelete: "set null" }),
+  assignedToUserId: text("assignedToUserId").references(() => user.id),
+  title: text("title").notNull(),
+  description: text("description"),
+  status: text("status").notNull().default("backlog"),
+  priority: text("priority").notNull().default("medium"),
+  sortOrder: integer("sortOrder").notNull().default(0),
+  dueDate: timestamp("dueDate"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+});
+
+export const projectDeliverable = pgTable("project_deliverable", {
+  id: text("id").primaryKey(),
+  projectId: text("projectId").notNull().references(() => project.id, { onDelete: "cascade" }),
+  milestoneId: text("milestoneId").references(() => projectMilestone.id, { onDelete: "set null" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  status: text("status").notNull().default("planned"),
+  url: text("url"),
+  approvedAt: timestamp("approvedAt"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+});
+
+export const projectComment = pgTable("project_comment", {
+  id: text("id").primaryKey(),
+  projectId: text("projectId").notNull().references(() => project.id, { onDelete: "cascade" }),
+  taskId: text("taskId").references(() => projectTask.id, { onDelete: "cascade" }),
+  authorUserId: text("authorUserId").notNull().references(() => user.id),
+  body: text("body").notNull(),
+  isInternal: boolean("isInternal").notNull().default(false),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+});
+
+export const projectActivity = pgTable("project_activity", {
+  id: text("id").primaryKey(),
+  projectId: text("projectId").notNull().references(() => project.id, { onDelete: "cascade" }),
+  actorUserId: text("actorUserId").references(() => user.id),
+  action: text("action").notNull(),
+  message: text("message").notNull(),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+});
+
+export const userNotification = pgTable("user_notification", {
+  id: text("id").primaryKey(),
+  userId: text("userId").notNull().references(() => user.id, { onDelete: "cascade" }),
+  projectId: text("projectId").references(() => project.id, { onDelete: "cascade" }),
+  type: text("type").notNull(),
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  readAt: timestamp("readAt"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
 });
 
 export const agreementTemplate = pgTable("agreement_template", {

@@ -53,6 +53,7 @@ import { Route as DashboardServerStatusRouteImport } from './routes/dashboard/se
 import { Route as DashboardRolesRouteImport } from './routes/dashboard/roles'
 import { Route as DashboardReportsRouteImport } from './routes/dashboard/reports'
 import { Route as DashboardProposalsRouteImport } from './routes/dashboard/proposals'
+import { Route as DashboardProjectsRouteImport } from './routes/dashboard/projects'
 import { Route as DashboardProductsRouteImport } from './routes/dashboard/products'
 import { Route as DashboardPlatformCredentialsRouteImport } from './routes/dashboard/platform-credentials'
 import { Route as DashboardPitchDecksRouteImport } from './routes/dashboard/pitch-decks'
@@ -311,6 +312,11 @@ const DashboardProposalsRoute = DashboardProposalsRouteImport.update({
   path: '/dashboard/proposals',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashboardProjectsRoute = DashboardProjectsRouteImport.update({
+  id: '/dashboard/projects',
+  path: '/dashboard/projects',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardProductsRoute = DashboardProductsRouteImport.update({
   id: '/dashboard/products',
   path: '/dashboard/products',
@@ -544,6 +550,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/pitch-decks': typeof DashboardPitchDecksRoute
   '/dashboard/platform-credentials': typeof DashboardPlatformCredentialsRoute
   '/dashboard/products': typeof DashboardProductsRoute
+  '/dashboard/projects': typeof DashboardProjectsRoute
   '/dashboard/proposals': typeof DashboardProposalsRoute
   '/dashboard/reports': typeof DashboardReportsRoute
   '/dashboard/roles': typeof DashboardRolesRoute
@@ -625,6 +632,7 @@ export interface FileRoutesByTo {
   '/dashboard/pitch-decks': typeof DashboardPitchDecksRoute
   '/dashboard/platform-credentials': typeof DashboardPlatformCredentialsRoute
   '/dashboard/products': typeof DashboardProductsRoute
+  '/dashboard/projects': typeof DashboardProjectsRoute
   '/dashboard/proposals': typeof DashboardProposalsRoute
   '/dashboard/reports': typeof DashboardReportsRoute
   '/dashboard/roles': typeof DashboardRolesRoute
@@ -707,6 +715,7 @@ export interface FileRoutesById {
   '/dashboard/pitch-decks': typeof DashboardPitchDecksRoute
   '/dashboard/platform-credentials': typeof DashboardPlatformCredentialsRoute
   '/dashboard/products': typeof DashboardProductsRoute
+  '/dashboard/projects': typeof DashboardProjectsRoute
   '/dashboard/proposals': typeof DashboardProposalsRoute
   '/dashboard/reports': typeof DashboardReportsRoute
   '/dashboard/roles': typeof DashboardRolesRoute
@@ -791,6 +800,7 @@ export interface FileRouteTypes {
     | '/dashboard/pitch-decks'
     | '/dashboard/platform-credentials'
     | '/dashboard/products'
+    | '/dashboard/projects'
     | '/dashboard/proposals'
     | '/dashboard/reports'
     | '/dashboard/roles'
@@ -872,6 +882,7 @@ export interface FileRouteTypes {
     | '/dashboard/pitch-decks'
     | '/dashboard/platform-credentials'
     | '/dashboard/products'
+    | '/dashboard/projects'
     | '/dashboard/proposals'
     | '/dashboard/reports'
     | '/dashboard/roles'
@@ -953,6 +964,7 @@ export interface FileRouteTypes {
     | '/dashboard/pitch-decks'
     | '/dashboard/platform-credentials'
     | '/dashboard/products'
+    | '/dashboard/projects'
     | '/dashboard/proposals'
     | '/dashboard/reports'
     | '/dashboard/roles'
@@ -1036,6 +1048,7 @@ export interface RootRouteChildren {
   DashboardPitchDecksRoute: typeof DashboardPitchDecksRoute
   DashboardPlatformCredentialsRoute: typeof DashboardPlatformCredentialsRoute
   DashboardProductsRoute: typeof DashboardProductsRoute
+  DashboardProjectsRoute: typeof DashboardProjectsRoute
   DashboardProposalsRoute: typeof DashboardProposalsRoute
   DashboardReportsRoute: typeof DashboardReportsRoute
   DashboardRolesRoute: typeof DashboardRolesRoute
@@ -1365,6 +1378,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard/proposals'
       fullPath: '/dashboard/proposals'
       preLoaderRoute: typeof DashboardProposalsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard/projects': {
+      id: '/dashboard/projects'
+      path: '/dashboard/projects'
+      fullPath: '/dashboard/projects'
+      preLoaderRoute: typeof DashboardProjectsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard/products': {
@@ -1787,6 +1807,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardPitchDecksRoute: DashboardPitchDecksRoute,
   DashboardPlatformCredentialsRoute: DashboardPlatformCredentialsRoute,
   DashboardProductsRoute: DashboardProductsRoute,
+  DashboardProjectsRoute: DashboardProjectsRoute,
   DashboardProposalsRoute: DashboardProposalsRoute,
   DashboardReportsRoute: DashboardReportsRoute,
   DashboardRolesRoute: DashboardRolesRoute,

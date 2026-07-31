@@ -73,6 +73,14 @@ import {
   serverTelemetrySnapshot,
   serverWebsite,
   subscription,
+  project,
+  projectMember,
+  projectMilestone,
+  projectTask,
+  projectDeliverable,
+  projectComment,
+  projectActivity,
+  userNotification,
   supportChatMessage,
   supportChatSession,
   adminChatSession,
@@ -166,6 +174,7 @@ import {
 import { createCaesarHandlers } from "./lib/domain/caesar";
 import { createInternalToolsHandlers } from "./lib/domain/internal-tools";
 import { createWebsiteHandlers, runtimeServerSchema } from "./lib/domain/websites";
+import { createProjectHandlers } from "./lib/domain/projects";
 import { createWebhookHandlers } from "./lib/domain/webhooks";
 import {
   BUNDLES,
@@ -7729,6 +7738,12 @@ async function activateBillingAfterPayment(input: {
     paymentId: input.paymentId ?? input.invoiceRow.paystackReference ?? input.invoiceRow.id,
   });
 
+  if (existingSubscription) {
+    await projectHandlers.createProjectForSubscription(existingSubscription).catch((error) => {
+      console.error("Project creation after payment failed:", error);
+    });
+  }
+
   const paidDomainOrder = await db.query.domainOrder.findFirst({
     where: eq(domainOrder.invoiceId, input.invoiceRow.id),
   });
@@ -8725,6 +8740,29 @@ const adminHandlers = createAdminHandlers({
   exchangeMicrosoft365Code,
   syncMicrosoft365Tenant,
   microsoft365RedirectUri,
+});
+
+const projectHandlers = createProjectHandlers({
+  db,
+  json,
+  parseBody,
+  requireAdmin,
+  requireSession,
+  recordAudit,
+  sendEmail,
+  makeId,
+  project,
+  projectMember,
+  projectMilestone,
+  projectTask,
+  projectDeliverable,
+  projectComment,
+  projectActivity,
+  userNotification,
+  subscription,
+  servicePlan,
+  service,
+  user,
 });
 
 const intelligenceHandlers = createIntelligenceHandlers({
@@ -11102,6 +11140,9 @@ echo "CloudMonkey agent installed."
     if (url.pathname === "/api/user/domains/renew") {
       return domainsHandlers.handleDomainRenewal(request);
     }
+    if (url.pathname.startsWith("/api/user/notifications")) {
+      return projectHandlers.handleUserNotifications(request);
+    }
     if (url.pathname === "/api/user/domains/auto-renew") {
       return domainsHandlers.handleDomainAutoRenew(request);
     }
@@ -11136,6 +11177,10 @@ echo "CloudMonkey agent installed."
 
     if (url.pathname.startsWith("/api/admin/website-projects")) {
       return websiteHandlers.handleAdminWebsiteProjects(request);
+    }
+
+    if (url.pathname.startsWith("/api/admin/projects")) {
+      return projectHandlers.handleAdmin(request);
     }
 
     if (url.pathname === "/api/admin/server-agents/enrollment") {

@@ -79,6 +79,7 @@ const adminNav = [
   { to: "/dashboard/cloud-security", label: "Cloud Security", icon: ShieldPlus },
   { to: "/dashboard/platform-credentials", label: "Provider API Keys", icon: KeyRound },
   { to: "/dashboard/website-projects", label: "Website Projects", icon: HardDrive },
+  { to: "/dashboard/projects", label: "Project Management", icon: FolderKanban },
   { to: "/dashboard/administration", label: "Platform Matrix", icon: ShieldCheck },
   { to: "/dashboard/administration", search: { tab: "agent" }, label: "Admin Agent", icon: Bot },
   { to: "/dashboard/wallet", label: "Wallet", icon: Wallet },
