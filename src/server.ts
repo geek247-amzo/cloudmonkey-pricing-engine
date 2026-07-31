@@ -7801,16 +7801,26 @@ async function captureInvoicePayment(input: {
   origin: string;
 }) {
   const result = await captureInvoicePaymentAtomically(db, input);
+  let activationWarning: string | undefined;
   if (result.shouldActivate && result.invoice.status === "paid") {
-    await activateBillingAfterPayment({
-      invoiceRow: result.invoice,
-      origin: input.origin,
-      actorUserId: input.capturedByUserId ?? null,
-      paymentId: result.payment?.id ?? null,
-    });
+    try {
+      await activateBillingAfterPayment({
+        invoiceRow: result.invoice,
+        origin: input.origin,
+        actorUserId: input.capturedByUserId ?? null,
+        paymentId: result.payment?.id ?? null,
+      });
+    } catch (error) {
+      activationWarning = "Payment was recorded, but a follow-up service activation step needs attention.";
+      console.error("Invoice payment activation follow-up failed", {
+        invoiceId: input.invoiceId,
+        paymentId: result.payment?.id ?? null,
+        error,
+      });
+    }
   }
   const { shouldActivate: _shouldActivate, ...response } = result;
-  return response;
+  return activationWarning ? { ...response, activationWarning } : response;
 }
 
 function renderSuspendedServicePage(input: {
