@@ -388,6 +388,11 @@ export async function sendN8nSupportChat(input: {
     body: JSON.stringify({
       event: input.event ?? "support.chat.message",
       ...input,
+      usageReporting: {
+        endpoint: process.env.CLOUDMONKEY_AI_USAGE_URL ?? "http://frontend:3000/api/internal/ai-usage",
+        authHeader: "X-CloudMonkey-API-Token",
+        usageAvailableRequired: true,
+      },
     }),
   });
 

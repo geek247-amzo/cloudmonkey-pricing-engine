@@ -20,9 +20,12 @@ services:
       CODEX_WORKDIR: /workspace
       GROWTH_AGENT_POLL_SECONDS: ${GROWTH_AGENT_POLL_SECONDS:-60}
     volumes:
-      - .:/workspace
+      - growth_agent_workspace:/workspace
       - ${CODEX_BIN_PATH:-/root/.local/bin/codex}:/usr/local/bin/codex:ro
       - ${CODEX_HOME_PATH:-/root/.codex}:/root/.codex:ro
     depends_on:
       - cloudmonkey-pricing-engine
     restart: unless-stopped
+
+volumes:
+  growth_agent_workspace:

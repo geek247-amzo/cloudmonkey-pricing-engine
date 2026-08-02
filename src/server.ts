@@ -80,6 +80,13 @@ import {
   projectDeliverable,
   projectComment,
   projectActivity,
+  board,
+  boardColumn,
+  task,
+  taskLink,
+  taskLabel,
+  taskLabelMap,
+  taskActivity,
   userNotification,
   supportChatMessage,
   supportChatSession,
@@ -175,6 +182,7 @@ import { createCaesarHandlers } from "./lib/domain/caesar";
 import { createInternalToolsHandlers } from "./lib/domain/internal-tools";
 import { createWebsiteHandlers, runtimeServerSchema } from "./lib/domain/websites";
 import { createProjectHandlers } from "./lib/domain/projects";
+import { createBoardHandlers } from "./lib/domain/boards";
 import { createWebhookHandlers } from "./lib/domain/webhooks";
 import {
   BUNDLES,
@@ -4645,6 +4653,11 @@ async function sendN8nAdminChat(input: {
       stripPii({
         event: "admin.chat.message",
         ...input,
+        usageReporting: {
+          endpoint: process.env.CLOUDMONKEY_AI_USAGE_URL ?? "http://frontend:3000/api/internal/ai-usage",
+          authHeader: "X-CloudMonkey-API-Token",
+          usageAvailableRequired: true,
+        },
       }),
     ),
   });
@@ -8775,6 +8788,22 @@ const projectHandlers = createProjectHandlers({
   user,
 });
 
+const boardHandlers = createBoardHandlers({
+  db,
+  json,
+  parseBody,
+  requireAdmin,
+  recordAudit,
+  makeId,
+  board,
+  boardColumn,
+  task,
+  taskLink,
+  taskLabel,
+  taskLabelMap,
+  taskActivity,
+});
+
 const intelligenceHandlers = createIntelligenceHandlers({
   db,
   json,
@@ -11193,6 +11222,10 @@ echo "CloudMonkey agent installed."
       return projectHandlers.handleAdmin(request);
     }
 
+    if (url.pathname.startsWith("/api/admin/boards")) {
+      return boardHandlers.handleAdmin(request);
+    }
+
     if (url.pathname === "/api/admin/server-agents/enrollment") {
       return agentsRuntimeHandlers.handleAdminServerAgentEnrollment(request);
     }
@@ -11265,6 +11298,68 @@ echo "CloudMonkey agent installed."
 
     if (url.pathname.startsWith("/api/admin/")) {
       return adminHandlers.handleAdminRoot(request);
+    }
+
+    if (url.pathname === "/api/internal/ai-usage" && request.method === "POST") {
+      const expectedToken = process.env.CLOUDMONKEY_API_TOKEN ?? process.env.N8N_ADMIN_AGENT_WEBHOOK_SECRET;
+      if (!expectedToken || request.headers.get("X-CloudMonkey-API-Token") !== expectedToken) {
+        return json({ error: "Unauthorized" }, 401);
+      }
+      try {
+        const body = await parseBody(
+          request,
+          z.object({
+            provider: z.enum(["mailjet", "openai", "anthropic", "gemini"]),
+            model: z.string().min(1).max(160),
+            inputTokens: z.number().int().nonnegative().default(0),
+            outputTokens: z.number().int().nonnegative().default(0),
+            usageAvailable: z.boolean().default(true),
+            userId: z.string().min(1).optional().nullable(),
+            context: z.object({
+              featureKey: z.string().min(1).max(160),
+              chargeCustomer: z.boolean().default(false),
+              actorType: z.enum(["customer", "admin", "system"]).default("system"),
+              workflow: z.string().max(160).optional().nullable(),
+              sessionId: z.string().max(200).optional().nullable(),
+            }),
+          }),
+        );
+        const inputTokens = body.usageAvailable ? body.inputTokens : 0;
+        const outputTokens = body.usageAvailable ? body.outputTokens : 0;
+        const [usageRow] = await recordPlatformApiUsage({
+          db,
+          makeId,
+          platformApiUsage,
+          userId: body.userId ?? null,
+          provider: body.provider,
+          model: body.model,
+          featureKey: body.context.featureKey,
+          inputTokens,
+          outputTokens,
+          metadata: {
+            usageAvailable: body.usageAvailable,
+            actorType: body.context.actorType,
+            workflow: body.context.workflow ?? null,
+            sessionId: body.context.sessionId ?? null,
+            source: "n8n",
+          },
+        });
+        if (body.context.chargeCustomer && body.userId && body.usageAvailable) {
+          await chargePlatformUsage({
+            db,
+            makeId,
+            tokenWallet,
+            tokenWalletLedger,
+            userId: body.userId,
+            usageId: usageRow.id,
+            featureKey: body.context.featureKey,
+            chargedTokens: usageRow.chargedTokens,
+          });
+        }
+        return json({ ok: true, usageId: usageRow.id, chargedTokens: body.context.chargeCustomer ? usageRow.chargedTokens : 0 });
+      } catch (error: any) {
+        return json({ error: error.message ?? "AI usage recording failed" }, error.status ?? 500);
+      }
     }
 
     if (url.pathname === "/api/internal/admin/copilot-tools" && request.method === "POST") {

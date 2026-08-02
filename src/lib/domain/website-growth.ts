@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { and, desc, eq, lte, sql } from "drizzle-orm";
 import { z } from "zod";
+import { createHash } from "node:crypto";
 
 const activationSchema = z.object({
   dailyBudgetTokens: z.number().int().min(1000).max(1_000_000).optional(),
@@ -39,6 +40,25 @@ function workerToken() {
 
 function tomorrow() {
   return new Date(Date.now() + 24 * 60 * 60 * 1000);
+}
+
+function diffHash(value: unknown) {
+  return createHash("sha256").update(JSON.stringify(value ?? null)).digest("hex");
+}
+
+export function validateVerifiedDiff(value: unknown, maxChanges: number) {
+  const diff = value && typeof value === "object" ? value as Record<string, unknown> : null;
+  const files = Array.isArray(diff?.files) ? diff.files.filter((file): file is string => typeof file === "string") : [];
+  const invalidPath = files.find((file) => file.startsWith("/") || file.includes("\\") || file.split("/").includes("..") || file === "workspace.json");
+  if (invalidPath) return { error: `Verified diff contains a path outside the website scope: ${invalidPath}` };
+  if (files.length > maxChanges) return { error: `Verified diff contains ${files.length} changed files; the configured limit is ${maxChanges}` };
+  return { diff: { ...diff, files, changeCount: files.length } };
+}
+
+function claimedDiffFiles(value: unknown) {
+  if (!value || typeof value !== "object") return [];
+  const files = (value as Record<string, unknown>).files;
+  return Array.isArray(files) ? files.filter((file): file is string => typeof file === "string") : [];
 }
 
 async function sendGrowthEmail(deps: GrowthDeps, input: { to: string; subject: string; body: string; websiteId: string }) {
@@ -183,7 +203,7 @@ export function createWebsiteGrowthHandlers(deps: GrowthDeps) {
       if (!proposal) return deps.json({ error: "Proposal not found" }, 404);
       if (proposal.status !== "pending") return deps.json({ error: "Proposal has already been decided" }, 409);
       const body = await deps.parseBody(request, decisionSchema);
-      const [updated] = await deps.db.update(deps.websiteGrowthProposal).set({ status: body.decision === "approve" ? "approved" : body.decision === "reject" ? "rejected" : "changes_requested", decisionNote: body.note || null, decidedByUserId: session.user.id, decidedAt: new Date(), updatedAt: new Date() }).where(eq(deps.websiteGrowthProposal.id, proposal.id)).returning();
+      const [updated] = await deps.db.update(deps.websiteGrowthProposal).set({ status: body.decision === "approve" ? "approved" : body.decision === "reject" ? "rejected" : "changes_requested", approvedDiffHash: body.decision === "approve" ? diffHash(JSON.parse(proposal.diffJson)) : null, decisionNote: body.note || null, decidedByUserId: session.user.id, decidedAt: new Date(), updatedAt: new Date() }).where(eq(deps.websiteGrowthProposal.id, proposal.id)).returning();
       await deps.db.insert(deps.websiteGrowthMessage).values({ id: deps.makeId("growthmsg"), agentId: agent.id, websiteId, userId: session.user.id, senderRole: "customer", body: `Proposal decision: ${body.decision}${body.note ? `\n${body.note}` : ""}`, metadataJson: JSON.stringify({ proposalId: proposal.id, decision: body.decision }), createdAt: new Date() });
       if (body.decision === "approve") {
         await deps.db.insert(deps.websiteGrowthRun).values({ id: deps.makeId("growthrun"), agentId: agent.id, websiteId, status: "queued", scheduledAt: new Date(), metadataJson: JSON.stringify({ action: "apply_approved_proposal", proposalId: proposal.id }), createdAt: new Date() });
@@ -274,7 +294,29 @@ export function createWebsiteGrowthHandlers(deps: GrowthDeps) {
       let proposal = null;
       if (body.proposal) {
         const proposalBody = z.object({ title: z.string().min(1).max(200), summary: z.string().min(1).max(10000), diff: z.unknown() }).parse(body.proposal);
-        [proposal] = await deps.db.insert(deps.websiteGrowthProposal).values({ id: deps.makeId("growthprop"), agentId: run.agentId, websiteId: run.websiteId, runId, title: proposalBody.title, summary: proposalBody.summary, diffJson: JSON.stringify(proposalBody.diff), status: "pending", createdAt: now, updatedAt: now }).returning();
+        const agent = await deps.db.query.websiteGrowthAgent.findFirst({ where: eq(deps.websiteGrowthAgent.id, run.agentId) });
+        const verifiedResult = validateVerifiedDiff(body.verifiedDiff, Number(agent?.maxChangesPerRun ?? 10));
+        if (verifiedResult.error) {
+          await deps.db.update(deps.websiteGrowthRun).set({ status: "failed", error: verifiedResult.error, completedAt: now, metadataJson: JSON.stringify({ verifiedDiff: body.verifiedDiff, modelClaimedDiff: body.modelClaimedDiff ?? proposalBody.diff }) }).where(eq(deps.websiteGrowthRun.id, runId));
+          await deps.recordAudit({ actorUserId: null, action: "website.growth.diff.rejected", entityType: "website_growth_run", entityId: runId, level: "warning", message: verifiedResult.error, metadata: { websiteId: run.websiteId, modelClaimedDiff: body.modelClaimedDiff ?? proposalBody.diff, verifiedDiff: body.verifiedDiff } });
+          return deps.json({ error: verifiedResult.error }, 422);
+        }
+        const claimedFiles = claimedDiffFiles(body.modelClaimedDiff ?? proposalBody.diff);
+        const claimedOutsideScope = claimedFiles.find((file) => file.startsWith("/") || file.includes("\\") || file.split("/").includes("..") || file === "workspace.json");
+        if (claimedOutsideScope) {
+          const error = `Model-claimed diff contains a path outside the website scope: ${claimedOutsideScope}`;
+          await deps.db.update(deps.websiteGrowthRun).set({ status: "failed", error, completedAt: now, metadataJson: JSON.stringify({ verifiedDiff: body.verifiedDiff, modelClaimedDiff: body.modelClaimedDiff ?? proposalBody.diff }) }).where(eq(deps.websiteGrowthRun.id, runId));
+          await deps.recordAudit({ actorUserId: null, action: "website.growth.diff.rejected", entityType: "website_growth_run", entityId: runId, level: "warning", message: error, metadata: { websiteId: run.websiteId, claimedOutsideScope } });
+          return deps.json({ error }, 422);
+        }
+        const verifiedDiff = verifiedResult.diff;
+        if (JSON.stringify([...claimedFiles].sort()) !== JSON.stringify([...(verifiedDiff?.files as string[])].sort())) {
+          const error = "Model-claimed diff does not match the server-verified changeset";
+          await deps.db.update(deps.websiteGrowthRun).set({ status: "failed", error, completedAt: now, metadataJson: JSON.stringify({ verifiedDiff, modelClaimedDiff: body.modelClaimedDiff ?? proposalBody.diff }) }).where(eq(deps.websiteGrowthRun.id, runId));
+          await deps.recordAudit({ actorUserId: null, action: "website.growth.diff.divergence", entityType: "website_growth_run", entityId: runId, level: "warning", message: error, metadata: { websiteId: run.websiteId, claimedFiles, verifiedFiles: verifiedDiff?.files ?? [] } });
+          return deps.json({ error }, 422);
+        }
+        [proposal] = await deps.db.insert(deps.websiteGrowthProposal).values({ id: deps.makeId("growthprop"), agentId: run.agentId, websiteId: run.websiteId, runId, title: proposalBody.title, summary: proposalBody.summary, diffJson: JSON.stringify(verifiedDiff), modelClaimedDiffJson: JSON.stringify(body.modelClaimedDiff ?? proposalBody.diff), verifiedDiffHash: diffHash(verifiedDiff), status: "pending", createdAt: now, updatedAt: now }).returning();
         await deps.db.insert(deps.websiteGrowthMessage).values({ id: deps.makeId("growthmsg"), agentId: run.agentId, websiteId: run.websiteId, runId, senderRole: "codex", body: `${proposalBody.title}\n\n${proposalBody.summary}`, metadataJson: JSON.stringify({ proposalId: proposal.id }), createdAt: now });
       }
       const [updatedRun] = await deps.db.update(deps.websiteGrowthRun).set({ status: "completed", completedAt: now, proposalId: proposal?.id ?? run.proposalId, provider, model, inputTokens, outputTokens, totalTokens, providerCostMicrousd, usageAvailable: body.usageAvailable !== false, metadataJson: JSON.stringify(body.metadata ?? {}) }).where(eq(deps.websiteGrowthRun.id, runId)).returning();
@@ -282,6 +324,12 @@ export function createWebsiteGrowthHandlers(deps: GrowthDeps) {
         const deployment = z.object({ proposalId: z.string().min(1), deploymentDomain: z.enum(["temporary", "primary"]).default("temporary") }).parse(body.deploymentRequest);
         const approved = await deps.db.query.websiteGrowthProposal.findFirst({ where: and(eq(deps.websiteGrowthProposal.id, deployment.proposalId), eq(deps.websiteGrowthProposal.websiteId, run.websiteId), eq(deps.websiteGrowthProposal.status, "approved")) });
         if (!approved) return deps.json({ error: "Deployment requires an approved customer proposal" }, 409);
+        const currentVerifiedHash = diffHash(body.verifiedDiff);
+        if (!approved.approvedDiffHash || approved.approvedDiffHash !== currentVerifiedHash || approved.verifiedDiffHash !== currentVerifiedHash) {
+          const error = "Deployment rejected because the verified diff does not match the approved proposal";
+          await deps.recordAudit({ actorUserId: null, action: "website.growth.deployment.rejected", entityType: "website_growth_proposal", entityId: approved.id, level: "warning", message: error, metadata: { runId, approvedDiffHash: approved.approvedDiffHash, currentVerifiedHash } });
+          return deps.json({ error }, 409);
+        }
         const site = await deps.db.query.website.findFirst({ where: eq(deps.website.id, run.websiteId) });
         if (!site) return deps.json({ error: "Website not found" }, 404);
         try {

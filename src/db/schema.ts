@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, integer, unique, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, integer, unique, jsonb, numeric } from "drizzle-orm/pg-core";
 import { vector } from "drizzle-orm/pg-core/columns/vector_extension/vector";
 import { relations } from "drizzle-orm";
 import { sql } from "drizzle-orm";
@@ -941,10 +941,13 @@ export const websiteGrowthProposal = pgTable("website_growth_proposal", {
   title: text("title").notNull(),
   summary: text("summary").notNull(),
   diffJson: text("diffJson").notNull(),
+  modelClaimedDiffJson: text("modelClaimedDiffJson"),
+  verifiedDiffHash: text("verifiedDiffHash"),
   status: text("status").notNull().default("pending"),
   decidedByUserId: text("decidedByUserId").references(() => user.id, { onDelete: "set null" }),
   decisionNote: text("decisionNote"),
   decidedAt: timestamp("decidedAt"),
+  approvedDiffHash: text("approvedDiffHash"),
   deploymentStatus: text("deploymentStatus").notNull().default("not_started"),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
@@ -1381,6 +1384,84 @@ export const projectActivity = pgTable("project_activity", {
   action: text("action").notNull(),
   message: text("message").notNull(),
   metadata: jsonb("metadata"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+});
+
+export const board = pgTable("board", {
+  id: text("id").primaryKey(),
+  key: text("key").notNull().unique(),
+  name: text("name").notNull(),
+  type: text("type").notNull().default("custom"),
+  visibility: text("visibility").notNull().default("internal"),
+  archivedAt: timestamp("archivedAt"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+});
+
+export const boardColumn = pgTable("board_column", {
+  id: text("id").primaryKey(),
+  boardId: text("boardId").notNull().references(() => board.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  key: text("key").notNull(),
+  position: numeric("position", { precision: 20, scale: 10 }).notNull(),
+  wipLimit: integer("wipLimit"),
+  isTerminal: boolean("isTerminal").notNull().default(false),
+  automationKey: text("automationKey"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+}, (table) => ({ boardColumnKeyUnique: unique("board_column_board_key_unique").on(table.boardId, table.key) }));
+
+export const task = pgTable("task", {
+  id: text("id").primaryKey(),
+  boardId: text("boardId").notNull().references(() => board.id, { onDelete: "cascade" }),
+  columnId: text("columnId").notNull().references(() => boardColumn.id),
+  position: numeric("position", { precision: 20, scale: 10 }).notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  status: text("status").notNull().default("open"),
+  priority: text("priority").notNull().default("medium"),
+  visibility: text("visibility").notNull().default("internal"),
+  assigneeUserId: text("assigneeUserId").references(() => user.id),
+  customerUserId: text("customerUserId").references(() => user.id),
+  dueDate: timestamp("dueDate"),
+  billable: boolean("billable").notNull().default(false),
+  estimateMinutes: integer("estimateMinutes"),
+  loggedMinutes: integer("loggedMinutes").notNull().default(0),
+  version: integer("version").notNull().default(1),
+  createdByUserId: text("createdByUserId").notNull().references(() => user.id),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+  completedAt: timestamp("completedAt"),
+});
+
+export const taskLink = pgTable("task_link", {
+  id: text("id").primaryKey(),
+  taskId: text("taskId").notNull().references(() => task.id, { onDelete: "cascade" }),
+  entityType: text("entityType").notNull(),
+  entityId: text("entityId").notNull(),
+}, (table) => ({ taskEntityUnique: unique("task_link_entity_unique").on(table.taskId, table.entityType, table.entityId) }));
+
+export const taskLabel = pgTable("task_label", {
+  id: text("id").primaryKey(),
+  boardId: text("boardId").notNull().references(() => board.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  colour: text("colour").notNull(),
+}, (table) => ({ boardLabelNameUnique: unique("task_label_board_name_unique").on(table.boardId, table.name) }));
+
+export const taskLabelMap = pgTable("task_label_map", {
+  taskId: text("taskId").notNull().references(() => task.id, { onDelete: "cascade" }),
+  labelId: text("labelId").notNull().references(() => taskLabel.id, { onDelete: "cascade" }),
+}, (table) => ({ taskLabelUnique: unique("task_label_map_unique").on(table.taskId, table.labelId) }));
+
+export const taskActivity = pgTable("task_activity", {
+  id: text("id").primaryKey(),
+  taskId: text("taskId").notNull().references(() => task.id, { onDelete: "cascade" }),
+  actorUserId: text("actorUserId").references(() => user.id),
+  actorType: text("actorType").notNull().default("user"),
+  action: text("action").notNull(),
+  fromValue: text("fromValue"),
+  toValue: text("toValue"),
+  metadataJson: text("metadataJson"),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
 });
 

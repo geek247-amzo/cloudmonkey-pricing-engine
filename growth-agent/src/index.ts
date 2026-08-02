@@ -1,12 +1,13 @@
 import { execFile } from "node:child_process";
 import { promises as fs } from "node:fs";
 import { promisify } from "node:util";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 const execFileAsync = promisify(execFile);
 const apiUrl = process.env.CM_API_URL ?? "http://cloudmonkey-pricing-engine:3000";
 const token = process.env.GROWTH_AGENT_WORKER_TOKEN;
 const codexBin = process.env.CODEX_BIN ?? "codex";
-const workdir = process.env.CODEX_WORKDIR ?? "/workspace";
 const pollMs = Math.max(15, Number(process.env.GROWTH_AGENT_POLL_SECONDS ?? 60)) * 1000;
 
 if (!token) throw new Error("GROWTH_AGENT_WORKER_TOKEN is required");
@@ -56,13 +57,30 @@ async function runCodex(job: any) {
   const outputPath = `/tmp/cloudmonkey-growth-${job.run.id}.json`;
   const approvedProposal = job.workspace?.proposals?.some((proposal: any) => proposal.status === "approved");
   const sandbox = approvedProposal ? "workspace-write" : "read-only";
-  const args = ["exec", "--json", "--ephemeral", "--sandbox", sandbox, "-C", workdir, "-o", outputPath, buildPrompt(job)];
+  const scratch = await fs.mkdtemp(path.join(tmpdir(), `cloudmonkey-growth-${job.run.id}-`));
+  const scratchWorkdir = path.join(scratch, "site");
+  await fs.mkdir(scratchWorkdir, { recursive: true });
+  await fs.writeFile(path.join(scratchWorkdir, "site.json"), JSON.stringify(job.site ?? {}, null, 2));
+  await fs.writeFile(path.join(scratchWorkdir, "workspace.json"), JSON.stringify(job.workspace ?? {}, null, 2));
+  await execFileAsync("git", ["init"], { cwd: scratchWorkdir });
+  await execFileAsync("git", ["config", "user.email", "growth-agent@cloudmonkey.local"], { cwd: scratchWorkdir });
+  await execFileAsync("git", ["config", "user.name", "CloudMonkey Growth Agent"], { cwd: scratchWorkdir });
+  await execFileAsync("git", ["add", "-A"], { cwd: scratchWorkdir });
+  await execFileAsync("git", ["commit", "-m", "growth run baseline"], { cwd: scratchWorkdir });
+  const args = ["exec", "--json", "--ephemeral", "--sandbox", sandbox, "-C", scratchWorkdir, "-o", outputPath, buildPrompt({ ...job, workspace: { ...job.workspace, scratchFiles: ["site.json", "workspace.json"] } })];
   try {
     await execFileAsync(codexBin, args, { timeout: 15 * 60 * 1000, maxBuffer: 10 * 1024 * 1024 });
     const raw = await fs.readFile(outputPath, "utf8").catch(() => "{}");
-    return JSON.parse(raw);
+    await execFileAsync("git", ["add", "-A"], { cwd: scratchWorkdir });
+    const [{ stdout: nameOutput }, { stdout: patch }] = await Promise.all([
+      execFileAsync("git", ["diff", "--cached", "--name-only"], { cwd: scratchWorkdir }),
+      execFileAsync("git", ["diff", "--cached", "--no-ext-diff", "--binary"], { cwd: scratchWorkdir, maxBuffer: 10 * 1024 * 1024 }),
+    ]);
+    const files = nameOutput.split("\n").map((value) => value.trim()).filter(Boolean);
+    return { ...JSON.parse(raw), verifiedDiff: { files, patch: patch.slice(0, 10 * 1024 * 1024), changeCount: files.length } };
   } finally {
     await fs.rm(outputPath, { force: true }).catch(() => undefined);
+    await fs.rm(scratch, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 
@@ -78,6 +96,8 @@ async function processOne() {
       deploymentRequest: result.deploymentRequest ?? null,
       usageAvailable: result.usageAvailable === true,
       usage: result.usage ?? { provider: "openai", model: "codex-cli", inputTokens: 0, outputTokens: 0, totalTokens: 0, providerCostMicrousd: 0 },
+      verifiedDiff: result.verifiedDiff ?? { files: [], patch: "", changeCount: 0 },
+      modelClaimedDiff: result.proposal?.diff ?? null,
       metadata: { executor: "codex-cli", codexVersion: process.env.CODEX_VERSION ?? null },
     });
   } catch (error: any) {
