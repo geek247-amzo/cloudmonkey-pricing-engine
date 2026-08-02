@@ -11336,6 +11336,7 @@ echo "CloudMonkey agent installed."
           featureKey: body.context.featureKey,
           inputTokens,
           outputTokens,
+          usageAvailable: body.usageAvailable,
           metadata: {
             usageAvailable: body.usageAvailable,
             actorType: body.context.actorType,

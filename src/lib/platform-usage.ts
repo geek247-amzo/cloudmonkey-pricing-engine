@@ -50,11 +50,12 @@ export async function recordPlatformApiUsage(input: {
   featureKey: string;
   inputTokens: number;
   outputTokens: number;
+  usageAvailable?: boolean;
   metadata?: Record<string, unknown>;
 }) {
   const cost = providerCostMicrousd(input.model, input.inputTokens, input.outputTokens);
   const charged = Math.ceil((cost * PLATFORM_MARKUP_BPS) / 10000);
-  const tokens = chargedWalletTokens(cost);
+  const tokens = input.usageAvailable === false ? 0 : chargedWalletTokens(cost);
   return input.db
     .insert(input.platformApiUsage)
     .values({
