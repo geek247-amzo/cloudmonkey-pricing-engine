@@ -1,5 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { ArrowLeft, ArrowRight, Check, Circle, ExternalLink, Menu, Volume2, X } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  Circle,
+  ExternalLink,
+  Maximize2,
+  Menu,
+  Minimize2,
+  Volume2,
+  X,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 
 import logo from "@/assets/cm-logo.png";
@@ -34,6 +45,7 @@ function PitchDeckPage() {
   const [error, setError] = useState<string | null>(null);
   const [active, setActive] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     fetchDeck(publicToken)
@@ -47,6 +59,11 @@ function PitchDeckPage() {
   const slide = slides[active];
   const progress = slides.length ? ((active + 1) / slides.length) * 100 : 0;
   const go = (index: number) => setActive(Math.max(0, Math.min(slides.length - 1, index)));
+
+  async function toggleFullscreen() {
+    if (!document.fullscreenElement) await document.documentElement.requestFullscreen();
+    else await document.exitFullscreen();
+  }
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -65,6 +82,12 @@ function PitchDeckPage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [active, slides.length]);
+
+  useEffect(() => {
+    const onFullscreenChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
 
   if (error)
     return (
@@ -104,6 +127,15 @@ function PitchDeckPage() {
         aria-label="Open slide overview"
       >
         <Menu className="h-5 w-5" />
+      </button>
+      <button
+        type="button"
+        onClick={() => void toggleFullscreen()}
+        className="fixed right-20 top-5 z-40 rounded-full border border-white/15 bg-white/8 p-3 text-white/80 transition hover:bg-white/15 sm:right-28"
+        aria-label={isFullscreen ? "Exit full screen" : "Enter full screen"}
+        title={isFullscreen ? "Exit full screen" : "Present full screen"}
+      >
+        {isFullscreen ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}
       </button>
 
       <main className="mx-auto flex min-h-screen w-full max-w-[1600px] items-center px-8 pb-16 pt-28 sm:px-14 lg:px-24">

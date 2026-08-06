@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Copy, ExternalLink, FileBarChart, Plus, Send, Volume2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/dashboard/PageHeader";
@@ -11,6 +11,9 @@ import { useAdminAccess } from "@/hooks/use-admin-access";
 import { STI_ELECTRICAL_PHASE_2_DECK } from "@/lib/pitch-deck-content";
 
 export const Route = createFileRoute("/dashboard/pitch-decks")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    action: search.action === "prepare" || search.action === "create" ? search.action : undefined,
+  }),
   head: () => ({ meta: [{ title: "Pitch Decks - CloudMonkey Admin" }] }),
   component: PitchDecksPage,
 });
@@ -28,15 +31,24 @@ type PitchDeck = {
 
 function PitchDecksPage() {
   const { isAdmin, authReady } = useAdminAccess();
+  const { action } = Route.useSearch();
   const [rows, setRows] = useState<PitchDeck[] | null>(null);
   const [creating, setCreating] = useState(false);
   const [bootstrapping, setBootstrapping] = useState(false);
   const [audioDeckId, setAudioDeckId] = useState<string | null>(null);
+  const actionStarted = useRef(false);
 
   async function load() {
     const response = await fetch("/api/admin/pitch-decks");
     if (response.ok) setRows(await response.json());
   }
+  useEffect(() => {
+    if (rows === null || !action || actionStarted.current) return;
+    actionStarted.current = true;
+    if (action === "prepare") void bootstrapSti();
+    if (action === "create") void createStiDeck();
+  }, [action, rows]);
+
   if (authReady && !isAdmin) return <div className="p-8">Administrator access required.</div>;
   if (rows === null) {
     void load();
