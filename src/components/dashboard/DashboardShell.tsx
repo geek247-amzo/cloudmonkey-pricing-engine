@@ -2,6 +2,7 @@ import {
   Activity,
   BarChart3,
   Bot,
+  BriefcaseBusiness,
   ChevronDown,
   ChevronRight,
   Cloud,
