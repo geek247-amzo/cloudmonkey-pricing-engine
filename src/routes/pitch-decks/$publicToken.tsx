@@ -362,6 +362,25 @@ function Slide({
           </div>
         </div>
       )}
+      {slide.links && (
+        <div className="mt-10 grid max-w-5xl gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {slide.links.map((link) => (
+            <a
+              key={link.href}
+              href={link.href}
+              className="group rounded-2xl border border-white/15 bg-white/[.06] p-5 transition hover:-translate-y-1 hover:border-[#a895ff] hover:bg-white/[.1]"
+            >
+              <div className="flex items-center justify-between gap-3 text-base font-bold text-white">
+                <span>{link.label}</span>
+                <ArrowRight className="h-4 w-4 text-[#a895ff] transition group-hover:translate-x-1" />
+              </div>
+              {link.description && (
+                <p className="mt-2 text-sm leading-6 text-white/55">{link.description}</p>
+              )}
+            </a>
+          ))}
+        </div>
+      )}
       <div className="mt-12 flex items-center gap-3 text-xs text-white/35">
         <span>{deck.preparedBy}</span>
         <span>·</span>

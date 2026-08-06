@@ -7,6 +7,7 @@ export type PitchDeckSlide = {
   bullets?: string[];
   columns?: Array<{ title: string; body: string; bullets?: string[]; accent?: string }>;
   metrics?: Array<{ value: string; label: string }>;
+  links?: Array<{ label: string; href: string; description?: string }>;
   gantt?: Array<{ label: string; weeks: [number, number]; detail: string }>;
   audioUrl?: string | null;
 };
@@ -633,21 +634,8 @@ export const STI_RISK_PRODUCT_PROPOSAL_DECK: PitchDeckContent = {
       ],
     },
     {
-      id: "separation",
-      eyebrow: "3 · Customer separation",
-      title: "STI Risk and STI Electrical remain separate CloudMonkey customers.",
-      body: "This proposal applies only to STI Risk. It does not change, complete or extend any STI Electrical agreement or ERP deliverable.",
-      bullets: [
-        "Separate contracts and approved scope",
-        "Separate project records and support tickets",
-        "Separate managed plans, invoices and payment records",
-        "Separate environments, data access and credentials where applicable",
-        "Requests covering both companies are divided and logged against the correct customer",
-      ],
-    },
-    {
       id: "journey",
-      eyebrow: "4 · Initial platform journey",
+      eyebrow: "3 · Initial platform journey",
       title: "The intended journey is clear without becoming an unlimited commitment.",
       columns: [
         {
@@ -675,7 +663,7 @@ export const STI_RISK_PRODUCT_PROPOSAL_DECK: PitchDeckContent = {
     },
     {
       id: "build-control",
-      eyebrow: "5 · Build and acceptance",
+      eyebrow: "4 · Build and acceptance",
       title: "Every milestone has a price, proof and decision point.",
       bullets: [
         "CloudMonkey submits the proposed build plan and milestone quotation.",
@@ -694,7 +682,7 @@ export const STI_RISK_PRODUCT_PROPOSAL_DECK: PitchDeckContent = {
     },
     {
       id: "managed-plan",
-      eyebrow: "6 · Managed plan",
+      eyebrow: "5 · Managed plan",
       title: "Select the ongoing service after the platform footprint is known.",
       body: "Once the platform is ready for production, STI Risk selects the CloudMonkey managed plan appropriate to its hosting, monitoring and support requirements. The service order defines the exact inclusions, service levels, billing date, term and responsibilities.",
       columns: [
@@ -717,7 +705,7 @@ export const STI_RISK_PRODUCT_PROPOSAL_DECK: PitchDeckContent = {
     },
     {
       id: "bookings",
-      eyebrow: "7 · Remote and on-site services",
+      eyebrow: "6 · Remote and on-site services",
       title: "Additional help is simple to request and commercially clear.",
       columns: [
         {
@@ -742,7 +730,7 @@ export const STI_RISK_PRODUCT_PROPOSAL_DECK: PitchDeckContent = {
     },
     {
       id: "responsibilities",
-      eyebrow: "8 · Responsibilities",
+      eyebrow: "7 · Responsibilities",
       title: "A productive engagement needs clear ownership on both sides.",
       columns: [
         {
@@ -759,7 +747,7 @@ export const STI_RISK_PRODUCT_PROPOSAL_DECK: PitchDeckContent = {
     },
     {
       id: "commercials",
-      eyebrow: "9 · Commercial position",
+      eyebrow: "8 · Commercial position",
       title: "The document is transparent about what is confirmed and what still needs approval.",
       bullets: [
         "Build pricing, payment milestones and dates are contained in the approved build plan or milestone quotation.",
@@ -773,6 +761,20 @@ export const STI_RISK_PRODUCT_PROPOSAL_DECK: PitchDeckContent = {
         { value: "Quote to confirm", label: "Build milestones and product-definition pricing" },
         { value: "Service order", label: "Managed hosting, monitoring and support" },
         { value: "Checkout", label: "Remote, on-site and travel charges where applicable" },
+      ],
+    },
+    {
+      id: "options",
+      eyebrow: "9 · Choose the right access option",
+      title: "Start with a defined capacity bundle, then resize as the work becomes clearer.",
+      body: "The following monthly options are paid in advance and provide a clear allocation of remote, on-site or hybrid access. Build work, hosting, AI usage, travel and third-party costs remain separate unless the selected service order expressly includes them.",
+      links: [
+        { label: "Advisory 5 · Remote", href: "/auth/sign-up?bundle=bundle_advisory_5_remote", description: "5 remote hours · R3,000/month" },
+        { label: "Advisory 10 · Remote", href: "/auth/sign-up?bundle=bundle_advisory_10_remote", description: "10 remote hours · R6,000/month" },
+        { label: "Advisory 20 · Remote", href: "/auth/sign-up?bundle=bundle_advisory_20_remote", description: "20 remote hours · R12,000/month" },
+        { label: "On-Site 10", href: "/auth/sign-up?bundle=bundle_advisory_10_onsite", description: "10 on-site hours · R10,000/month" },
+        { label: "Hybrid 10", href: "/auth/sign-up?bundle=bundle_advisory_10_hybrid", description: "5 remote + 5 on-site hours · R8,000/month" },
+        { label: "View all CloudMonkey bundles", href: "/pricing", description: "Compare the full catalogue and checkout options" },
       ],
     },
     {
