@@ -1200,6 +1200,145 @@ export const CATEGORIES: ServiceCategory[] = [
     sortOrder: 60,
     services: [
       {
+        id: "technical-strategic-services",
+        name: "Hourly Technical & Strategic Services",
+        description:
+          "Technical delivery, strategic advisory, fractional CTO support, training, and project facilitation delivered on-site or remotely.",
+        note: "Rate card effective 3 August 2026. Hourly work is requested and approved through a quotation, booking, or service confirmation.",
+        sortOrder: 5,
+        plans: [
+          {
+            id: "hourly_on_site",
+            name: "On-site Hour",
+            tagline: "Standard rate for work delivered at the client site.",
+            priceZar: 1000,
+            unit: "/hour",
+            billingType: "quote",
+            priceLabel: "R1,000 / hour",
+            sortOrder: 10,
+            features: [
+              "Development, configuration, integrations, deployment, and troubleshooting",
+              "Technology strategy, process design, product direction, and executive decision support",
+              "Fractional CTO guidance, training, workshops, and project facilitation",
+              "Three-hour minimum booking",
+            ],
+          },
+          {
+            id: "hourly_remote",
+            name: "Remote Hour",
+            tagline: "Remote delivery billed in 30-minute increments.",
+            priceZar: 600,
+            unit: "/hour",
+            billingType: "quote",
+            priceLabel: "R600 / hour",
+            sortOrder: 20,
+            features: [
+              "Remote development, configuration, reviews, planning, and decision support",
+              "Remote workshops, documentation, training, and project facilitation",
+              "Recorded in 30-minute increments",
+              "Approved client request required before work starts",
+            ],
+          },
+        ],
+      },
+      {
+        id: "strategic-advisory",
+        name: "Strategic Advisory",
+        description:
+          "Structured access to technology strategy, product leadership, process design, and fractional CTO capacity.",
+        note: "Effective 3 August 2026. Monthly allocations are paid in advance and do not include hosting, AI tokens, hardware, licences, or third-party services.",
+        sortOrder: 10,
+        plans: [
+          {
+            id: "advisory_5",
+            name: "Advisory 5",
+            tagline: "Light monthly guidance and decision support.",
+            priceZar: 3000,
+            unit: MONTH,
+            billingType: "recurring",
+            sortOrder: 10,
+            features: [
+              "5 remote hours per month",
+              "Technology and AI strategy",
+              "Decision support and documentation",
+            ],
+          },
+          {
+            id: "advisory_10",
+            name: "Advisory 10",
+            tagline: "Weekly product, process, or technology sessions.",
+            priceZar: 6000,
+            unit: MONTH,
+            billingType: "recurring",
+            sortOrder: 20,
+            features: [
+              "10 remote hours per month",
+              "Product definition and prioritisation",
+              "Roadmaps, reviews, and stakeholder facilitation",
+            ],
+          },
+          {
+            id: "advisory_20",
+            name: "Advisory 20",
+            tagline: "Active fractional CTO and product leadership support.",
+            priceZar: 12000,
+            unit: MONTH,
+            billingType: "recurring",
+            highlighted: true,
+            badge: "Fractional CTO",
+            sortOrder: 30,
+            features: [
+              "20 remote hours per month",
+              "Fractional CTO guidance and technical governance",
+              "Architecture, commercialisation, and implementation leadership",
+            ],
+          },
+          {
+            id: "advisory_onsite_10",
+            name: "On-Site 10",
+            tagline: "Operational workshops, implementation, and team enablement.",
+            priceZar: 10000,
+            unit: MONTH,
+            billingType: "recurring",
+            sortOrder: 40,
+            features: [
+              "10 on-site hours per month",
+              "Operational observation and stakeholder workshops",
+              "Implementation leadership and in-person training",
+            ],
+          },
+          {
+            id: "advisory_hybrid_10",
+            name: "Hybrid 10",
+            tagline: "A balance of strategic planning and in-person execution.",
+            priceZar: 8000,
+            unit: MONTH,
+            billingType: "recurring",
+            sortOrder: 50,
+            features: [
+              "5 remote + 5 on-site hours per month",
+              "Strategic planning and operational execution",
+              "Visible usage, outcomes, blockers, and remaining capacity",
+            ],
+          },
+          {
+            id: "advisory_payg",
+            name: "Pay-as-you-go",
+            tagline: "Approved time without a monthly allocation.",
+            priceZar: null,
+            billingType: "quote",
+            priceLabel: "R600 remote / R1,000 on-site",
+            sortOrder: 60,
+            features: [
+              "Remote sessions billed at R600/hour",
+              "On-site sessions billed at R1,000/hour",
+              "On-site bookings carry a three-hour minimum",
+              "Book only the approved capacity required",
+            ],
+          },
+        ],
+      },
+      {
         id: "managed-it",
         name: "Managed IT Services",
         description: "End-to-end IT support, helpdesk, strategy, and reporting.",
@@ -2263,6 +2402,76 @@ export function serviceDefinitionForPlan(
           ? ["Per-user extension licence", "One user per extension"]
           : ["Limits follow accepted service order quantities"],
       outOfScopeBilling: DEFAULT_OUT_OF_SCOPE,
+    };
+  }
+
+  if (service.id === "technical-strategic-services" || service.id === "strategic-advisory") {
+    const isHourly = service.id === "technical-strategic-services";
+    return {
+      managementType: plan.billingType === "quote" ? "quote" : "managed",
+      vatTreatment: DEFAULT_VAT_TREATMENT,
+      packageRules: {
+        coverage: [
+          isHourly
+            ? "Technical delivery, strategic advisory, fractional CTO, training, and project facilitation within the approved booking."
+            : "Capacity is limited to the remote or on-site hours included in the selected monthly allocation.",
+        ],
+        serviceAllocation: [
+          isHourly
+            ? "Work is requested or approved by an authorised client representative before delivery."
+            : "Clients select priorities, stakeholders, and outputs for each monthly allocation.",
+        ],
+        infrastructureAllocation: [
+          "Hosting, VPS infrastructure, backups, AI tokens, software licences, hardware, and third-party services are separate.",
+        ],
+        supportAllocation: [
+          isHourly
+            ? "Time, activity, outputs, and blockers may be recorded through project logs or job cards."
+            : "Hours used, outcomes, blockers, and remaining capacity are reported through CloudMonkey project records.",
+        ],
+        responseTimes: [
+          "Sessions and delivery windows follow the accepted booking, quotation, or service confirmation.",
+        ],
+        includedChanges: [
+          "Advice, decisions, documentation, workshops, and agreed actions within purchased capacity.",
+        ],
+        usageLimits: [
+          isHourly
+            ? "On-site work has a three-hour minimum; remote work is recorded in 30-minute increments."
+            : "Preparation, document review, and requested follow-up count toward the allocation when recorded.",
+          "Unused monthly hours do not roll over unless agreed in writing before month-end.",
+        ],
+        limitExceeded: [
+          "Additional hours require written approval and are billed at the applicable hourly rate.",
+        ],
+      },
+      standardTerms: [
+        "Rates are effective from 3 August 2026 and may be updated on written notice or in a renewed service schedule.",
+        "Access is purchased as defined time and capacity; it does not create unlimited availability, equity, revenue share, partnership, or responsibility for client business outcomes.",
+        "Strategic advice may identify development work, but that work is separately approved and scheduled.",
+      ],
+      includedScope: plan.features,
+      excludedScope: [
+        "Development or configuration beyond purchased capacity",
+        "Hosting, AI tokens, hardware, licences, and third-party services",
+        "Formal legal, tax, accounting, or regulated professional advice",
+        "Business management authority or responsibility for client staff",
+        "Equity participation, revenue share, board appointment, or partnership status",
+      ],
+      hardLimits: [
+        isHourly
+          ? "On-site minimum: three hours per booking."
+          : "Monthly allocations are paid in advance and are limited to the hours listed in the selected plan.",
+        isHourly
+          ? "Remote billing: 30-minute increments."
+          : "Additional hours require written approval.",
+        "Travel, accommodation, expenses, external contractors, and pass-through costs require separate approval.",
+      ],
+      support: [
+        "A nominated client decision-maker approves priorities and resolves scope questions.",
+      ],
+      outOfScopeBilling:
+        "Additional approved time is billed at R1,000/hour on-site or R600/hour remote; external costs are quoted separately.",
     };
   }
 

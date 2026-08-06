@@ -157,7 +157,7 @@ describe("pricing catalog serialization", () => {
           for (const values of Object.values(definition.packageRules)) {
             expect(values.length).toBeGreaterThan(0);
           }
-          expect(definition.standardTerms.length).toBe(2);
+          expect(definition.standardTerms.length).toBeGreaterThanOrEqual(2);
         }
       }
     }
@@ -166,7 +166,7 @@ describe("pricing catalog serialization", () => {
       expect(Object.values(definition.packageRules).every((values) => values.length > 0)).toBe(
         true,
       );
-      expect(definition.standardTerms.length).toBe(2);
+      expect(definition.standardTerms.length).toBeGreaterThanOrEqual(2);
     }
   });
 
@@ -191,5 +191,37 @@ describe("pricing catalog serialization", () => {
     const definition = serviceDefinitionForPlan(category, service, plan);
     expect(definition.packageRules.coverage.join(" ")).toContain("1 server");
     expect(definition.packageRules.limitExceeded.join(" ")).toContain("R2,500/hour");
+  });
+
+  test("includes the 2026 hourly and strategic advisory offerings", () => {
+    const category = CATEGORIES.find((item) => item.id === "quote-services");
+    const hourly = category?.services.find((item) => item.id === "technical-strategic-services");
+    const advisory = category?.services.find((item) => item.id === "strategic-advisory");
+
+    expect(hourly?.plans.map((plan) => plan.id)).toEqual(["hourly_on_site", "hourly_remote"]);
+    expect(hourly?.plans.map((plan) => plan.priceZar)).toEqual([1000, 600]);
+    expect(hourly?.plans.every((plan) => plan.billingType === "quote")).toBe(true);
+    expect(advisory?.plans.map((plan) => plan.id)).toEqual([
+      "advisory_5",
+      "advisory_10",
+      "advisory_20",
+      "advisory_onsite_10",
+      "advisory_hybrid_10",
+      "advisory_payg",
+    ]);
+    expect(advisory?.plans.slice(0, 5).map((plan) => plan.priceZar)).toEqual([
+      3000,
+      6000,
+      12000,
+      10000,
+      8000,
+    ]);
+    expect(advisory?.plans.at(-1)?.billingType).toBe("quote");
+    expect(advisory?.plans.at(-1)?.priceLabel).toContain("R600 remote / R1,000 on-site");
+
+    if (!category || !advisory) return;
+    const definition = serviceDefinitionForPlan(category, advisory, advisory.plans[2]);
+    expect(definition.excludedScope.join(" ")).toContain("Equity participation");
+    expect(definition.outOfScopeBilling).toContain("R1,000/hour on-site");
   });
 });
