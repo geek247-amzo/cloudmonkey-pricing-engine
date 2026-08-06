@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Copy, ExternalLink, FileBarChart, Plus, Send } from "lucide-react";
+import { Copy, ExternalLink, FileBarChart, Plus, Send, Volume2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -30,6 +30,8 @@ function PitchDecksPage() {
   const { isAdmin, authReady } = useAdminAccess();
   const [rows, setRows] = useState<PitchDeck[] | null>(null);
   const [creating, setCreating] = useState(false);
+  const [bootstrapping, setBootstrapping] = useState(false);
+  const [audioDeckId, setAudioDeckId] = useState<string | null>(null);
 
   async function load() {
     const response = await fetch("/api/admin/pitch-decks");
@@ -69,6 +71,39 @@ function PitchDecksPage() {
     toast.success("Share link copied");
   }
 
+  async function bootstrapSti() {
+    setBootstrapping(true);
+    try {
+      const response = await fetch("/api/admin/pitch-decks/bootstrap-sti", { method: "POST" });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? "Could not prepare STI engagements");
+      toast.success("STI Electrical and STI Risk drafts are ready");
+      await load();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not prepare STI engagements");
+    } finally {
+      setBootstrapping(false);
+    }
+  }
+
+  async function generateAudio(id: string) {
+    setAudioDeckId(id);
+    try {
+      const response = await fetch(`/api/admin/pitch-decks/${encodeURIComponent(id)}/audio`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? "Could not generate voiceover");
+      toast.success(`Generated ${body.generated?.length ?? 0} slide voiceovers`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not generate voiceover");
+    } finally {
+      setAudioDeckId(null);
+    }
+  }
+
   return (
     <div className="space-y-6 p-5 sm:p-8">
       <PageHeader
@@ -83,10 +118,15 @@ function PitchDecksPage() {
               Public links are view-only and can be opened without a CloudMonkey login.
             </p>
           </div>
-          <Button onClick={createStiDeck} disabled={creating}>
-            <Plus className="mr-2 h-4 w-4" />
-            {creating ? "Creating…" : "Create STI deck"}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={bootstrapSti} disabled={bootstrapping}>
+              {bootstrapping ? "Preparing…" : "Prepare STI engagements"}
+            </Button>
+            <Button onClick={createStiDeck} disabled={creating}>
+              <Plus className="mr-2 h-4 w-4" />
+              {creating ? "Creating…" : "Create STI deck"}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           {rows.length === 0 ? (
@@ -130,6 +170,16 @@ function PitchDecksPage() {
                       Open deck
                     </a>
                   </Button>
+                  {deck.status === "published" && (
+                    <Button
+                      variant="outline"
+                      onClick={() => generateAudio(deck.id)}
+                      disabled={audioDeckId === deck.id}
+                    >
+                      <Volume2 className="mr-2 h-4 w-4" />
+                      {audioDeckId === deck.id ? "Generating…" : "Voiceover"}
+                    </Button>
+                  )}
                   <Button asChild>
                     <a
                       href={`mailto:accounts@stielectrical.co.za?subject=${encodeURIComponent(deck.title)}&body=${encodeURIComponent(`Please review the proposal presentation: ${deck.publicUrl}`)}`}

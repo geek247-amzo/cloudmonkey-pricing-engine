@@ -36,6 +36,11 @@ import {
   platformApiCredential,
   platformApiUsage,
   pitchDeck,
+  pitchDeckAudio,
+  project,
+  projectMilestone,
+  projectTask,
+  projectDeliverable,
   proposal,
   proposalItem,
   registeredDomain,
@@ -71,7 +76,7 @@ import {
   workspaceSettings,
   adminChatMessage,
 } from "../../db/schema";
-import { STI_ELECTRICAL_PHASE_2_DECK } from "../pitch-deck-content";
+import { STI_ELECTRICAL_PHASE_2_DECK, STI_RISK_PLATFORM_DECK } from "../pitch-deck-content";
 import { PLATFORM_CREDENTIAL_STATUSES, PLATFORM_PROVIDERS } from "../platform-usage";
 
 function toCentsFromZarInput(value: unknown) {
@@ -110,6 +115,10 @@ type AdminDeps = {
   loadAdminChatHistory: (sessionId: string, limit?: number) => Promise<any[]>;
   sendN8nAdminChat: (input: any) => Promise<any>;
   generateGeminiText: (prompt: string, systemInstruction?: string) => Promise<string>;
+  generateGeminiSpeech: (input: {
+    text: string;
+    voice?: string;
+  }) => Promise<{ audioData: string; mimeType: string; model: string; voice: string }>;
   sanitizeN8nIntegration: (row: any) => any;
   syncN8nWorkflows: (integration: any) => Promise<any>;
   signMicrosoft365State: (input: { userId: string; returnTo: string }) => string;
@@ -1100,56 +1109,483 @@ export function createAdminHandlers(deps: AdminDeps) {
     const deckId = parts[3] ? decodeURIComponent(parts[3]) : null;
     const action = parts[4];
 
-    if (request.method === "GET") {
-      const existingSti = await deps.db.query.pitchDeck.findFirst({ where: eq(pitchDeck.slug, "sti-electrical-phase-2") });
-      if (!existingSti) {
-        const customer = await deps.db.query.user.findFirst({ where: eq(user.email, "accounts@stielectrical.co.za") });
-        const stiLead = await deps.db.query.lead.findFirst({ where: eq(lead.email, "kiril.kutchoukov@gmail.com") });
-        await deps.db.insert(pitchDeck).values({
-          id: deps.makeId("deck"),
-          customerUserId: customer?.id ?? null,
-          leadId: stiLead?.id ?? null,
+    async function ensureEngagementProject(input: {
+      code: string;
+      customerUserId: string | null;
+      name: string;
+      serviceName: string;
+      template: string;
+      description: string;
+      dataBoundary: string;
+      milestones: Array<{ name: string; tasks: string[]; deliverables: string[] }>;
+    }) {
+      const existing = await deps.db.query.project.findFirst({
+        where: eq(project.engagementCode, input.code),
+      });
+      if (existing) return existing;
+      if (!input.customerUserId) return null;
+      const [created] = await deps.db
+        .insert(project)
+        .values({
+          id: deps.makeId("project"),
+          userId: input.customerUserId,
+          name: input.name,
+          serviceName: input.serviceName,
+          template: input.template,
+          engagementCode: input.code,
+          billingCostCentre: input.code,
+          contractingEntity: "H44S (Pty) Ltd t/a CloudMonkey",
+          dataBoundary: input.dataBoundary,
+          description: input.description,
+          status: "planned",
+          priority: "high",
+          updatedAt: new Date(),
+        })
+        .returning();
+      for (let index = 0; index < input.milestones.length; index += 1) {
+        const milestoneInput = input.milestones[index];
+        const [milestone] = await deps.db
+          .insert(projectMilestone)
+          .values({
+            id: deps.makeId("milestone"),
+            projectId: created.id,
+            name: milestoneInput.name,
+            sortOrder: index,
+            updatedAt: new Date(),
+          })
+          .returning();
+        for (let taskIndex = 0; taskIndex < milestoneInput.tasks.length; taskIndex += 1) {
+          await deps.db
+            .insert(projectTask)
+            .values({
+              id: deps.makeId("task"),
+              projectId: created.id,
+              milestoneId: milestone.id,
+              title: milestoneInput.tasks[taskIndex],
+              sortOrder: taskIndex,
+              updatedAt: new Date(),
+            });
+        }
+        for (const deliverableName of milestoneInput.deliverables) {
+          await deps.db
+            .insert(projectDeliverable)
+            .values({
+              id: deps.makeId("deliverable"),
+              projectId: created.id,
+              milestoneId: milestone.id,
+              name: deliverableName,
+              updatedAt: new Date(),
+            });
+        }
+      }
+      await deps.recordAudit({
+        actorUserId: session?.user?.id,
+        action: "customer.engagement.bootstrapped",
+        entityType: "project",
+        entityId: created.id,
+        message: `Created separated engagement ${input.code}`,
+        metadata: { engagementCode: input.code, dataBoundary: input.dataBoundary },
+      });
+      return created;
+    }
+
+    async function ensureDraftProposal(input: {
+      code: string;
+      title: string;
+      customerName: string;
+      customerEmail: string;
+      customerCompany: string;
+      customerUserId: string | null;
+      leadId: string | null;
+      introduction: string;
+      executiveSummary: string;
+      terms: string;
+      items: Array<{ name: string; description: string; unitPrice: number; recurring: boolean }>;
+    }) {
+      const existing = await deps.db.query.proposal.findFirst({
+        where: eq(proposal.proposalNumber, input.code),
+      });
+      if (existing) return existing;
+      const [created] = await deps.db
+        .insert(proposal)
+        .values({
+          id: deps.makeId("proposal"),
+          proposalNumber: input.code,
+          customerUserId: input.customerUserId,
+          leadId: input.leadId,
+          title: input.title,
+          status: "draft",
+          customerName: input.customerName,
+          customerEmail: input.customerEmail,
+          customerCompany: input.customerCompany,
+          introduction: input.introduction,
+          executiveSummary: input.executiveSummary,
+          terms: input.terms,
+          currency: "ZAR",
+          subtotal: input.items.reduce((sum, item) => sum + item.unitPrice, 0),
+          setupTotal: input.items
+            .filter((item) => !item.recurring)
+            .reduce((sum, item) => sum + item.unitPrice, 0),
+          recurringTotal: input.items
+            .filter((item) => item.recurring)
+            .reduce((sum, item) => sum + item.unitPrice, 0),
+          total: input.items.reduce((sum, item) => sum + item.unitPrice, 0),
           createdByUserId: session?.user?.id ?? null,
-          slug: "sti-electrical-phase-2",
-          publicToken: "sti-electrical-phase-2",
-          title: "STI Electrical — Phase 2 ERP Proposal",
-          status: "published",
-          content: JSON.stringify(STI_ELECTRICAL_PHASE_2_DECK),
-          publishedAt: new Date(),
-        }).onConflictDoNothing({ target: pitchDeck.slug });
+        })
+        .returning();
+      for (let index = 0; index < input.items.length; index += 1) {
+        const item = input.items[index];
+        await deps.db
+          .insert(proposalItem)
+          .values({
+            id: deps.makeId("proposalitem"),
+            proposalId: created.id,
+            productType: "custom",
+            name: item.name,
+            description: item.description,
+            unitPrice: item.unitPrice,
+            setupPrice: item.recurring ? 0 : item.unitPrice,
+            recurring: item.recurring,
+            interval: "month",
+            sortOrder: index,
+            lineTotal: item.unitPrice,
+            serviceDefinition: JSON.stringify({ engagementCode: input.code }),
+          });
+      }
+      await deps.recordAudit({
+        actorUserId: session?.user?.id,
+        action: "proposal.draft_created",
+        entityType: "proposal",
+        entityId: created.id,
+        message: `Created draft proposal ${input.code}`,
+        metadata: { engagementCode: input.code },
+      });
+      return created;
+    }
+
+    if (request.method === "POST" && deckId === "bootstrap-sti") {
+      const electricalCustomer = await deps.db.query.user.findFirst({
+        where: eq(user.email, "accounts@stielectrical.co.za"),
+      });
+      const riskCustomer = await deps.db.query.user.findFirst({
+        where: eq(user.email, "kiril.kutchoukov@gmail.com"),
+      });
+      const electricalLead = await deps.db.query.lead.findFirst({
+        where: eq(lead.email, "kiril.kutchoukov@gmail.com"),
+      });
+      const riskLead = await deps.db.query.lead.findFirst({
+        where: eq(lead.email, "kiril.kutchoukov@gmail.com"),
+      });
+      const electricalProject = await ensureEngagementProject({
+        code: "STI-ELECTRICAL",
+        customerUserId: electricalCustomer?.id ?? riskCustomer?.id ?? null,
+        name: "STI Electrical · ERP Phase 2 Enablement",
+        serviceName: "ERP implementation and operational enablement",
+        template: "business-technology",
+        description:
+          "Separate project for STI Electrical ERP close-out, live-data consolidation, training, UAT and hosting decisions.",
+        dataBoundary: "STI Electrical data only. Do not mix with STI Risk records or billing.",
+        milestones: [
+          {
+            name: "Data and foundation",
+            tasks: [
+              "Confirm data owners and source records",
+              "Consolidate assets, finance and stock data",
+            ],
+            deliverables: ["Data readiness register", "Asset register draft"],
+          },
+          {
+            name: "Consolidation and fixes",
+            tasks: ["Validate live ERP data", "Complete security and workflow fixes"],
+            deliverables: ["Validated ERP dataset", "IT and process audit"],
+          },
+          {
+            name: "Validation and handover",
+            tasks: ["Run user testing and training", "Complete UAT and handover"],
+            deliverables: ["UAT sign-off", "Handover pack"],
+          },
+        ],
+      });
+      const riskProject = await ensureEngagementProject({
+        code: "STI-RISK",
+        customerUserId: riskCustomer?.id ?? null,
+        name: "STI Risk · Product Definition and Platform Development",
+        serviceName: "Risk platform definition and development",
+        template: "business-technology",
+        description:
+          "Separate STI Risk product, development, support and managed-service engagement.",
+        dataBoundary:
+          "STI Risk data only. No automatic reuse of STI Electrical information, time or billing.",
+        milestones: [
+          {
+            name: "Product definition",
+            tasks: [
+              "Confirm target users and business outcomes",
+              "Map workflows, roles and acceptance criteria",
+            ],
+            deliverables: ["Product definition brief", "Prioritised feature inventory"],
+          },
+          {
+            name: "Foundation and priority workflows",
+            tasks: [
+              "Build approved platform foundation",
+              "Develop priority workflows and reporting",
+            ],
+            deliverables: ["Working milestone release", "Test evidence"],
+          },
+          {
+            name: "Validation and launch",
+            tasks: ["Complete UAT and training", "Confirm managed cloud and support model"],
+            deliverables: ["Launch readiness checklist", "Operating and support plan"],
+          },
+        ],
+      });
+      const electricalDeck = await ensureDeck(
+        "sti-electrical-phase-2",
+        "STI Electrical — On-site ERP Enablement & Technology Optimisation",
+        STI_ELECTRICAL_PHASE_2_DECK,
+        electricalCustomer?.id ?? riskCustomer?.id ?? null,
+        electricalLead?.id ?? null,
+        "published",
+      );
+      const riskDeck = await ensureDeck(
+        "sti-risk-platform",
+        "STI Risk — Product Definition & Platform Development",
+        STI_RISK_PLATFORM_DECK,
+        riskCustomer?.id ?? null,
+        riskLead?.id ?? null,
+        "draft",
+      );
+      const electricalProposal = await ensureDraftProposal({
+        code: "STI-ELECTRICAL-PHASE-2-2026",
+        title: "STI Electrical — Phase 2 close-out and on-site enablement",
+        customerName: "Kiril Kutchoukov",
+        customerEmail: "kiril.kutchoukov@gmail.com",
+        customerCompany: "STI Electrical (Pty) Ltd",
+        customerUserId: electricalCustomer?.id ?? riskCustomer?.id ?? null,
+        leadId: electricalLead?.id ?? null,
+        introduction:
+          "Draft for review: a transparent choice between standard SLA completion and an optional accelerated on-site enablement bundle.",
+        executiveSummary:
+          "The original Phase 2 rights remain honoured. Option B adds a separate 70-hour on-site acceleration service at R1,000 per hour, capped at R70,000.",
+        terms:
+          "This draft must be reviewed and approved before it is sent. STI Electrical and STI Risk remain separate engagements.",
+        items: [
+          {
+            name: "Accelerated on-site ERP enablement bundle",
+            description:
+              "70 on-site hours at R1,000/hour for live-data consolidation, user enablement, production-floor implementation and UAT.",
+            unitPrice: 7000000,
+            recurring: false,
+          },
+          {
+            name: "Managed Cloud hosting",
+            description:
+              "Hosting, SSL, DNS, backups, monitoring and support. Final plan selected separately after infrastructure confirmation.",
+            unitPrice: 0,
+            recurring: true,
+          },
+        ],
+      });
+      const riskProposal = await ensureDraftProposal({
+        code: "STI-RISK-DISCOVERY-2026",
+        title: "STI Risk — Product definition and development programme",
+        customerName: "Kiril Kutchoukov",
+        customerEmail: "kiril.kutchoukov@gmail.com",
+        customerCompany: "STI Risk",
+        customerUserId: riskCustomer?.id ?? null,
+        leadId: riskLead?.id ?? null,
+        introduction:
+          "Draft for review: a separate product-definition and milestone-based development engagement for STI Risk.",
+        executiveSummary:
+          "Define the product, prioritise workflows, build against acceptance criteria and establish a managed CloudMonkey operating model.",
+        terms:
+          "Commercial amounts for the product-definition sprint, development milestones and managed service remain to be confirmed and approved separately. No billable work starts from this draft without written approval.",
+        items: [
+          {
+            name: "Product Definition Sprint",
+            description:
+              "Strategy, user and workflow definition, feature inventory, roadmap and acceptance criteria. Quote to confirm.",
+            unitPrice: 0,
+            recurring: false,
+          },
+          {
+            name: "Milestone-based platform development",
+            description:
+              "Approved features built, tested and handed over against milestone acceptance criteria. Quote to confirm.",
+            unitPrice: 0,
+            recurring: false,
+          },
+          {
+            name: "Managed CloudMonkey service",
+            description:
+              "Separate hosting, monitoring, backups, security and support service selected after the final platform footprint is known.",
+            unitPrice: 0,
+            recurring: true,
+          },
+        ],
+      });
+      return deps.json(
+        {
+          projects: [electricalProject, riskProject].filter(Boolean),
+          decks: [electricalDeck, riskDeck],
+          proposals: [electricalProposal, riskProposal],
+        },
+        201,
+      );
+    }
+
+    async function ensureDeck(
+      slug: string,
+      title: string,
+      content: unknown,
+      customerUserId: string | null,
+      leadId: string | null,
+      status: string,
+    ) {
+      const existing = await deps.db.query.pitchDeck.findFirst({ where: eq(pitchDeck.slug, slug) });
+      if (existing) return existing;
+      const [created] = await deps.db
+        .insert(pitchDeck)
+        .values({
+          id: deps.makeId("deck"),
+          customerUserId,
+          leadId,
+          createdByUserId: session?.user?.id ?? null,
+          slug,
+          publicToken: crypto.randomBytes(24).toString("base64url"),
+          title,
+          status,
+          content: JSON.stringify(content),
+          publishedAt: status === "published" ? new Date() : null,
+        })
+        .returning();
+      return created;
+    }
+
+    if (request.method === "POST" && deckId && action === "audio") {
+      const deck = await deps.db.query.pitchDeck.findFirst({ where: eq(pitchDeck.id, deckId) });
+      if (!deck) return deps.json({ error: "Pitch deck not found" }, 404);
+      const content = JSON.parse(deck.content) as {
+        slides?: Array<{
+          id: string;
+          title: string;
+          subtitle?: string;
+          body?: string;
+          bullets?: string[];
+        }>;
+      };
+      const requestedSlide = String((await request.json().catch(() => ({}))).slideId ?? "");
+      const slides = (content.slides ?? []).filter(
+        (slide) => !requestedSlide || slide.id === requestedSlide,
+      );
+      if (!slides.length) return deps.json({ error: "Slide not found" }, 404);
+      const generated = [];
+      for (const slide of slides) {
+        const spokenText = [slide.title, slide.subtitle, slide.body, ...(slide.bullets ?? [])]
+          .filter(Boolean)
+          .join(". ");
+        const audio = await deps.generateGeminiSpeech({ text: spokenText, voice: "Kore" });
+        await deps.db
+          .insert(pitchDeckAudio)
+          .values({
+            id: deps.makeId("deckaudio"),
+            pitchDeckId: deck.id,
+            slideId: slide.id,
+            audioData: audio.audioData,
+            mimeType: audio.mimeType,
+            model: audio.model,
+            voice: audio.voice,
+            updatedAt: new Date(),
+          })
+          .onConflictDoUpdate({
+            target: [pitchDeckAudio.pitchDeckId, pitchDeckAudio.slideId],
+            set: {
+              audioData: audio.audioData,
+              mimeType: audio.mimeType,
+              model: audio.model,
+              voice: audio.voice,
+              updatedAt: new Date(),
+            },
+          });
+        generated.push({ slideId: slide.id, mimeType: audio.mimeType });
+      }
+      return deps.json({ generated });
+    }
+
+    if (request.method === "GET") {
+      const existingSti = await deps.db.query.pitchDeck.findFirst({
+        where: eq(pitchDeck.slug, "sti-electrical-phase-2"),
+      });
+      if (!existingSti) {
+        const customer = await deps.db.query.user.findFirst({
+          where: eq(user.email, "accounts@stielectrical.co.za"),
+        });
+        const stiLead = await deps.db.query.lead.findFirst({
+          where: eq(lead.email, "kiril.kutchoukov@gmail.com"),
+        });
+        await deps.db
+          .insert(pitchDeck)
+          .values({
+            id: deps.makeId("deck"),
+            customerUserId: customer?.id ?? null,
+            leadId: stiLead?.id ?? null,
+            createdByUserId: session?.user?.id ?? null,
+            slug: "sti-electrical-phase-2",
+            publicToken: "sti-electrical-phase-2",
+            title: "STI Electrical — Phase 2 ERP Proposal",
+            status: "published",
+            content: JSON.stringify(STI_ELECTRICAL_PHASE_2_DECK),
+            publishedAt: new Date(),
+          })
+          .onConflictDoNothing({ target: pitchDeck.slug });
       }
       const rows = await deps.db.query.pitchDeck.findMany({
         orderBy: (row: any, { desc }: any) => [desc(row.updatedAt)],
         with: { customer: true, lead: true, createdBy: true },
       });
-      return deps.json(rows.map((row: any) => ({
-        ...row,
-        content: undefined,
-        publicUrl: `${url.origin}/pitch-decks/${encodeURIComponent(row.publicToken)}`,
-      })));
+      return deps.json(
+        rows.map((row: any) => ({
+          ...row,
+          content: undefined,
+          publicUrl: `${url.origin}/pitch-decks/${encodeURIComponent(row.publicToken)}`,
+        })),
+      );
     }
 
     if (request.method === "POST" && !deckId) {
       const body = await request.json().catch(() => ({}));
       const slug = String(body.slug ?? "").trim() || "sti-electrical-phase-2";
       const existing = await deps.db.query.pitchDeck.findFirst({ where: eq(pitchDeck.slug, slug) });
-      if (existing) return deps.json({ ...existing, content: undefined, publicUrl: `${url.origin}/pitch-decks/${existing.publicToken}` });
-      const customer = await deps.db.query.user.findFirst({ where: eq(user.email, "accounts@stielectrical.co.za") });
-      const stiLead = await deps.db.query.lead.findFirst({ where: eq(lead.email, "kiril.kutchoukov@gmail.com") });
+      if (existing)
+        return deps.json({
+          ...existing,
+          content: undefined,
+          publicUrl: `${url.origin}/pitch-decks/${existing.publicToken}`,
+        });
+      const customer = await deps.db.query.user.findFirst({
+        where: eq(user.email, "accounts@stielectrical.co.za"),
+      });
+      const stiLead = await deps.db.query.lead.findFirst({
+        where: eq(lead.email, "kiril.kutchoukov@gmail.com"),
+      });
       const createdId = deps.makeId("deck");
       const token = crypto.randomBytes(24).toString("base64url");
-      const [created] = await deps.db.insert(pitchDeck).values({
-        id: createdId,
-        customerUserId: customer?.id ?? null,
-        leadId: stiLead?.id ?? null,
-        createdByUserId: session?.user?.id ?? null,
-        slug,
-        publicToken: token,
-        title: String(body.title ?? "STI Electrical — Phase 2 ERP Proposal"),
-        status: body.status === "draft" ? "draft" : "published",
-        content: JSON.stringify(body.content ?? STI_ELECTRICAL_PHASE_2_DECK),
-        publishedAt: body.status === "draft" ? null : new Date(),
-      }).returning();
+      const [created] = await deps.db
+        .insert(pitchDeck)
+        .values({
+          id: createdId,
+          customerUserId: customer?.id ?? null,
+          leadId: stiLead?.id ?? null,
+          createdByUserId: session?.user?.id ?? null,
+          slug,
+          publicToken: token,
+          title: String(body.title ?? "STI Electrical — Phase 2 ERP Proposal"),
+          status: body.status === "draft" ? "draft" : "published",
+          content: JSON.stringify(body.content ?? STI_ELECTRICAL_PHASE_2_DECK),
+          publishedAt: body.status === "draft" ? null : new Date(),
+        })
+        .returning();
       await deps.recordAudit({
         actorUserId: session?.user?.id,
         action: "pitch_deck.created",
@@ -1158,14 +1594,31 @@ export function createAdminHandlers(deps: AdminDeps) {
         message: `Created pitch deck ${created.title}`,
         metadata: { slug, customerUserId: customer?.id ?? null },
       });
-      return deps.json({ ...created, content: undefined, publicUrl: `${url.origin}/pitch-decks/${token}` }, 201);
+      return deps.json(
+        { ...created, content: undefined, publicUrl: `${url.origin}/pitch-decks/${token}` },
+        201,
+      );
     }
 
     if (deckId && action === "publish" && request.method === "POST") {
-      const [updated] = await deps.db.update(pitchDeck).set({ status: "published", publishedAt: new Date(), updatedAt: new Date() }).where(eq(pitchDeck.id, deckId)).returning();
+      const [updated] = await deps.db
+        .update(pitchDeck)
+        .set({ status: "published", publishedAt: new Date(), updatedAt: new Date() })
+        .where(eq(pitchDeck.id, deckId))
+        .returning();
       if (!updated) return deps.json({ error: "Pitch deck not found" }, 404);
-      await deps.recordAudit({ actorUserId: session?.user?.id, action: "pitch_deck.published", entityType: "pitch_deck", entityId: deckId, message: `Published pitch deck ${updated.title}` });
-      return deps.json({ ...updated, content: undefined, publicUrl: `${url.origin}/pitch-decks/${updated.publicToken}` });
+      await deps.recordAudit({
+        actorUserId: session?.user?.id,
+        action: "pitch_deck.published",
+        entityType: "pitch_deck",
+        entityId: deckId,
+        message: `Published pitch deck ${updated.title}`,
+      });
+      return deps.json({
+        ...updated,
+        content: undefined,
+        publicUrl: `${url.origin}/pitch-decks/${updated.publicToken}`,
+      });
     }
 
     return deps.json({ error: "Method not allowed" }, 405);

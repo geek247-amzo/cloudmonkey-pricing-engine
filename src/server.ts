@@ -50,6 +50,7 @@ import {
   proposal,
   proposalItem,
   pitchDeck,
+  pitchDeckAudio,
   registeredDomain,
   service,
   serviceCategory,
@@ -466,7 +467,10 @@ async function ensureStiElectricalPitchDeck() {
   const existing = await db.query.pitchDeck.findFirst({ where: eq(pitchDeck.slug, slug) });
   const content = JSON.stringify(STI_ELECTRICAL_PHASE_2_DECK);
   if (existing) {
-    if (existing.content !== content || existing.title !== "STI Electrical — On-site ERP Enablement & Technology Optimisation") {
+    if (
+      existing.content !== content ||
+      existing.title !== "STI Electrical — On-site ERP Enablement & Technology Optimisation"
+    ) {
       const [updated] = await db
         .update(pitchDeck)
         .set({
@@ -480,19 +484,27 @@ async function ensureStiElectricalPitchDeck() {
     }
     return existing;
   }
-  const customer = await db.query.user.findFirst({ where: eq(user.email, "accounts@stielectrical.co.za") });
-  const stiLead = await db.query.lead.findFirst({ where: eq(lead.email, "kiril.kutchoukov@gmail.com") });
-  const [created] = await db.insert(pitchDeck).values({
-    id: makeId("deck"),
-    customerUserId: customer?.id ?? null,
-    leadId: stiLead?.id ?? null,
-    slug,
-    publicToken: slug,
-    title: "STI Electrical — On-site ERP Enablement & Technology Optimisation",
-    status: "published",
-    content,
-    publishedAt: new Date(),
-  }).onConflictDoNothing({ target: pitchDeck.slug }).returning();
+  const customer = await db.query.user.findFirst({
+    where: eq(user.email, "accounts@stielectrical.co.za"),
+  });
+  const stiLead = await db.query.lead.findFirst({
+    where: eq(lead.email, "kiril.kutchoukov@gmail.com"),
+  });
+  const [created] = await db
+    .insert(pitchDeck)
+    .values({
+      id: makeId("deck"),
+      customerUserId: customer?.id ?? null,
+      leadId: stiLead?.id ?? null,
+      slug,
+      publicToken: slug,
+      title: "STI Electrical — On-site ERP Enablement & Technology Optimisation",
+      status: "published",
+      content,
+      publishedAt: new Date(),
+    })
+    .onConflictDoNothing({ target: pitchDeck.slug })
+    .returning();
   return created ?? (await db.query.pitchDeck.findFirst({ where: eq(pitchDeck.slug, slug) }));
 }
 
@@ -2127,14 +2139,70 @@ function buildBusinessWebsiteConfig(input: {
 }
 
 const KETIWE_STARTER_PRODUCTS = [
-  { title: "Clarity Body Mist", price: 145, sku: "KET-MIST-CLARITY", category: "Body Mists", description: "A light African Sage mist to clear stagnant energy and refresh the skin.", image_url: "/ketiwe/assets/mist1.png" },
-  { title: "Heart Blossom Body Scrub", price: 250, sku: "KET-SCRUB-HEART", category: "Body Scrubs", description: "A nourishing sugar scrub infused with rose to soften skin.", image_url: "/ketiwe/assets/scrub1.png" },
-  { title: "Imphepho Roller Ball Oil", price: 150, sku: "KET-CARE-ROLL", category: "Body Care", description: "A grounding African Sage roll-on oil for on-the-go clarity.", image_url: "/ketiwe/assets/care1.png" },
-  { title: "Sunkissed Serum", price: 495, sku: "KET-SUN-SERUM", category: "Sunkissed Beauty Range", description: "African Sage skin-renewal face serum for a radiant ritual.", image_url: "/ketiwe/assets/sunkissed1.png" },
-  { title: "Dewey Serum", price: 585, sku: "KET-DEW-SERUM", category: "Dewey Beauty Range", description: "An African Botanics face serum for a hydrated, dewy glow.", image_url: "/ketiwe/assets/dewey1.png" },
-  { title: "Imphepho African Sage Tea Bags", price: 150, sku: "KET-TEA-IMPHEPHO", category: "Herbal Teas", description: "A grounding, traditionally inspired African Sage tea ritual.", image_url: "/ketiwe/assets/tea2.png" },
-  { title: "Deeply Nourishing Body Mousse", price: 220, sku: "KET-CARE-MOUSSE", category: "Body Care", description: "A whipped body mousse for lasting softness and hydration.", image_url: "/ketiwe/assets/care2.png" },
-  { title: "Tsitsikama Room Spray", price: 145, sku: "KET-FRAG-TSITSI", category: "Home Fragrance", description: "A forest-inspired room spray to cleanse and realign a space.", image_url: "/ketiwe/assets/catG.png" },
+  {
+    title: "Clarity Body Mist",
+    price: 145,
+    sku: "KET-MIST-CLARITY",
+    category: "Body Mists",
+    description: "A light African Sage mist to clear stagnant energy and refresh the skin.",
+    image_url: "/ketiwe/assets/mist1.png",
+  },
+  {
+    title: "Heart Blossom Body Scrub",
+    price: 250,
+    sku: "KET-SCRUB-HEART",
+    category: "Body Scrubs",
+    description: "A nourishing sugar scrub infused with rose to soften skin.",
+    image_url: "/ketiwe/assets/scrub1.png",
+  },
+  {
+    title: "Imphepho Roller Ball Oil",
+    price: 150,
+    sku: "KET-CARE-ROLL",
+    category: "Body Care",
+    description: "A grounding African Sage roll-on oil for on-the-go clarity.",
+    image_url: "/ketiwe/assets/care1.png",
+  },
+  {
+    title: "Sunkissed Serum",
+    price: 495,
+    sku: "KET-SUN-SERUM",
+    category: "Sunkissed Beauty Range",
+    description: "African Sage skin-renewal face serum for a radiant ritual.",
+    image_url: "/ketiwe/assets/sunkissed1.png",
+  },
+  {
+    title: "Dewey Serum",
+    price: 585,
+    sku: "KET-DEW-SERUM",
+    category: "Dewey Beauty Range",
+    description: "An African Botanics face serum for a hydrated, dewy glow.",
+    image_url: "/ketiwe/assets/dewey1.png",
+  },
+  {
+    title: "Imphepho African Sage Tea Bags",
+    price: 150,
+    sku: "KET-TEA-IMPHEPHO",
+    category: "Herbal Teas",
+    description: "A grounding, traditionally inspired African Sage tea ritual.",
+    image_url: "/ketiwe/assets/tea2.png",
+  },
+  {
+    title: "Deeply Nourishing Body Mousse",
+    price: 220,
+    sku: "KET-CARE-MOUSSE",
+    category: "Body Care",
+    description: "A whipped body mousse for lasting softness and hydration.",
+    image_url: "/ketiwe/assets/care2.png",
+  },
+  {
+    title: "Tsitsikama Room Spray",
+    price: 145,
+    sku: "KET-FRAG-TSITSI",
+    category: "Home Fragrance",
+    description: "A forest-inspired room spray to cleanse and realign a space.",
+    image_url: "/ketiwe/assets/catG.png",
+  },
 ];
 
 function buildEcommerceStoreConfig(input: {
@@ -2148,7 +2216,8 @@ function buildEcommerceStoreConfig(input: {
 }) {
   const manifest = normaliseManifest(input.designManifest);
   const businessName = input.businessName || input.store?.name || "CloudMonkey Store";
-  const isKetiwe = businessName.trim().toLowerCase() === "ketiwe" || input.domain.startsWith("ketiwe-");
+  const isKetiwe =
+    businessName.trim().toLowerCase() === "ketiwe" || input.domain.startsWith("ketiwe-");
   const theme = isKetiwe
     ? {
         primaryColor: "#a5691f",
@@ -2181,10 +2250,17 @@ function buildEcommerceStoreConfig(input: {
   const categories = listValues(
     manifest.categories,
     isKetiwe
-      ? ["Body Mists", "Body Scrubs", "Body Care", "Sunkissed Beauty Range", "Dewey Beauty Range", "Herbal Teas"]
+      ? [
+          "Body Mists",
+          "Body Scrubs",
+          "Body Care",
+          "Sunkissed Beauty Range",
+          "Dewey Beauty Range",
+          "Herbal Teas",
+        ]
       : templateKey === "fashion-retail-editorial"
-      ? ["New Arrivals", "Women", "Men", "Bags", "Accessories", "Footwear"]
-      : ["Featured", "New Arrivals", "Best Sellers"],
+        ? ["New Arrivals", "Women", "Men", "Bags", "Accessories", "Footwear"]
+        : ["Featured", "New Arrivals", "Best Sellers"],
   );
   const starterProducts = isKetiwe
     ? KETIWE_STARTER_PRODUCTS
@@ -2222,7 +2298,9 @@ function buildEcommerceStoreConfig(input: {
     brandIdentity: {
       tone: stringValue(manifest.tone, "Helpful, modern and trustworthy"),
       logoText: businessName,
-      tagline: isKetiwe ? "Heal Within. Transform Always. Live in Alignment." : stringValue(manifest.headline, summary),
+      tagline: isKetiwe
+        ? "Heal Within. Transform Always. Live in Alignment."
+        : stringValue(manifest.headline, summary),
     },
     themeTokens: theme,
     navigation: isKetiwe
@@ -2360,8 +2438,19 @@ function ecommercePages(businessName: string, summary: string) {
 function ecommerceHomepageSections(templateKey: string, summary: string) {
   if (templateKey === "ketiwe-ritual-editorial") {
     return [
-      { type: "promoBar", title: "Free shipping on orders over R800 · Natural. African. Made for you." },
-      { type: "hero", eyebrow: "Spiritual wellness", title: "Heal Within. Transform Always. Live in Alignment.", subtitle: "Spiritual healing, personal transformation and intentional living to help you reconnect with your purpose and rise into your future.", ctaLabel: "Begin your journey", ctaHref: "/shop" },
+      {
+        type: "promoBar",
+        title: "Free shipping on orders over R800 · Natural. African. Made for you.",
+      },
+      {
+        type: "hero",
+        eyebrow: "Spiritual wellness",
+        title: "Heal Within. Transform Always. Live in Alignment.",
+        subtitle:
+          "Spiritual healing, personal transformation and intentional living to help you reconnect with your purpose and rise into your future.",
+        ctaLabel: "Begin your journey",
+        ctaHref: "/shop",
+      },
       { type: "intention", title: "Shop by intention" },
       { type: "featuredProducts", title: "Featured ritual collections" },
       { type: "community", title: "Join the Ketiwe Community" },
@@ -2573,7 +2662,9 @@ async function callRuntimeProvisioner<T>(
         uploadId,
         index,
         totalChunks,
-        data: compressedBody.subarray(index * chunkSize, (index + 1) * chunkSize).toString("base64"),
+        data: compressedBody
+          .subarray(index * chunkSize, (index + 1) * chunkSize)
+          .toString("base64"),
       });
       const chunkSigned = signRuntimeRequest(provisionerSecret, "POST", "/deploy-chunk", chunkBody);
       chunkResponse = await fetch(`${baseUrl}/deploy-chunk`, {
@@ -2591,7 +2682,9 @@ async function callRuntimeProvisioner<T>(
       });
       if (!chunkResponse.ok) {
         const text = await chunkResponse.text();
-        throw new Error(`Runtime provisioner /deploy-chunk failed: ${chunkResponse.status} ${text.slice(0, 800)}`);
+        throw new Error(
+          `Runtime provisioner /deploy-chunk failed: ${chunkResponse.status} ${text.slice(0, 800)}`,
+        );
       }
     }
     const chunkText = await chunkResponse!.text();
@@ -3616,21 +3709,25 @@ async function updateMedusaProductForWebsite(
 ) {
   const baseUrl = site.temporaryDomain || site.primaryDomain;
   if (!baseUrl) throw new Error("Website has no domain for Medusa API");
-  const response = await fetch(`https://${baseUrl}/api/cloudmonkey/admin/products/${encodeURIComponent(productId)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({
-      title: body.title,
-      description: body.longDescription || body.description,
-      short_description: body.shortDescription,
-      long_description: body.longDescription || body.description,
-      sku: body.sku,
-      price: body.price,
-      inventoryQuantity: body.inventoryQuantity,
-      image_url: body.imageUrl || null,
-      status: body.status === "archived" ? "draft" : body.status === "draft" ? "draft" : "published",
-    }),
-  });
+  const response = await fetch(
+    `https://${baseUrl}/api/cloudmonkey/admin/products/${encodeURIComponent(productId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        title: body.title,
+        description: body.longDescription || body.description,
+        short_description: body.shortDescription,
+        long_description: body.longDescription || body.description,
+        sku: body.sku,
+        price: body.price,
+        inventoryQuantity: body.inventoryQuantity,
+        image_url: body.imageUrl || null,
+        status:
+          body.status === "archived" ? "draft" : body.status === "draft" ? "draft" : "published",
+      }),
+    },
+  );
   const text = await response.text();
   if (!response.ok)
     throw new Error(`Medusa product update failed: ${response.status} ${text.slice(0, 800)}`);
@@ -4654,7 +4751,8 @@ async function sendN8nAdminChat(input: {
         event: "admin.chat.message",
         ...input,
         usageReporting: {
-          endpoint: process.env.CLOUDMONKEY_AI_USAGE_URL ?? "http://frontend:3000/api/internal/ai-usage",
+          endpoint:
+            process.env.CLOUDMONKEY_AI_USAGE_URL ?? "http://frontend:3000/api/internal/ai-usage",
           authHeader: "X-CloudMonkey-API-Token",
           usageAvailableRequired: true,
         },
@@ -5890,6 +5988,83 @@ async function generateGeminiText(
     });
   }
   return text;
+}
+
+function pcmToWavBase64(pcmBase64: string, sampleRate = 24000, channels = 1, bitsPerSample = 16) {
+  const pcm = Buffer.from(pcmBase64, "base64");
+  const header = Buffer.alloc(44);
+  header.write("RIFF", 0);
+  header.writeUInt32LE(36 + pcm.length, 4);
+  header.write("WAVE", 8);
+  header.write("fmt ", 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(channels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE((sampleRate * channels * bitsPerSample) / 8, 28);
+  header.writeUInt16LE((channels * bitsPerSample) / 8, 32);
+  header.writeUInt16LE(bitsPerSample, 34);
+  header.write("data", 36);
+  header.writeUInt32LE(pcm.length, 40);
+  return Buffer.concat([header, pcm]).toString("base64");
+}
+
+async function generateGeminiSpeech(input: { text: string; voice?: string }) {
+  const storedCredential = await db.query.platformApiCredential.findFirst({
+    where: (row: any) => and(eq(row.provider, "gemini"), eq(row.status, "active")),
+    orderBy: (row: any, operators: any) => [operators.desc(row.createdAt)],
+  });
+  const apiKey = storedCredential
+    ? decryptSecret(storedCredential.keyEncrypted)
+    : process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error("Gemini API key is not configured");
+  const model = process.env.GEMINI_TTS_MODEL || "gemini-2.5-flash-preview-tts";
+  const voice = input.voice || "Kore";
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              {
+                text: `Generate a polished, warm business presentation voiceover. Speak only the following transcript:\n\n${input.text}`,
+              },
+            ],
+          },
+        ],
+        generationConfig: {
+          responseModalities: ["AUDIO"],
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
+        },
+      }),
+    },
+  );
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok)
+    throw new Error(
+      `Gemini speech generation failed: ${response.status} ${body.error?.message ?? ""}`.trim(),
+    );
+  const inline = body.candidates?.[0]?.content?.parts?.find(
+    (part: any) => part.inlineData,
+  )?.inlineData;
+  if (!inline?.data) throw new Error("Gemini did not return audio data");
+  await recordPlatformApiUsage({
+    db,
+    makeId,
+    platformApiUsage,
+    credentialId: storedCredential?.id ?? null,
+    userId: null,
+    provider: "gemini",
+    model,
+    featureKey: "pitch_deck_voiceover",
+    inputTokens: Number(body.usageMetadata?.promptTokenCount ?? 0),
+    outputTokens: Number(body.usageMetadata?.candidatesTokenCount ?? 0),
+  });
+  const mimeType = "audio/wav";
+  return { audioData: pcmToWavBase64(inline.data), mimeType, model, voice };
 }
 
 async function tryRegisterPaidDomainOrder(
@@ -7824,7 +7999,8 @@ async function captureInvoicePayment(input: {
         paymentId: result.payment?.id ?? null,
       });
     } catch (error) {
-      activationWarning = "Payment was recorded, but a follow-up service activation step needs attention.";
+      activationWarning =
+        "Payment was recorded, but a follow-up service activation step needs attention.";
       console.error("Invoice payment activation follow-up failed", {
         invoiceId: input.invoiceId,
         paymentId: result.payment?.id ?? null,
@@ -8754,6 +8930,7 @@ const adminHandlers = createAdminHandlers({
   adminChatMessage,
   sendN8nAdminChat,
   generateGeminiText,
+  generateGeminiSpeech,
   sanitizeN8nIntegration,
   syncN8nWorkflows,
   signMicrosoft365State,
@@ -10937,13 +11114,51 @@ echo "CloudMonkey agent installed."
     }
 
     if (url.pathname.startsWith("/api/pitch-decks/")) {
-      const token = decodeURIComponent(url.pathname.split("/").filter(Boolean)[2] ?? "");
-      const row = token === "sti-electrical-phase-2"
-        ? await ensureStiElectricalPitchDeck()
-        : await db.query.pitchDeck.findFirst({ where: or(eq(pitchDeck.publicToken, token), eq(pitchDeck.slug, token)) });
+      const publicParts = url.pathname.split("/").filter(Boolean);
+      const token = decodeURIComponent(publicParts[2] ?? "");
+      const row =
+        token === "sti-electrical-phase-2"
+          ? await ensureStiElectricalPitchDeck()
+          : await db.query.pitchDeck.findFirst({
+              where: or(eq(pitchDeck.publicToken, token), eq(pitchDeck.slug, token)),
+            });
       if (!row || row.status !== "published") return json({ error: "Pitch deck not found" }, 404);
+      if (publicParts[3] === "audio" && publicParts[4]) {
+        const audio = await db.query.pitchDeckAudio.findFirst({
+          where: and(
+            eq(pitchDeckAudio.pitchDeckId, row.id),
+            eq(pitchDeckAudio.slideId, decodeURIComponent(publicParts[4])),
+          ),
+        });
+        if (!audio) return json({ error: "Slide audio not found" }, 404);
+        return new Response(Buffer.from(audio.audioData, "base64"), {
+          headers: {
+            "Content-Type": audio.mimeType,
+            "Cache-Control": "public, max-age=31536000, immutable",
+          },
+        });
+      }
       let content: unknown = null;
-      try { content = JSON.parse(row.content); } catch { return json({ error: "Pitch deck content is invalid" }, 500); }
+      try {
+        content = JSON.parse(row.content);
+      } catch {
+        return json({ error: "Pitch deck content is invalid" }, 500);
+      }
+      if (content && typeof content === "object" && Array.isArray((content as any).slides)) {
+        const audioRows = await db.query.pitchDeckAudio.findMany({
+          where: eq(pitchDeckAudio.pitchDeckId, row.id),
+        });
+        const audioBySlide = new Map(
+          audioRows.map((audio: any) => [
+            audio.slideId,
+            `${url.origin}/api/pitch-decks/${encodeURIComponent(row.publicToken)}/audio/${encodeURIComponent(audio.slideId)}`,
+          ]),
+        );
+        (content as any).slides = (content as any).slides.map((slide: any) => ({
+          ...slide,
+          audioUrl: audioBySlide.get(slide.id) ?? null,
+        }));
+      }
       return json({
         id: row.id,
         title: row.title,
@@ -11301,7 +11516,8 @@ echo "CloudMonkey agent installed."
     }
 
     if (url.pathname === "/api/internal/ai-usage" && request.method === "POST") {
-      const expectedToken = process.env.CLOUDMONKEY_API_TOKEN ?? process.env.N8N_ADMIN_AGENT_WEBHOOK_SECRET;
+      const expectedToken =
+        process.env.CLOUDMONKEY_API_TOKEN ?? process.env.N8N_ADMIN_AGENT_WEBHOOK_SECRET;
       if (!expectedToken || request.headers.get("X-CloudMonkey-API-Token") !== expectedToken) {
         return json({ error: "Unauthorized" }, 401);
       }
@@ -11357,7 +11573,11 @@ echo "CloudMonkey agent installed."
             chargedTokens: usageRow.chargedTokens,
           });
         }
-        return json({ ok: true, usageId: usageRow.id, chargedTokens: body.context.chargeCustomer ? usageRow.chargedTokens : 0 });
+        return json({
+          ok: true,
+          usageId: usageRow.id,
+          chargedTokens: body.context.chargeCustomer ? usageRow.chargedTokens : 0,
+        });
       } catch (error: any) {
         return json({ error: error.message ?? "AI usage recording failed" }, error.status ?? 500);
       }

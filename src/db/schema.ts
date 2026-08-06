@@ -1,4 +1,13 @@
-import { pgTable, text, timestamp, boolean, integer, unique, jsonb, numeric } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  text,
+  timestamp,
+  boolean,
+  integer,
+  unique,
+  jsonb,
+  numeric,
+} from "drizzle-orm/pg-core";
 import { vector } from "drizzle-orm/pg-core/columns/vector_extension/vector";
 import { relations } from "drizzle-orm";
 import { sql } from "drizzle-orm";
@@ -825,6 +834,30 @@ export const pitchDeck = pgTable("pitch_deck", {
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 });
 
+export const pitchDeckAudio = pgTable(
+  "pitch_deck_audio",
+  {
+    id: text("id").primaryKey(),
+    pitchDeckId: text("pitchDeckId")
+      .notNull()
+      .references(() => pitchDeck.id, { onDelete: "cascade" }),
+    slideId: text("slideId").notNull(),
+    audioData: text("audioData").notNull(),
+    mimeType: text("mimeType").notNull().default("audio/wav"),
+    provider: text("provider").notNull().default("gemini"),
+    model: text("model").notNull(),
+    voice: text("voice").notNull(),
+    createdAt: timestamp("createdAt").notNull().defaultNow(),
+    updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+  },
+  (table) => ({
+    deckSlideUnique: unique("pitch_deck_audio_deck_slide_unique").on(
+      table.pitchDeckId,
+      table.slideId,
+    ),
+  }),
+);
+
 export const website = pgTable("website", {
   id: text("id").primaryKey(),
   userId: text("userId")
@@ -1302,12 +1335,18 @@ export const subscription = pgTable("subscription", {
 
 export const project = pgTable("project", {
   id: text("id").primaryKey(),
-  userId: text("userId").notNull().references(() => user.id),
+  userId: text("userId")
+    .notNull()
+    .references(() => user.id),
   subscriptionId: text("subscriptionId").references(() => subscription.id),
   planId: text("planId").references(() => servicePlan.id),
   name: text("name").notNull(),
   serviceName: text("serviceName").notNull(),
   template: text("template").notNull().default("service-implementation"),
+  engagementCode: text("engagementCode"),
+  billingCostCentre: text("billingCostCentre"),
+  contractingEntity: text("contractingEntity"),
+  dataBoundary: text("dataBoundary"),
   description: text("description"),
   status: text("status").notNull().default("planned"),
   priority: text("priority").notNull().default("medium"),
@@ -1317,19 +1356,32 @@ export const project = pgTable("project", {
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 });
 
-export const projectMember = pgTable("project_member", {
-  id: text("id").primaryKey(),
-  projectId: text("projectId").notNull().references(() => project.id, { onDelete: "cascade" }),
-  userId: text("userId").notNull().references(() => user.id),
-  role: text("role").notNull().default("member"),
-  createdAt: timestamp("createdAt").notNull().defaultNow(),
-}, (table) => ({
-  projectUserUnique: unique("project_member_project_user_unique").on(table.projectId, table.userId),
-}));
+export const projectMember = pgTable(
+  "project_member",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("projectId")
+      .notNull()
+      .references(() => project.id, { onDelete: "cascade" }),
+    userId: text("userId")
+      .notNull()
+      .references(() => user.id),
+    role: text("role").notNull().default("member"),
+    createdAt: timestamp("createdAt").notNull().defaultNow(),
+  },
+  (table) => ({
+    projectUserUnique: unique("project_member_project_user_unique").on(
+      table.projectId,
+      table.userId,
+    ),
+  }),
+);
 
 export const projectMilestone = pgTable("project_milestone", {
   id: text("id").primaryKey(),
-  projectId: text("projectId").notNull().references(() => project.id, { onDelete: "cascade" }),
+  projectId: text("projectId")
+    .notNull()
+    .references(() => project.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   description: text("description"),
   status: text("status").notNull().default("not_started"),
@@ -1341,7 +1393,9 @@ export const projectMilestone = pgTable("project_milestone", {
 
 export const projectTask = pgTable("project_task", {
   id: text("id").primaryKey(),
-  projectId: text("projectId").notNull().references(() => project.id, { onDelete: "cascade" }),
+  projectId: text("projectId")
+    .notNull()
+    .references(() => project.id, { onDelete: "cascade" }),
   milestoneId: text("milestoneId").references(() => projectMilestone.id, { onDelete: "set null" }),
   assignedToUserId: text("assignedToUserId").references(() => user.id),
   title: text("title").notNull(),
@@ -1356,7 +1410,9 @@ export const projectTask = pgTable("project_task", {
 
 export const projectDeliverable = pgTable("project_deliverable", {
   id: text("id").primaryKey(),
-  projectId: text("projectId").notNull().references(() => project.id, { onDelete: "cascade" }),
+  projectId: text("projectId")
+    .notNull()
+    .references(() => project.id, { onDelete: "cascade" }),
   milestoneId: text("milestoneId").references(() => projectMilestone.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   description: text("description"),
@@ -1369,9 +1425,13 @@ export const projectDeliverable = pgTable("project_deliverable", {
 
 export const projectComment = pgTable("project_comment", {
   id: text("id").primaryKey(),
-  projectId: text("projectId").notNull().references(() => project.id, { onDelete: "cascade" }),
+  projectId: text("projectId")
+    .notNull()
+    .references(() => project.id, { onDelete: "cascade" }),
   taskId: text("taskId").references(() => projectTask.id, { onDelete: "cascade" }),
-  authorUserId: text("authorUserId").notNull().references(() => user.id),
+  authorUserId: text("authorUserId")
+    .notNull()
+    .references(() => user.id),
   body: text("body").notNull(),
   isInternal: boolean("isInternal").notNull().default(false),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
@@ -1379,7 +1439,9 @@ export const projectComment = pgTable("project_comment", {
 
 export const projectActivity = pgTable("project_activity", {
   id: text("id").primaryKey(),
-  projectId: text("projectId").notNull().references(() => project.id, { onDelete: "cascade" }),
+  projectId: text("projectId")
+    .notNull()
+    .references(() => project.id, { onDelete: "cascade" }),
   actorUserId: text("actorUserId").references(() => user.id),
   action: text("action").notNull(),
   message: text("message").notNull(),
@@ -1398,23 +1460,35 @@ export const board = pgTable("board", {
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 });
 
-export const boardColumn = pgTable("board_column", {
-  id: text("id").primaryKey(),
-  boardId: text("boardId").notNull().references(() => board.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  key: text("key").notNull(),
-  position: numeric("position", { precision: 20, scale: 10 }).notNull(),
-  wipLimit: integer("wipLimit"),
-  isTerminal: boolean("isTerminal").notNull().default(false),
-  automationKey: text("automationKey"),
-  createdAt: timestamp("createdAt").notNull().defaultNow(),
-  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
-}, (table) => ({ boardColumnKeyUnique: unique("board_column_board_key_unique").on(table.boardId, table.key) }));
+export const boardColumn = pgTable(
+  "board_column",
+  {
+    id: text("id").primaryKey(),
+    boardId: text("boardId")
+      .notNull()
+      .references(() => board.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    key: text("key").notNull(),
+    position: numeric("position", { precision: 20, scale: 10 }).notNull(),
+    wipLimit: integer("wipLimit"),
+    isTerminal: boolean("isTerminal").notNull().default(false),
+    automationKey: text("automationKey"),
+    createdAt: timestamp("createdAt").notNull().defaultNow(),
+    updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+  },
+  (table) => ({
+    boardColumnKeyUnique: unique("board_column_board_key_unique").on(table.boardId, table.key),
+  }),
+);
 
 export const task = pgTable("task", {
   id: text("id").primaryKey(),
-  boardId: text("boardId").notNull().references(() => board.id, { onDelete: "cascade" }),
-  columnId: text("columnId").notNull().references(() => boardColumn.id),
+  boardId: text("boardId")
+    .notNull()
+    .references(() => board.id, { onDelete: "cascade" }),
+  columnId: text("columnId")
+    .notNull()
+    .references(() => boardColumn.id),
   position: numeric("position", { precision: 20, scale: 10 }).notNull(),
   title: text("title").notNull(),
   description: text("description"),
@@ -1428,34 +1502,66 @@ export const task = pgTable("task", {
   estimateMinutes: integer("estimateMinutes"),
   loggedMinutes: integer("loggedMinutes").notNull().default(0),
   version: integer("version").notNull().default(1),
-  createdByUserId: text("createdByUserId").notNull().references(() => user.id),
+  createdByUserId: text("createdByUserId")
+    .notNull()
+    .references(() => user.id),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
   completedAt: timestamp("completedAt"),
 });
 
-export const taskLink = pgTable("task_link", {
-  id: text("id").primaryKey(),
-  taskId: text("taskId").notNull().references(() => task.id, { onDelete: "cascade" }),
-  entityType: text("entityType").notNull(),
-  entityId: text("entityId").notNull(),
-}, (table) => ({ taskEntityUnique: unique("task_link_entity_unique").on(table.taskId, table.entityType, table.entityId) }));
+export const taskLink = pgTable(
+  "task_link",
+  {
+    id: text("id").primaryKey(),
+    taskId: text("taskId")
+      .notNull()
+      .references(() => task.id, { onDelete: "cascade" }),
+    entityType: text("entityType").notNull(),
+    entityId: text("entityId").notNull(),
+  },
+  (table) => ({
+    taskEntityUnique: unique("task_link_entity_unique").on(
+      table.taskId,
+      table.entityType,
+      table.entityId,
+    ),
+  }),
+);
 
-export const taskLabel = pgTable("task_label", {
-  id: text("id").primaryKey(),
-  boardId: text("boardId").notNull().references(() => board.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  colour: text("colour").notNull(),
-}, (table) => ({ boardLabelNameUnique: unique("task_label_board_name_unique").on(table.boardId, table.name) }));
+export const taskLabel = pgTable(
+  "task_label",
+  {
+    id: text("id").primaryKey(),
+    boardId: text("boardId")
+      .notNull()
+      .references(() => board.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    colour: text("colour").notNull(),
+  },
+  (table) => ({
+    boardLabelNameUnique: unique("task_label_board_name_unique").on(table.boardId, table.name),
+  }),
+);
 
-export const taskLabelMap = pgTable("task_label_map", {
-  taskId: text("taskId").notNull().references(() => task.id, { onDelete: "cascade" }),
-  labelId: text("labelId").notNull().references(() => taskLabel.id, { onDelete: "cascade" }),
-}, (table) => ({ taskLabelUnique: unique("task_label_map_unique").on(table.taskId, table.labelId) }));
+export const taskLabelMap = pgTable(
+  "task_label_map",
+  {
+    taskId: text("taskId")
+      .notNull()
+      .references(() => task.id, { onDelete: "cascade" }),
+    labelId: text("labelId")
+      .notNull()
+      .references(() => taskLabel.id, { onDelete: "cascade" }),
+  },
+  (table) => ({ taskLabelUnique: unique("task_label_map_unique").on(table.taskId, table.labelId) }),
+);
 
 export const taskActivity = pgTable("task_activity", {
   id: text("id").primaryKey(),
-  taskId: text("taskId").notNull().references(() => task.id, { onDelete: "cascade" }),
+  taskId: text("taskId")
+    .notNull()
+    .references(() => task.id, { onDelete: "cascade" }),
   actorUserId: text("actorUserId").references(() => user.id),
   actorType: text("actorType").notNull().default("user"),
   action: text("action").notNull(),
@@ -1467,7 +1573,9 @@ export const taskActivity = pgTable("task_activity", {
 
 export const userNotification = pgTable("user_notification", {
   id: text("id").primaryKey(),
-  userId: text("userId").notNull().references(() => user.id, { onDelete: "cascade" }),
+  userId: text("userId")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
   projectId: text("projectId").references(() => project.id, { onDelete: "cascade" }),
   type: text("type").notNull(),
   title: text("title").notNull(),

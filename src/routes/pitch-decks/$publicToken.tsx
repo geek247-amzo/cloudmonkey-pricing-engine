@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { ArrowLeft, ArrowRight, Check, Circle, ExternalLink, Menu, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Circle, ExternalLink, Menu, Volume2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import logo from "@/assets/cm-logo.png";
@@ -232,6 +232,18 @@ function Slide({
               <div className="mt-2 text-sm leading-5 text-white/55">{metric.label}</div>
             </div>
           ))}
+        </div>
+      )}
+      {slide.audioUrl && (
+        <div className="mt-7 flex max-w-xl items-center gap-3 rounded-2xl border border-white/10 bg-white/[.06] p-3">
+          <Volume2 className="h-4 w-4 shrink-0 text-[#a895ff]" />
+          <audio
+            className="h-9 w-full"
+            controls
+            preload="none"
+            src={slide.audioUrl}
+            aria-label={`Listen to slide ${index + 1}`}
+          />
         </div>
       )}
       {slide.bullets && (
