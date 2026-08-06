@@ -43,7 +43,7 @@ function SignInPage() {
     try {
       setIsLoading(true);
       const recaptchaToken = await getRecaptchaToken();
-      const { error } = await authClient.signIn.email(
+      const { data, error } = await authClient.signIn.email(
         {
           email,
           password,
@@ -53,6 +53,11 @@ function SignInPage() {
 
       if (error) {
         toast.error(error.message || "Failed to sign in");
+      } else if (data?.twoFactorRedirect) {
+        // Better Auth completes the password step first and returns this
+        // marker when the account requires TOTP. The pending 2FA challenge
+        // is held in the auth cookie, so move directly to the verifier.
+        router.navigate({ to: "/auth/two-factor" });
       } else {
         await claimCaesarSession().catch(() => null);
         window.location.assign(returnTo);
@@ -71,7 +76,14 @@ function SignInPage() {
       subtitle="Use your email address, Google account, or Office 365 identity to access the backend and platform tools."
       footer={
         <>
-          New here? <Link to="/auth/sign-up" search={{ callbackURL: returnTo }} className="font-medium text-foreground hover:underline">Create an account</Link>
+          New here?{" "}
+          <Link
+            to="/auth/sign-up"
+            search={{ callbackURL: returnTo }}
+            className="font-medium text-foreground hover:underline"
+          >
+            Create an account
+          </Link>
         </>
       }
     >
@@ -81,10 +93,10 @@ function SignInPage() {
       <form className="space-y-4" onSubmit={handleSignIn}>
         <div className="space-y-2">
           <Label htmlFor="email">Email address</Label>
-          <Input 
-            id="email" 
-            type="email" 
-            placeholder="you@cloudmonkey.co.za" 
+          <Input
+            id="email"
+            type="email"
+            placeholder="you@cloudmonkey.co.za"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             disabled={isLoading}
@@ -93,14 +105,17 @@ function SignInPage() {
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-3">
             <Label htmlFor="password">Password</Label>
-            <Link to="/auth/forgot-password" className="text-sm font-medium text-[var(--ai)] hover:underline">
+            <Link
+              to="/auth/forgot-password"
+              className="text-sm font-medium text-[var(--ai)] hover:underline"
+            >
               Forgot password?
             </Link>
           </div>
-          <Input 
-            id="password" 
-            type="password" 
-            placeholder="Enter your password" 
+          <Input
+            id="password"
+            type="password"
+            placeholder="Enter your password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             disabled={isLoading}
@@ -109,7 +124,10 @@ function SignInPage() {
 
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/70 bg-muted/40 px-4 py-3 text-sm">
           <label className="flex items-center gap-2 text-muted-foreground">
-            <input type="checkbox" className="h-4 w-4 rounded border-border text-[var(--ai)] focus:ring-[var(--ai)]" />
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-border text-[var(--ai)] focus:ring-[var(--ai)]"
+            />
             Keep me signed in
           </label>
           <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
@@ -118,8 +136,8 @@ function SignInPage() {
           </span>
         </div>
 
-        <Button 
-          type="submit" 
+        <Button
+          type="submit"
           disabled={isLoading}
           className="h-11 w-full rounded-2xl bg-[var(--ai)] shadow-[var(--shadow-elevated)]"
         >
@@ -130,9 +148,21 @@ function SignInPage() {
 
       <div className="grid gap-3 sm:grid-cols-3">
         {[
-          { icon: CheckCircle2, label: "One identity", desc: "Email, Google, and Microsoft access in one flow." },
-          { icon: LockKeyhole, label: "Security first", desc: "MFA, sessions, and recovery states built into the UI." },
-          { icon: ShieldCheck, label: "Team ready", desc: "Invite, link, and manage access without leaving the brand theme." },
+          {
+            icon: CheckCircle2,
+            label: "One identity",
+            desc: "Email, Google, and Microsoft access in one flow.",
+          },
+          {
+            icon: LockKeyhole,
+            label: "Security first",
+            desc: "MFA, sessions, and recovery states built into the UI.",
+          },
+          {
+            icon: ShieldCheck,
+            label: "Team ready",
+            desc: "Invite, link, and manage access without leaving the brand theme.",
+          },
         ].map((item) => (
           <div key={item.label} className="rounded-2xl border border-border/70 bg-muted/40 p-4">
             <item.icon className="h-5 w-5 text-[var(--ai)]" />
