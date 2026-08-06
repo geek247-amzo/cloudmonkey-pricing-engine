@@ -4,8 +4,15 @@ import { eq, and } from "drizzle-orm";
 import { hashPassword } from "better-auth/crypto";
 
 async function changePassword() {
-  const newPassword = "amrish1327";
-  const targetEmail = "amrish@cloudmonkey.co.za";
+  const targetEmail = process.argv[2] ?? process.env.CLOUDMONKEY_TARGET_EMAIL;
+  const newPassword = process.env.CLOUDMONKEY_NEW_PASSWORD;
+
+  if (!targetEmail || !newPassword) {
+    console.error(
+      "Usage: CLOUDMONKEY_NEW_PASSWORD='...' bun run src/db/change-password.ts <email>",
+    );
+    process.exit(1);
+  }
 
   console.log(`Changing password for ${targetEmail}...`);
 
