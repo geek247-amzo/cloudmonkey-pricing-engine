@@ -305,9 +305,13 @@ function Slide({
             />
           </>
         ) : (
-          <span className="text-sm text-white/45">
-            Voiceover coming soon — the overview will be read aloud here.
-          </span>
+          <button
+            type="button"
+            disabled
+            className="cursor-not-allowed rounded-full border border-white/15 px-4 py-2 text-sm font-bold text-white/40"
+          >
+            Voiceover coming soon
+          </button>
         )}
       </div>
       {slide.bullets && (
