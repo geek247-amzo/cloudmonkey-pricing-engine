@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useRef } from "react";
 
 import logo from "@/assets/cm-logo.png";
 import type { PitchDeckContent, PitchDeckSlide } from "@/lib/pitch-deck-content";
@@ -46,6 +47,8 @@ function PitchDeckPage() {
   const [active, setActive] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     fetchDeck(publicToken)
@@ -88,6 +91,10 @@ function PitchDeckPage() {
     document.addEventListener("fullscreenchange", onFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
   }, []);
+
+  useEffect(() => {
+    setIsPlaying(false);
+  }, [active]);
 
   if (error)
     return (
@@ -266,18 +273,43 @@ function Slide({
           ))}
         </div>
       )}
-      {slide.audioUrl && (
-        <div className="mt-7 flex max-w-xl items-center gap-3 rounded-2xl border border-white/10 bg-white/[.06] p-3">
-          <Volume2 className="h-4 w-4 shrink-0 text-[#a895ff]" />
-          <audio
-            className="h-9 w-full"
-            controls
-            preload="none"
-            src={slide.audioUrl}
-            aria-label={`Listen to slide ${index + 1}`}
-          />
-        </div>
-      )}
+      <div className="mt-7 flex max-w-xl items-center gap-3 rounded-2xl border border-white/10 bg-white/[.06] p-3">
+        <Volume2 className="h-4 w-4 shrink-0 text-[#a895ff]" />
+        {slide.audioUrl ? (
+          <>
+            <button
+              type="button"
+              className="rounded-full bg-[#a895ff] px-4 py-2 text-sm font-bold text-[#070d23] transition hover:bg-white"
+              onClick={() => {
+                if (!audioRef.current) return;
+                if (isPlaying) {
+                  audioRef.current.pause();
+                  setIsPlaying(false);
+                } else {
+                  void audioRef.current.play();
+                  setIsPlaying(true);
+                }
+              }}
+            >
+              {isPlaying ? "Pause overview" : "Listen to overview"}
+            </button>
+            <audio
+              ref={audioRef}
+              className="h-9 min-w-0 flex-1"
+              controls
+              preload="none"
+              src={slide.audioUrl}
+              onEnded={() => setIsPlaying(false)}
+              onPause={() => setIsPlaying(false)}
+              aria-label={`Listen to slide ${index + 1}`}
+            />
+          </>
+        ) : (
+          <span className="text-sm text-white/45">
+            Voiceover coming soon — the overview will be read aloud here.
+          </span>
+        )}
+      </div>
       {slide.bullets && (
         <div className="mt-10 grid max-w-4xl gap-4">
           {slide.bullets.map((bullet) => (
