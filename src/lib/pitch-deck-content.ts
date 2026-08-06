@@ -560,3 +560,237 @@ export const STI_RISK_PLATFORM_DECK: PitchDeckContent = {
     },
   ],
 };
+
+export const STI_RISK_PRODUCT_PROPOSAL_DECK: PitchDeckContent = {
+  version: 2,
+  client: "STI Risk",
+  preparedBy: "H44S (Pty) Ltd t/a CloudMonkey",
+  date: "6 August 2026",
+  slides: [
+    {
+      id: "cover",
+      eyebrow: "Confidential build and managed-service proposal · Valid 14 days",
+      title: "Build, launch and support the STI Risk platform.",
+      subtitle:
+        "A simple operating model: agree the build plan, deliver approved milestones, select the managed plan, and book additional help only when required.",
+      metrics: [
+        {
+          value: "Milestone-led",
+          label: "Build scope, price and payment trigger approved before work starts",
+        },
+        {
+          value: "Managed",
+          label: "Hosting, monitoring and routine support under a selected service order",
+        },
+        {
+          value: "Bookable",
+          label: "Remote or on-site assistance requested and paid through CloudMonkey",
+        },
+      ],
+    },
+    {
+      id: "offer",
+      eyebrow: "1 · The offer",
+      title: "A controlled path from product idea to supported platform.",
+      body: "CloudMonkey will first confirm what is already available, agree what must be built, and place the work into an approved milestone plan. CloudMonkey then builds and launches the approved platform on behalf of STI Risk. After launch, STI Risk selects the managed plan that fits its hosting, monitoring and support requirements.",
+      bullets: [
+        "Build work is approved and paid by milestone.",
+        "Ongoing service is covered by the selected managed plan.",
+        "Additional remote or on-site assistance is booked and paid only when needed.",
+        "No disconnected messages or meetings become an uncontrolled feature commitment.",
+      ],
+    },
+    {
+      id: "scope",
+      eyebrow: "2 · Scope",
+      title: "Five components make the delivery model understandable.",
+      columns: [
+        {
+          title: "Build plan",
+          body: "Features, milestones, responsibilities, dependencies, target dates and acceptance checks.",
+          accent: "violet",
+        },
+        {
+          title: "Platform build",
+          body: "Design, configuration and development of the features approved in the build plan.",
+          accent: "cyan",
+        },
+        {
+          title: "Testing and launch",
+          body: "Demonstration, user acceptance testing, agreed corrections, deployment and handover.",
+          accent: "amber",
+        },
+        {
+          title: "Managed service",
+          body: "Hosting, monitoring and support included in the selected managed plan.",
+          accent: "violet",
+        },
+        {
+          title: "Additional services",
+          body: "Remote or on-site expertise booked separately through the CloudMonkey website.",
+          accent: "cyan",
+        },
+      ],
+    },
+    {
+      id: "separation",
+      eyebrow: "3 · Customer separation",
+      title: "STI Risk and STI Electrical remain separate CloudMonkey customers.",
+      body: "This proposal applies only to STI Risk. It does not change, complete or extend any STI Electrical agreement or ERP deliverable.",
+      bullets: [
+        "Separate contracts and approved scope",
+        "Separate project records and support tickets",
+        "Separate managed plans, invoices and payment records",
+        "Separate environments, data access and credentials where applicable",
+        "Requests covering both companies are divided and logged against the correct customer",
+      ],
+    },
+    {
+      id: "journey",
+      eyebrow: "4 · Initial platform journey",
+      title: "The intended journey is clear without becoming an unlimited commitment.",
+      columns: [
+        {
+          title: "1–2 · Enquiry to assessment",
+          body: "Capture the customer, requested service, timing, location, assessment details, notes, evidence, photos and findings.",
+          accent: "cyan",
+        },
+        {
+          title: "3–4 · Scope to pitch",
+          body: "Prepare recommendations, service options, controlled pricing, a branded pitch deck and—where selected—an AI text-to-audio overview.",
+          accent: "violet",
+        },
+        {
+          title: "5–6 · Agreement to payment",
+          body: "Provide controlled proposal and agreement links, collect acceptance and provide the applicable payment link.",
+          accent: "amber",
+        },
+        {
+          title: "7–8 · Delivery to reporting",
+          body: "Create the delivery project, responsibilities, tasks, evidence, progress updates, reports and follow-on opportunities.",
+          accent: "cyan",
+        },
+      ],
+      body: "The final feature list, sequence and milestone structure will be the approved build plan. This journey records the intended direction, not an unlimited feature commitment.",
+    },
+    {
+      id: "build-control",
+      eyebrow: "5 · Build and acceptance",
+      title: "Every milestone has a price, proof and decision point.",
+      bullets: [
+        "CloudMonkey submits the proposed build plan and milestone quotation.",
+        "STI Risk approves scope, price, prerequisites and target dates.",
+        "Payment is completed in accordance with the milestone quotation.",
+        "CloudMonkey schedules, performs and demonstrates the approved work.",
+        "CloudMonkey supplies the agreed test evidence.",
+        "STI Risk completes acceptance testing and provides one consolidated response.",
+        "New features or changed requirements are added to the backlog and quoted before work starts.",
+      ],
+      metrics: [
+        { value: "Approved", label: "Scope and milestone baseline" },
+        { value: "Demonstrated", label: "Test evidence and user acceptance" },
+        { value: "Controlled", label: "Change request before out-of-scope work" },
+      ],
+    },
+    {
+      id: "managed-plan",
+      eyebrow: "6 · Managed plan",
+      title: "Select the ongoing service after the platform footprint is known.",
+      body: "Once the platform is ready for production, STI Risk selects the CloudMonkey managed plan appropriate to its hosting, monitoring and support requirements. The service order defines the exact inclusions, service levels, billing date, term and responsibilities.",
+      columns: [
+        {
+          title: "Included",
+          body: "Hosting, monitoring and routine support expressly included in the selected plan, plus listed maintenance.",
+          accent: "cyan",
+        },
+        {
+          title: "Booked or quoted",
+          body: "New development, integrations, data work, dedicated workshops, training and implementation assistance.",
+          accent: "violet",
+        },
+        {
+          title: "Separate costs",
+          body: "On-site attendance, travel, third-party licences, usage charges and external services unless expressly included.",
+          accent: "amber",
+        },
+      ],
+    },
+    {
+      id: "bookings",
+      eyebrow: "7 · Remote and on-site services",
+      title: "Additional help is simple to request and commercially clear.",
+      columns: [
+        {
+          title: "Remote",
+          body: "Select the available service and duration, pay at checkout, then attend the confirmed session remotely.",
+          bullets: ["Consulting", "Training", "Troubleshooting", "Development review"],
+          accent: "cyan",
+        },
+        {
+          title: "On-site",
+          body: "Provide the complete location. Professional time and applicable travel are calculated and approved before scheduling.",
+          bullets: [
+            "Minimum three-hour booking",
+            "Location captured at checkout",
+            "Travel shown where required",
+            "No booking until checkout and confirmation",
+          ],
+          accent: "violet",
+        },
+      ],
+      body: "A booking is only confirmed once checkout has been completed and CloudMonkey has issued the schedule confirmation. Extra work requires a further booking or approved quotation.",
+    },
+    {
+      id: "responsibilities",
+      eyebrow: "8 · Responsibilities",
+      title: "A productive engagement needs clear ownership on both sides.",
+      columns: [
+        {
+          title: "STI Risk",
+          body: "Nominate the product owner and decision-makers; provide accurate requirements, examples, content, access and timely decisions; perform UAT; log support requests; book and pay for additional services.",
+          accent: "cyan",
+        },
+        {
+          title: "CloudMonkey",
+          body: "Maintain the build plan and milestone record; build and demonstrate only approved scope; log support; deliver selected managed services; schedule paid bookings; calculate travel; apply agreed security and hosting controls.",
+          accent: "violet",
+        },
+      ],
+    },
+    {
+      id: "commercials",
+      eyebrow: "9 · Commercial position",
+      title: "The document is transparent about what is confirmed and what still needs approval.",
+      bullets: [
+        "Build pricing, payment milestones and dates are contained in the approved build plan or milestone quotation.",
+        "The managed-plan fee and inclusions are contained in the selected service order.",
+        "Ad hoc remote and on-site prices are displayed during website booking and paid at checkout.",
+        "On-site bookings have a three-hour minimum and travel is calculated when required.",
+        "Third-party licences, usage charges, payment processing, messaging and AI/audio services are excluded unless expressly included.",
+        "All amounts are in South African rand; VAT, if applicable, is shown at quotation or checkout.",
+      ],
+      metrics: [
+        { value: "Quote to confirm", label: "Build milestones and product-definition pricing" },
+        { value: "Service order", label: "Managed hosting, monitoring and support" },
+        { value: "Checkout", label: "Remote, on-site and travel charges where applicable" },
+      ],
+    },
+    {
+      id: "next-steps",
+      eyebrow: "10 · Next steps",
+      title: "Start with the decisions that make the first milestone executable.",
+      bullets: [
+        "Confirm the STI Risk legal contracting entity and authorised signatory.",
+        "Confirm the product owner and users who may approve milestones and make bookings.",
+        "Review and approve the initial build plan and first milestone quotation.",
+        "Complete the first milestone payment so work can be scheduled.",
+        "Select the managed plan before production launch.",
+      ],
+      metrics: [
+        { value: "STI Risk", label: "Customer engagement" },
+        { value: "Kiril", label: "Attention / authorised stakeholder to confirm" },
+        { value: "CloudMonkey", label: "Build, manage and book support when required" },
+      ],
+    },
+  ],
+};

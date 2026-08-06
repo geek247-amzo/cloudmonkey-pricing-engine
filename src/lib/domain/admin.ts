@@ -76,7 +76,7 @@ import {
   workspaceSettings,
   adminChatMessage,
 } from "../../db/schema";
-import { STI_ELECTRICAL_PHASE_2_DECK, STI_RISK_PLATFORM_DECK } from "../pitch-deck-content";
+import { STI_ELECTRICAL_PHASE_2_DECK, STI_RISK_PRODUCT_PROPOSAL_DECK } from "../pitch-deck-content";
 import { PLATFORM_CREDENTIAL_STATUSES, PLATFORM_PROVIDERS } from "../platform-usage";
 
 function toCentsFromZarInput(value: unknown) {
@@ -1155,27 +1155,23 @@ export function createAdminHandlers(deps: AdminDeps) {
           })
           .returning();
         for (let taskIndex = 0; taskIndex < milestoneInput.tasks.length; taskIndex += 1) {
-          await deps.db
-            .insert(projectTask)
-            .values({
-              id: deps.makeId("task"),
-              projectId: created.id,
-              milestoneId: milestone.id,
-              title: milestoneInput.tasks[taskIndex],
-              sortOrder: taskIndex,
-              updatedAt: new Date(),
-            });
+          await deps.db.insert(projectTask).values({
+            id: deps.makeId("task"),
+            projectId: created.id,
+            milestoneId: milestone.id,
+            title: milestoneInput.tasks[taskIndex],
+            sortOrder: taskIndex,
+            updatedAt: new Date(),
+          });
         }
         for (const deliverableName of milestoneInput.deliverables) {
-          await deps.db
-            .insert(projectDeliverable)
-            .values({
-              id: deps.makeId("deliverable"),
-              projectId: created.id,
-              milestoneId: milestone.id,
-              name: deliverableName,
-              updatedAt: new Date(),
-            });
+          await deps.db.insert(projectDeliverable).values({
+            id: deps.makeId("deliverable"),
+            projectId: created.id,
+            milestoneId: milestone.id,
+            name: deliverableName,
+            updatedAt: new Date(),
+          });
         }
       }
       await deps.recordAudit({
@@ -1235,22 +1231,20 @@ export function createAdminHandlers(deps: AdminDeps) {
         .returning();
       for (let index = 0; index < input.items.length; index += 1) {
         const item = input.items[index];
-        await deps.db
-          .insert(proposalItem)
-          .values({
-            id: deps.makeId("proposalitem"),
-            proposalId: created.id,
-            productType: "custom",
-            name: item.name,
-            description: item.description,
-            unitPrice: item.unitPrice,
-            setupPrice: item.recurring ? 0 : item.unitPrice,
-            recurring: item.recurring,
-            interval: "month",
-            sortOrder: index,
-            lineTotal: item.unitPrice,
-            serviceDefinition: JSON.stringify({ engagementCode: input.code }),
-          });
+        await deps.db.insert(proposalItem).values({
+          id: deps.makeId("proposalitem"),
+          proposalId: created.id,
+          productType: "custom",
+          name: item.name,
+          description: item.description,
+          unitPrice: item.unitPrice,
+          setupPrice: item.recurring ? 0 : item.unitPrice,
+          recurring: item.recurring,
+          interval: "month",
+          sortOrder: index,
+          lineTotal: item.unitPrice,
+          serviceDefinition: JSON.stringify({ engagementCode: input.code }),
+        });
       }
       await deps.recordAudit({
         actorUserId: session?.user?.id,
@@ -1350,8 +1344,8 @@ export function createAdminHandlers(deps: AdminDeps) {
       );
       const riskDeck = await ensureDeck(
         "sti-risk-platform",
-        "STI Risk — Product Definition & Platform Development",
-        STI_RISK_PLATFORM_DECK,
+        "STI Risk — Build & Managed Service Proposal",
+        STI_RISK_PRODUCT_PROPOSAL_DECK,
         riskCustomer?.id ?? null,
         riskLead?.id ?? null,
         "draft",
@@ -1396,11 +1390,11 @@ export function createAdminHandlers(deps: AdminDeps) {
         customerUserId: riskCustomer?.id ?? null,
         leadId: riskLead?.id ?? null,
         introduction:
-          "Draft for review: a separate product-definition and milestone-based development engagement for STI Risk.",
+          "Draft for review: CloudMonkey will agree the STI Risk build plan, deliver approved milestones, and support the live platform under the selected managed plan.",
         executiveSummary:
-          "Define the product, prioritise workflows, build against acceptance criteria and establish a managed CloudMonkey operating model.",
+          "STI Risk receives a documented build plan, milestone-based platform delivery, testing and launch, followed by a separately selected managed service. Additional remote or on-site assistance is booked and paid only when required.",
         terms:
-          "Commercial amounts for the product-definition sprint, development milestones and managed service remain to be confirmed and approved separately. No billable work starts from this draft without written approval.",
+          "Draft only. Build pricing, payment milestones and dates will be contained in the approved build plan or milestone quotation. The managed-plan fee and inclusions will be contained in the selected service order. Additional remote and on-site prices are displayed during website booking and paid at checkout. No additional billable build work starts without written approval or payment. STI Risk and STI Electrical remain separate CloudMonkey customers with separate scope, projects, data, support and billing.",
         items: [
           {
             name: "Product Definition Sprint",
@@ -1444,7 +1438,22 @@ export function createAdminHandlers(deps: AdminDeps) {
       status: string,
     ) {
       const existing = await deps.db.query.pitchDeck.findFirst({ where: eq(pitchDeck.slug, slug) });
-      if (existing) return existing;
+      if (existing) {
+        const [updated] = await deps.db
+          .update(pitchDeck)
+          .set({
+            title,
+            content: JSON.stringify(content),
+            customerUserId,
+            leadId,
+            status,
+            publishedAt: status === "published" ? (existing.publishedAt ?? new Date()) : null,
+            updatedAt: new Date(),
+          })
+          .where(eq(pitchDeck.id, existing.id))
+          .returning();
+        return updated ?? existing;
+      }
       const [created] = await deps.db
         .insert(pitchDeck)
         .values({
