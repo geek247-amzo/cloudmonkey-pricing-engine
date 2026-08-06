@@ -1439,6 +1439,7 @@ export function createAdminHandlers(deps: AdminDeps) {
     ) {
       const existing = await deps.db.query.pitchDeck.findFirst({ where: eq(pitchDeck.slug, slug) });
       if (existing) {
+        const nextStatus = existing.status === "published" ? "published" : status;
         const [updated] = await deps.db
           .update(pitchDeck)
           .set({
@@ -1446,8 +1447,9 @@ export function createAdminHandlers(deps: AdminDeps) {
             content: JSON.stringify(content),
             customerUserId,
             leadId,
-            status,
-            publishedAt: status === "published" ? (existing.publishedAt ?? new Date()) : null,
+            status: nextStatus,
+            publishedAt:
+              nextStatus === "published" ? (existing.publishedAt ?? new Date()) : null,
             updatedAt: new Date(),
           })
           .where(eq(pitchDeck.id, existing.id))
