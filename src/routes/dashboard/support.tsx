@@ -1,4 +1,4 @@
-import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
@@ -49,6 +49,7 @@ type CustomerOption = { id: string; name: string; email: string; role: string };
 function SupportPage() {
   const queryClient = useQueryClient();
   const { data: session } = authClient.useSession();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
   const isAdmin = session?.user?.role === "admin" || session?.user?.role === "owner";
   const [subject, setSubject] = useState("");
   const [description, setDescription] = useState("");
@@ -134,6 +135,8 @@ function SupportPage() {
         .includes(text);
     });
   }, [priorityFilter, query, queueView, session?.user?.id, sourceFilter, statusFilter, tickets]);
+
+  if (pathname === "/dashboard/support/notifications") return <Outlet />;
 
   return (
     <div className="space-y-6">
