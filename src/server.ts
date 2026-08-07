@@ -156,7 +156,11 @@ import {
   createAffiliateCommissionForPayment,
   createAffiliateHandlers,
 } from "./lib/domain/affiliates";
-import { createDomainsHandlers, registerPaidDomainOrder } from "./lib/domain/domains";
+import {
+  createDomainsHandlers,
+  registerPaidDomainOrder,
+  syncRegisteredDomains,
+} from "./lib/domain/domains";
 import { createAgentsRuntimeHandlers } from "./lib/domain/agents-runtime";
 import { createAdminHandlers } from "./lib/domain/admin";
 import { createAiWebsiteBuilderHandlers } from "./lib/domain/ai-website-builder";
@@ -1484,6 +1488,12 @@ const websiteHealthIntervalMs = Number(process.env.WEBSITE_HEALTH_INTERVAL_MS ??
 const websiteHealthRequestTimeoutMs = Number(
   process.env.WEBSITE_HEALTH_REQUEST_TIMEOUT_MS ?? 15 * 1000,
 );
+const domainProviderSyncIntervalMs = Number(
+  process.env.DOMAIN_PROVIDER_SYNC_INTERVAL_MS ?? 6 * 60 * 60 * 1000,
+);
+const domainProviderSyncState = globalThis as typeof globalThis & {
+  __cloudmonkeyDomainProviderSyncStarted?: boolean;
+};
 
 function websiteHealthUrl(website: WebsiteHealthSweepWebsite) {
   const candidate = website.primaryDomain || website.domain || website.temporaryDomain;
@@ -1654,6 +1664,36 @@ function startWebsiteHealthSweep() {
   timer.unref?.();
 }
 
+async function runDomainProviderSync() {
+  const result = await db.transaction(async (tx: any) => {
+    const lockRows = await tx.execute(sql`
+      select pg_try_advisory_xact_lock(hashtextextended('cloudmonkey.domain_provider_sync', 0)) as acquired
+    `);
+    if (!lockRows[0]?.acquired) return { locked: true as const };
+    return syncRegisteredDomains({
+      db: tx,
+      makeId,
+      recordAudit,
+      registeredDomain,
+      domainOrder,
+      supportTicket,
+    });
+  });
+  if (!("locked" in result)) console.info("Domain provider sync completed", result);
+}
+
+function startDomainProviderSync() {
+  if (domainProviderSyncState.__cloudmonkeyDomainProviderSyncStarted) return;
+  domainProviderSyncState.__cloudmonkeyDomainProviderSyncStarted = true;
+  const sync = () =>
+    void runDomainProviderSync().catch((error) => {
+      console.error("Domain provider sync failed:", error);
+    });
+  sync();
+  const timer = setInterval(sync, domainProviderSyncIntervalMs);
+  timer.unref?.();
+}
+
 async function runRuntimeHealthAlertSweep() {
   const settings = await getWorkspaceSettings().catch(() => null);
   const adminEmail =
@@ -1748,6 +1788,7 @@ function startRuntimeHealthAlertSweep() {
 if (process.env.NODE_ENV !== "test") {
   startRuntimeHealthAlertSweep();
   startWebsiteHealthSweep();
+  startDomainProviderSync();
 }
 
 async function dockerEnsureImage(image: string) {
@@ -11400,6 +11441,9 @@ echo "CloudMonkey agent installed."
     if (url.pathname === "/api/user/domains/auto-renew") {
       return domainsHandlers.handleDomainAutoRenew(request);
     }
+    if (url.pathname === "/api/user/domains/sync") {
+      return domainsHandlers.handleUserDomainsSync(request);
+    }
 
     if (url.pathname.startsWith("/api/user/domains")) {
       return domainsHandlers.handleUserDomains(request);
@@ -11463,6 +11507,10 @@ echo "CloudMonkey agent installed."
 
     if (url.pathname === "/api/admin/domains/dns") {
       return domainsHandlers.handleAdminDomainsDns(request);
+    }
+
+    if (url.pathname === "/api/admin/domains/sync") {
+      return domainsHandlers.handleUserDomainsSync(request, true);
     }
 
     if (url.pathname === "/api/admin/domains/info") {

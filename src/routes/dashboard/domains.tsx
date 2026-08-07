@@ -906,6 +906,20 @@ function DnsAddDialog({
 
 function DomainsManagementPage() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const queryClient = useQueryClient();
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch("/api/user/domains/sync", { method: "POST" });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error ?? "Could not refresh domains");
+      return body as { checked: number; updated: number; failed: number };
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["user", "domains", "list"] });
+      toast.success(`Refreshed ${result.checked} domain${result.checked === 1 ? "" : "s"}`);
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
 
   if (pathname.startsWith("/dashboard/domains/new")) {
     return <Outlet />;
@@ -918,12 +932,23 @@ function DomainsManagementPage() {
         title={<>Domains and DNS Management.</>}
         subtitle="Manage your domain registrations, renewals, and configure DNS records via the live API."
         actions={
-          <Button asChild className="rounded-xl bg-[var(--ai)] shadow-sm">
-            <Link to="/dashboard/domains/new">
-              <Plus className="h-4 w-4" />
-              Add domain
-            </Link>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              className="rounded-xl"
+              onClick={() => syncMutation.mutate()}
+              disabled={syncMutation.isPending}
+            >
+              <RefreshCcw className={`h-4 w-4 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+              {syncMutation.isPending ? "Refreshing…" : "Refresh domains"}
+            </Button>
+            <Button asChild className="rounded-xl bg-[var(--ai)] shadow-sm">
+              <Link to="/dashboard/domains/new">
+                <Plus className="h-4 w-4" />
+                Add domain
+              </Link>
+            </Button>
+          </div>
         }
       />
 

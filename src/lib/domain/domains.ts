@@ -220,6 +220,75 @@ function domainOrderSummaryLabel(domainName: string, planName: string) {
   return `Domain registration: ${domainName} (${planName})`;
 }
 
+function providerDomainStatus(data: any, expiryDate: string | null, currentStatus: string) {
+  const raw = String(data?.strStatus ?? data?.status ?? data?.domainStatus ?? "").toLowerCase();
+  if (raw.includes("redemption") || raw.includes("pending")) return "pending";
+  if (raw.includes("expired") || raw.includes("delete")) return "expired";
+  if (expiryDate && new Date(expiryDate).getTime() < Date.now()) return "expired";
+  if (raw.includes("active") || raw.includes("registered")) return "active";
+  return currentStatus === "expired" && expiryDate ? "expired" : "active";
+}
+
+function providerAutoRenew(data: any) {
+  const value = data?.autoRenew ?? data?.autorenew ?? data?.strAutoRenew;
+  if (value == null) return null;
+  if (typeof value === "boolean") return value;
+  return ["1", "true", "yes", "enabled", "on"].includes(String(value).toLowerCase());
+}
+
+export async function syncRegisteredDomains(
+  deps: DomainRegistrationDeps,
+  userId?: string | null,
+) {
+  const domains = await deps.db.query.registeredDomain.findMany(
+    userId ? { where: eq(deps.registeredDomain.userId, userId) } : undefined,
+  );
+  const result = { checked: domains.length, updated: 0, failed: 0, errors: [] as string[] };
+
+  for (const domain of domains) {
+    try {
+      const parts = splitDomainName(domain.id);
+      const providerResponse = await domainsApiPost("domain/info", {
+        sld: parts.sld,
+        tld: parts.tld,
+      });
+      const expiry = parseProviderDate(
+        providerResponse.intExDate ?? providerResponse.expiryDate ?? providerResponse.expires,
+      );
+      const status = providerDomainStatus(providerResponse, expiry, domain.status);
+      const autoRenew = providerAutoRenew(providerResponse);
+      const changed =
+        status !== domain.status ||
+        (expiry && (!domain.expiryDate || new Date(domain.expiryDate).getTime() !== new Date(expiry).getTime())) ||
+        (autoRenew != null && autoRenew !== domain.autoRenew);
+      if (!changed) continue;
+
+      await deps.db
+        .update(deps.registeredDomain)
+        .set({
+          status,
+          ...(expiry ? { expiryDate: new Date(expiry) } : {}),
+          ...(autoRenew != null ? { autoRenew } : {}),
+          updatedAt: new Date(),
+        })
+        .where(eq(deps.registeredDomain.id, domain.id));
+      result.updated += 1;
+      await deps.recordAudit({
+        action: "domain.provider_sync.updated",
+        entityType: "registered_domain",
+        entityId: domain.id,
+        message: `Refreshed ${domain.id} from the registrar`,
+        metadata: { previousStatus: domain.status, status, expiryDate: expiry, autoRenew },
+      });
+    } catch (error: any) {
+      result.failed += 1;
+      result.errors.push(`${domain.id}: ${error.message ?? "provider lookup failed"}`);
+    }
+  }
+
+  return result;
+}
+
 export function createDomainsHandlers(deps: DomainsDeps) {
   async function handleUserDomainOrders(request: Request): Promise<Response> {
     const { session, response } = await deps.requireSession(request);
@@ -557,6 +626,22 @@ export function createDomainsHandlers(deps: DomainsDeps) {
     return deps.json(domains);
   }
 
+  async function handleUserDomainsSync(request: Request, admin = false): Promise<Response> {
+    const auth = admin ? await deps.requireAdmin(request) : await deps.requireSession(request);
+    if (auth.response) return auth.response;
+    if (!auth.session) return deps.json({ error: "Unauthorized" }, 401);
+    if (request.method !== "POST") return deps.json({ error: "Method not allowed" }, 405);
+    try {
+      const result = await syncRegisteredDomains(
+        deps,
+        admin ? null : auth.session.user.id,
+      );
+      return deps.json(result);
+    } catch (error: any) {
+      return deps.json({ error: error.message ?? "Domain sync failed" }, error.status ?? 500);
+    }
+  }
+
   async function handleDomainRenewal(request: Request, admin = false): Promise<Response> {
     const auth = admin ? await deps.requireAdmin(request) : await deps.requireSession(request);
     if (auth.response) return auth.response;
@@ -775,6 +860,7 @@ export function createDomainsHandlers(deps: DomainsDeps) {
     handleUserDomainsDns,
     handleUserDomainsInfo,
     handleUserDomains,
+    handleUserDomainsSync,
     handleDomainRenewal,
     handleDomainAutoRenew,
     handleAdminAssignDomain,
