@@ -9495,7 +9495,7 @@ export default {
         stats: {
           active: publicRows.filter((row: any) => row.status !== "resolved").length,
           resolved: publicRows.filter((row: any) => row.status === "resolved").length,
-          services: 0,
+          services: new Set(publicRows.flatMap((row: any) => Array.isArray(row.affectedServices) ? row.affectedServices : [])).size,
         },
       });
     }
