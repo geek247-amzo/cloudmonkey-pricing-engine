@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Copy, ExternalLink, FileBarChart, Plus, Send, Volume2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Copy, ExternalLink, FileBarChart, Send, Volume2 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/dashboard/PageHeader";
@@ -8,12 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAdminAccess } from "@/hooks/use-admin-access";
-import { STI_ELECTRICAL_PHASE_2_DECK } from "@/lib/pitch-deck-content";
 
 export const Route = createFileRoute("/dashboard/pitch-decks")({
-  validateSearch: (search: Record<string, unknown>) => ({
-    action: search.action === "prepare" || search.action === "create" ? search.action : undefined,
-  }),
   head: () => ({ meta: [{ title: "Pitch Decks - CloudMonkey Admin" }] }),
   component: PitchDecksPage,
 });
@@ -31,71 +27,22 @@ type PitchDeck = {
 
 function PitchDecksPage() {
   const { isAdmin, authReady } = useAdminAccess();
-  const { action } = Route.useSearch();
   const [rows, setRows] = useState<PitchDeck[] | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [bootstrapping, setBootstrapping] = useState(false);
   const [audioDeckId, setAudioDeckId] = useState<string | null>(null);
-  const actionStarted = useRef(false);
 
   async function load() {
     const response = await fetch("/api/admin/pitch-decks");
     if (response.ok) setRows(await response.json());
   }
-  useEffect(() => {
-    if (rows === null || !action || actionStarted.current) return;
-    actionStarted.current = true;
-    if (action === "prepare") void bootstrapSti();
-    if (action === "create") void createStiDeck();
-  }, [action, rows]);
-
   if (authReady && !isAdmin) return <div className="p-8">Administrator access required.</div>;
   if (rows === null) {
     void load();
     return <div className="p-8 text-sm text-muted-foreground">Loading pitch decks…</div>;
   }
 
-  async function createStiDeck() {
-    setCreating(true);
-    try {
-      const response = await fetch("/api/admin/pitch-decks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          slug: "sti-electrical-phase-2",
-          title: "STI Electrical — Phase 2 ERP Proposal",
-          content: STI_ELECTRICAL_PHASE_2_DECK,
-        }),
-      });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error ?? "Could not create pitch deck");
-      toast.success("STI Electrical pitch deck created");
-      await load();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not create pitch deck");
-    } finally {
-      setCreating(false);
-    }
-  }
-
   async function copyLink(url: string) {
     await navigator.clipboard.writeText(url);
     toast.success("Share link copied");
-  }
-
-  async function bootstrapSti() {
-    setBootstrapping(true);
-    try {
-      const response = await fetch("/api/admin/pitch-decks/bootstrap-sti", { method: "POST" });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error ?? "Could not prepare STI engagements");
-      toast.success("STI Electrical and STI Risk drafts are ready");
-      await load();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not prepare STI engagements");
-    } finally {
-      setBootstrapping(false);
-    }
   }
 
   async function generateAudio(id: string) {
@@ -130,20 +77,11 @@ function PitchDecksPage() {
               Public links are view-only and can be opened without a CloudMonkey login.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={bootstrapSti} disabled={bootstrapping}>
-              {bootstrapping ? "Preparing…" : "Prepare STI engagements"}
-            </Button>
-            <Button onClick={createStiDeck} disabled={creating}>
-              <Plus className="mr-2 h-4 w-4" />
-              {creating ? "Creating…" : "Create STI deck"}
-            </Button>
-          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           {rows.length === 0 ? (
             <div className="rounded-xl border border-dashed border-[#dfe4ef] p-8 text-center text-sm text-muted-foreground">
-              No pitch decks yet. Create the STI Electrical deck to generate its share link.
+              No customer pitch decks have been created yet.
             </div>
           ) : (
             rows.map((deck) => (
