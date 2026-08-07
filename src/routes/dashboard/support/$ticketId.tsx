@@ -9,8 +9,6 @@ import {
   Maximize2,
   MessageSquareText,
   Minimize2,
-  Pin,
-  PinOff,
   Sparkles,
   Server,
   UserRound,
@@ -83,7 +81,6 @@ function TicketDetailPanel() {
   const [aiInstruction, setAiInstruction] = useState("");
   const [isInternal, setIsInternal] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
-  const [isPinned, setIsPinned] = useState(false);
 
   const { data: ticket, isLoading } = useQuery<TicketDetail>({
     queryKey: [isAdmin ? "admin" : "user", "tickets", ticketId],
@@ -203,7 +200,7 @@ function TicketDetailPanel() {
 
   if (isMinimized) {
     return (
-      <div className="fixed bottom-4 right-4 z-50 w-[calc(100vw-2rem)] max-w-md rounded-lg border border-[#dfe4ef] bg-white shadow-2xl">
+      <div className="fixed bottom-4 left-4 z-50 w-[calc(100vw-2rem)] max-w-md rounded-lg border border-[#dfe4ef] bg-white shadow-2xl">
         <button
           type="button"
           onClick={() => setIsMinimized(false)}
@@ -223,14 +220,9 @@ function TicketDetailPanel() {
 
   return (
     <div className="fixed inset-0 z-50 pointer-events-none">
-      {!isPinned && (
-        <div className="absolute inset-0 bg-[#07102c]/20 backdrop-blur-[1px] pointer-events-auto" />
-      )}
+      <div className="absolute inset-0 bg-[#07102c]/20 backdrop-blur-[1px] pointer-events-auto" />
       <section
-        className={cn(
-          "pointer-events-auto fixed right-3 flex w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-lg border border-[#dfe4ef] bg-white shadow-2xl sm:right-6 sm:w-[720px]",
-          isPinned ? "bottom-6 top-6" : "bottom-6 top-10 max-h-[calc(100vh-4rem)]",
-        )}
+        className="pointer-events-auto fixed inset-0 flex flex-col overflow-hidden border border-[#dfe4ef] bg-white shadow-2xl"
       >
         <div className="border-b border-[#e7ebf3] bg-[#f7f9fd] px-5 py-4">
           <div className="flex items-start justify-between gap-3">
@@ -248,12 +240,6 @@ function TicketDetailPanel() {
               <p className="mt-1 truncate text-sm text-muted-foreground">{customerLabel}</p>
             </div>
             <div className="flex shrink-0 items-center gap-1">
-              <IconButton
-                label={isPinned ? "Unpin ticket" : "Pin ticket"}
-                onClick={() => setIsPinned((value) => !value)}
-              >
-                {isPinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
-              </IconButton>
               <IconButton label="Minimize ticket" onClick={() => setIsMinimized(true)}>
                 <Minimize2 className="h-4 w-4" />
               </IconButton>
