@@ -111,6 +111,24 @@ async function domainsApiPost(path: string, params: Record<string, string>) {
   return data;
 }
 
+async function domainsApiGet(path: string, params: Record<string, string>) {
+  const apiKey = process.env.DOMAINS_CO_ZA_API_KEY;
+  if (!apiKey) throw Object.assign(new Error("Domains API is not configured"), { status: 503 });
+  const query = new URLSearchParams({ ...params, key: apiKey });
+  const response = await fetch(`https://api.domains.co.za/api/${path}?${query.toString()}`);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok)
+    throw Object.assign(new Error(data?.strMessage || `Domains API returned ${response.status}`), {
+      status: 502,
+    });
+  if (data?.intReturnCode != null && ![0, 1, 2].includes(Number(data.intReturnCode))) {
+    throw Object.assign(new Error(data.strMessage || "Domains API rejected the request"), {
+      status: 422,
+    });
+  }
+  return data;
+}
+
 export async function registerPaidDomainOrder(
   deps: DomainRegistrationDeps,
   order: any,
@@ -248,7 +266,7 @@ export async function syncRegisteredDomains(
   for (const domain of domains) {
     try {
       const parts = splitDomainName(domain.id);
-      const providerResponse = await domainsApiPost("domain/info", {
+      const providerResponse = await domainsApiGet("domain/info", {
         sld: parts.sld,
         tld: parts.tld,
       });
