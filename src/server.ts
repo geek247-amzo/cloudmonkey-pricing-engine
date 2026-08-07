@@ -89,6 +89,8 @@ import {
   taskLabelMap,
   taskActivity,
   userNotification,
+  serviceIncident,
+  serviceIncidentUpdate,
   supportChatMessage,
   supportChatSession,
   adminChatSession,
@@ -9120,6 +9122,80 @@ const ticketCommentSchema = z.object({
   isInternal: z.boolean().optional().default(false),
 });
 
+const incidentAudienceSchema = z.object({
+  groups: z.array(z.enum(["all", "hosting", "websites", "ecommerce", "domains", "ai"])).default(["all"]),
+  userIds: z.array(z.string()).default([]),
+});
+
+const serviceIncidentSchema = z.object({
+  title: z.string().min(3),
+  summary: z.string().min(3),
+  body: z.string().min(3),
+  severity: z.enum(["minor", "major", "critical"]).default("minor"),
+  affectedServices: z.array(z.string()).default([]),
+  audience: incidentAudienceSchema.default({ groups: ["all"], userIds: [] }),
+});
+
+const serviceIncidentUpdateSchema = z.object({
+  status: z.enum(["investigating", "identified", "monitoring", "resolved"]),
+  body: z.string().min(3),
+});
+
+async function resolveIncidentRecipients(audience: { groups: string[]; userIds: string[] }) {
+  const customers = await db.query.user.findMany({ where: eq(user.role, "customer") });
+  const selected = new Set(audience.userIds ?? []);
+  const groups = new Set(audience.groups ?? []);
+  if (groups.has("all")) return customers;
+
+  const subscriptions = await db.query.subscription.findMany({
+    where: inArray(subscription.status, ["active", "trialing"]),
+    with: { plan: { with: { service: true } } },
+  });
+  const grouped = new Set<string>();
+  for (const row of subscriptions as any[]) {
+    const label = `${row.plan?.service?.name ?? ""} ${row.plan?.name ?? ""} ${row.name ?? ""}`.toLowerCase();
+    if (groups.has("hosting") && /(hosting|cloud|vps|server|managed)/.test(label)) grouped.add(row.userId);
+    if (groups.has("websites") && /(website|web design|seo)/.test(label)) grouped.add(row.userId);
+    if (groups.has("ecommerce") && /(ecommerce|commerce|store|shop)/.test(label)) grouped.add(row.userId);
+    if (groups.has("domains") && /domain/.test(label)) grouped.add(row.userId);
+    if (groups.has("ai") && /(ai|agent|automation)/.test(label)) grouped.add(row.userId);
+  }
+  for (const id of selected) grouped.add(id);
+  return customers.filter((customer) => grouped.has(customer.id));
+}
+
+async function notifyIncidentAudience(incident: any, status: string, body: string, origin: string) {
+  const audience = (incident.audience ?? { groups: ["all"], userIds: [] }) as { groups: string[]; userIds: string[] };
+  const recipients = await resolveIncidentRecipients(audience);
+  await Promise.all(
+    recipients.map(async (customer: any) => {
+      await db.insert(userNotification).values({
+        id: makeId("notification"),
+        userId: customer.id,
+        type: "service_incident",
+        title: incident.title,
+        body,
+      });
+      if (status === "resolved" && customer.email) {
+        await sendEmail({
+          template: "support_notification",
+          to: customer.email,
+          subject: `Resolved: ${incident.title}`,
+          data: {
+            firstName: customer.name,
+            emailIntro: "The CloudMonkey service issue has been resolved.",
+            emailBody: body,
+            primaryCtaText: "View service status",
+            primaryCtaUrl: `${origin}/status#${incident.id}`,
+          },
+          idempotencyKey: `incident:${incident.id}:resolved:${customer.id}`,
+        }).catch((error) => console.error("Incident closure email failed", error));
+      }
+    }),
+  );
+  return recipients.length;
+}
+
 const websiteSchema = z.object({
   userId: z.string().min(1),
   domain: z.string().min(1),
@@ -9399,6 +9475,27 @@ export default {
           enabled: Boolean(siteKey && process.env.RECAPTCHA_SECRET_KEY),
           siteKey: siteKey || null,
           action: "auth_email",
+        },
+      });
+    }
+
+    if (url.pathname === "/api/public/status" && request.method === "GET") {
+      const rows = await db.query.serviceIncident.findMany({
+        orderBy: (row: any, { desc }: any) => [desc(row.updatedAt)],
+      });
+      const publicRows = rows.filter((row: any) => (row.audience?.groups ?? []).includes("all"));
+      const updates = await db.query.serviceIncidentUpdate.findMany({
+        orderBy: (row: any, { desc }: any) => [desc(row.createdAt)],
+      });
+      return json({
+        incidents: publicRows.map((row: any) => ({
+          ...row,
+          updates: updates.filter((update: any) => update.incidentId === row.id),
+        })),
+        stats: {
+          active: publicRows.filter((row: any) => row.status !== "resolved").length,
+          resolved: publicRows.filter((row: any) => row.status === "resolved").length,
+          services: 0,
         },
       });
     }
@@ -11438,6 +11535,18 @@ echo "CloudMonkey agent installed."
     if (url.pathname.startsWith("/api/user/notifications")) {
       return projectHandlers.handleUserNotifications(request);
     }
+    if (url.pathname === "/api/user/service-status" && request.method === "GET") {
+      const { session, response } = await requireSession(request);
+      if (response) return response;
+      const incidents = await db.query.serviceIncident.findMany({ orderBy: (row: any, { desc }: any) => [desc(row.updatedAt)] });
+      const visible = [] as any[];
+      for (const incident of incidents as any[]) {
+        const recipients = await resolveIncidentRecipients(incident.audience ?? { groups: ["all"], userIds: [] });
+        if (recipients.some((customer: any) => customer.id === session.user.id)) visible.push(incident);
+      }
+      const updates = await db.query.serviceIncidentUpdate.findMany({ orderBy: (row: any, { desc }: any) => [desc(row.createdAt)] });
+      return json(visible.map((incident: any) => ({ ...incident, updates: updates.filter((update: any) => update.incidentId === incident.id) })));
+    }
     if (url.pathname === "/api/user/domains/auto-renew") {
       return domainsHandlers.handleDomainAutoRenew(request);
     }
@@ -11522,6 +11631,70 @@ echo "CloudMonkey agent installed."
     }
     if (url.pathname === "/api/admin/domains/auto-renew") {
       return domainsHandlers.handleDomainAutoRenew(request, true);
+    }
+
+    if (url.pathname.startsWith("/api/admin/service-incidents")) {
+      const { session, response } = await requireAdmin(request);
+      if (response) return response;
+      const parts = url.pathname.split("/").filter(Boolean);
+      const incidentId = parts[3];
+      try {
+        if (!incidentId && request.method === "GET") {
+          const incidents = await db.query.serviceIncident.findMany({
+            orderBy: (row: any, { desc }: any) => [desc(row.updatedAt)],
+          });
+          const updates = await db.query.serviceIncidentUpdate.findMany({
+            orderBy: (row: any, { desc }: any) => [desc(row.createdAt)],
+          });
+          return json(incidents.map((incident: any) => ({
+            ...incident,
+            updates: updates.filter((update: any) => update.incidentId === incident.id),
+          })));
+        }
+        if (!incidentId && request.method === "POST") {
+          const body = await parseBody(request, serviceIncidentSchema);
+          const [incident] = await db.insert(serviceIncident).values({
+            id: makeId("incident"),
+            title: body.title,
+            summary: body.summary,
+            body: body.body,
+            severity: body.severity,
+            affectedServices: body.affectedServices,
+            audience: body.audience,
+            createdByUserId: session.user.id,
+            publishedAt: new Date(),
+          }).returning();
+          await db.insert(serviceIncidentUpdate).values({
+            id: makeId("incident_update"),
+            incidentId: incident.id,
+            status: incident.status,
+            body: incident.body,
+            createdByUserId: session.user.id,
+          });
+          await recordAudit({ actorUserId: session.user.id, action: "service_incident.created", entityType: "service_incident", entityId: incident.id, message: `Service incident published: ${incident.title}`, metadata: { audience: incident.audience, affectedServices: incident.affectedServices } });
+          return json(incident, 201);
+        }
+        if (!incidentId) return json({ error: "Incident id is required" }, 400);
+        const incident = await db.query.serviceIncident.findFirst({ where: eq(serviceIncident.id, incidentId) });
+        if (!incident) return json({ error: "Incident not found" }, 404);
+        if (parts[4] === "updates" && request.method === "POST") {
+          const body = await parseBody(request, serviceIncidentUpdateSchema);
+          const [update] = await db.insert(serviceIncidentUpdate).values({ id: makeId("incident_update"), incidentId, status: body.status, body: body.body, createdByUserId: session.user.id }).returning();
+          const resolvedAt = body.status === "resolved" ? new Date() : null;
+          const [updated] = await db.update(serviceIncident).set({ status: body.status, updatedAt: new Date(), resolvedAt }).where(eq(serviceIncident.id, incidentId)).returning();
+          const recipients = await notifyIncidentAudience(updated, body.status, body.body, new URL(request.url).origin);
+          await recordAudit({ actorUserId: session.user.id, action: "service_incident.updated", entityType: "service_incident", entityId: incidentId, message: `Service incident updated: ${updated.title}`, metadata: { status: body.status, recipients } });
+          return json({ incident: updated, update, recipients }, 201);
+        }
+        if (request.method === "PATCH") {
+          const body = await parseBody(request, serviceIncidentSchema.partial());
+          const [updated] = await db.update(serviceIncident).set({ ...body, updatedAt: new Date() }).where(eq(serviceIncident.id, incidentId)).returning();
+          return json(updated);
+        }
+        return json({ error: "Method not allowed" }, 405);
+      } catch (error: any) {
+        return json({ error: error.message, issues: error.issues }, error.status ?? 500);
+      }
     }
 
     if (url.pathname === "/api/admin/assign-domain") {

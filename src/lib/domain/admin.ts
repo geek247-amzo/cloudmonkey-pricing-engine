@@ -2000,10 +2000,6 @@ export function createAdminHandlers(deps: AdminDeps) {
 
     if (request.method === "POST") {
       try {
-        const settings = await deps.getWorkspaceSettings();
-        if (!settings?.allowCustomerTicketCreation) {
-          return deps.json({ error: "Customer ticket creation is disabled" }, 403);
-        }
         const body = await deps.parseBody(
           request,
           z.object({
@@ -2015,17 +2011,23 @@ export function createAdminHandlers(deps: AdminDeps) {
             category: z.string().min(1).default("general"),
           }),
         );
+        const customer = await deps.db.query.user.findFirst({
+          where: eq(user.id, body.userId ?? ""),
+        });
+        if (!customer || customer.role !== "customer") {
+          return deps.json({ error: "Select a valid customer" }, 400);
+        }
         const [created] = await deps.db
           .insert(supportTicket)
           .values({
             id: deps.makeId("ticket"),
-            userId: body.userId ?? session.user.id,
+            userId: customer.id,
             subject: body.subject,
             description: body.description ?? null,
             priority: body.priority,
             status: body.status,
             category: body.category,
-            source: "manual",
+            source: "admin",
           })
           .returning();
         await deps.recordAudit({

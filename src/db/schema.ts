@@ -1584,6 +1584,33 @@ export const userNotification = pgTable("user_notification", {
   createdAt: timestamp("createdAt").notNull().defaultNow(),
 });
 
+export const serviceIncident = pgTable("service_incident", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  summary: text("summary").notNull(),
+  body: text("body").notNull(),
+  severity: text("severity").notNull().default("minor"),
+  status: text("status").notNull().default("investigating"),
+  affectedServices: jsonb("affectedServices").notNull().default([]),
+  audience: jsonb("audience").notNull().default({ groups: ["all"], userIds: [] }),
+  createdByUserId: text("createdByUserId").references(() => user.id),
+  publishedAt: timestamp("publishedAt"),
+  resolvedAt: timestamp("resolvedAt"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+});
+
+export const serviceIncidentUpdate = pgTable("service_incident_update", {
+  id: text("id").primaryKey(),
+  incidentId: text("incidentId")
+    .notNull()
+    .references(() => serviceIncident.id, { onDelete: "cascade" }),
+  status: text("status").notNull(),
+  body: text("body").notNull(),
+  createdByUserId: text("createdByUserId").references(() => user.id),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+});
+
 export const agreementTemplate = pgTable("agreement_template", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),

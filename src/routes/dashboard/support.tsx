@@ -2,6 +2,7 @@ import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
+  BellRing,
   Bot,
   FileText,
   LifeBuoy,
@@ -37,10 +38,13 @@ type TicketSummary = {
   status: string;
   category: string;
   source?: string | null;
+  assignedToUserId?: string | null;
   updatedAt: string;
   user?: { email?: string | null } | null;
   comments?: unknown[] | null;
 };
+
+type CustomerOption = { id: string; name: string; email: string; role: string };
 
 function SupportPage() {
   const queryClient = useQueryClient();
@@ -53,6 +57,8 @@ function SupportPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [sourceFilter, setSourceFilter] = useState("all");
+  const [queueView, setQueueView] = useState("all");
+  const [customerId, setCustomerId] = useState("");
   const [query, setQuery] = useState("");
 
   const { data: tickets, isLoading } = useQuery<TicketSummary[]>({
@@ -64,13 +70,24 @@ function SupportPage() {
     },
   });
 
+  const { data: customers } = useQuery<CustomerOption[]>({
+    queryKey: ["admin", "customer-options"],
+    enabled: isAdmin,
+    queryFn: async () => {
+      const res = await fetch("/api/admin/customers");
+      if (!res.ok) throw new Error("Failed to fetch customers");
+      const rows = await res.json();
+      return rows.filter((row: CustomerOption) => row.role === "customer");
+    },
+  });
+
   const createMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch(isAdmin ? "/api/admin/tickets" : "/api/user/tickets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId: session?.user?.id,
+          userId: isAdmin ? customerId : session?.user?.id,
           subject,
           description,
           priority,
@@ -86,6 +103,7 @@ function SupportPage() {
       setDescription("");
       setPriority("medium");
       setCategory("general");
+      setCustomerId("");
       toast.success("Ticket opened");
       queryClient.invalidateQueries({ queryKey: [isAdmin ? "admin" : "user", "tickets"] });
     },
@@ -106,6 +124,8 @@ function SupportPage() {
       if (statusFilter !== "all" && ticket.status !== statusFilter) return false;
       if (priorityFilter !== "all" && ticket.priority !== priorityFilter) return false;
       if (sourceFilter !== "all" && (ticket.source ?? "manual") !== sourceFilter) return false;
+      if (queueView === "unassigned" && ticket.assignedToUserId) return false;
+      if (queueView === "mine" && ticket.assignedToUserId !== session?.user?.id) return false;
       if (!text) return true;
       return [ticket.subject, ticket.description, ticket.category, ticket.user?.email]
         .filter(Boolean)
@@ -113,7 +133,7 @@ function SupportPage() {
         .toLowerCase()
         .includes(text);
     });
-  }, [priorityFilter, query, sourceFilter, statusFilter, tickets]);
+  }, [priorityFilter, query, queueView, session?.user?.id, sourceFilter, statusFilter, tickets]);
 
   return (
     <div className="space-y-6">
@@ -122,6 +142,16 @@ function SupportPage() {
         title={<>Support queue.</>}
         subtitle="Review open tickets, priorities, owners, and case history."
       />
+      {isAdmin && (
+        <div className="flex justify-end">
+          <Button asChild variant="outline" className="rounded-lg">
+            <Link to="/dashboard/support/notifications">
+              <BellRing className="h-4 w-4" />
+              Service notifications & status page
+            </Link>
+          </Button>
+        </div>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-4">
         {[
@@ -193,6 +223,24 @@ function SupportPage() {
                 />
               </div>
             </div>
+            {isAdmin && (
+              <div className="space-y-2">
+                <Label>Customer</Label>
+                <select
+                  value={customerId}
+                  onChange={(event) => setCustomerId(event.target.value)}
+                  className="h-11 w-full rounded-lg border border-input bg-white px-3 text-sm"
+                  required
+                >
+                  <option value="">Select customer</option>
+                  {(customers ?? []).map((customer) => (
+                    <option key={customer.id} value={customer.id}>
+                      {customer.name} · {customer.email}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="space-y-2">
               <Label>Category</Label>
               <select
@@ -244,7 +292,7 @@ function SupportPage() {
           <CardTitle>Queue</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="grid gap-3 lg:grid-cols-[1fr_150px_150px_150px]">
+          <div className="grid gap-3 lg:grid-cols-[1fr_150px_150px_150px_150px]">
             <div className="flex h-10 items-center gap-2 rounded-lg border border-input bg-white px-3">
               <Search className="h-4 w-4 text-muted-foreground" />
               <input
@@ -254,6 +302,15 @@ function SupportPage() {
                 className="min-w-0 flex-1 bg-transparent text-sm outline-none"
               />
             </div>
+            <select
+              value={queueView}
+              onChange={(event) => setQueueView(event.target.value)}
+              className="h-10 rounded-lg border border-input bg-white px-3 text-sm"
+            >
+              <option value="all">All queue</option>
+              <option value="mine">My queue</option>
+              <option value="unassigned">Unassigned</option>
+            </select>
             <select
               value={statusFilter}
               onChange={(event) => setStatusFilter(event.target.value)}

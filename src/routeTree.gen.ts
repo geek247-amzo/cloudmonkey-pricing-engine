@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as VoiceRouteImport } from './routes/voice'
 import { Route as ToolsRouteImport } from './routes/tools'
+import { Route as StatusRouteImport } from './routes/status'
 import { Route as SsoCheckerRouteImport } from './routes/sso-checker'
 import { Route as SeoCheckerRouteImport } from './routes/seo-checker'
 import { Route as PricingRouteImport } from './routes/pricing'
@@ -85,6 +86,7 @@ import { Route as AuthForgotPasswordRouteImport } from './routes/auth/forgot-pas
 import { Route as AuthTwoFactorIndexRouteImport } from './routes/auth/two-factor/index'
 import { Route as DashboardWebsitesWebsiteIdRouteImport } from './routes/dashboard/websites/$websiteId'
 import { Route as DashboardUsersUserIdRouteImport } from './routes/dashboard/users/$userId'
+import { Route as DashboardSupportNotificationsRouteImport } from './routes/dashboard/support/notifications'
 import { Route as DashboardSupportTicketIdRouteImport } from './routes/dashboard/support/$ticketId'
 import { Route as DashboardDomainsNewRouteImport } from './routes/dashboard/domains/new'
 import { Route as AuthTwoFactorSetupRouteImport } from './routes/auth/two-factor/setup'
@@ -99,6 +101,11 @@ const VoiceRoute = VoiceRouteImport.update({
 const ToolsRoute = ToolsRouteImport.update({
   id: '/tools',
   path: '/tools',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StatusRoute = StatusRouteImport.update({
+  id: '/status',
+  path: '/status',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SsoCheckerRoute = SsoCheckerRouteImport.update({
@@ -476,6 +483,12 @@ const DashboardUsersUserIdRoute = DashboardUsersUserIdRouteImport.update({
   path: '/$userId',
   getParentRoute: () => DashboardUsersRoute,
 } as any)
+const DashboardSupportNotificationsRoute =
+  DashboardSupportNotificationsRouteImport.update({
+    id: '/notifications',
+    path: '/notifications',
+    getParentRoute: () => DashboardSupportRoute,
+  } as any)
 const DashboardSupportTicketIdRoute =
   DashboardSupportTicketIdRouteImport.update({
     id: '/$ticketId',
@@ -520,6 +533,7 @@ export interface FileRoutesByFullPath {
   '/pricing': typeof PricingRoute
   '/seo-checker': typeof SeoCheckerRoute
   '/sso-checker': typeof SsoCheckerRoute
+  '/status': typeof StatusRoute
   '/tools': typeof ToolsRouteWithChildren
   '/voice': typeof VoiceRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
@@ -582,6 +596,7 @@ export interface FileRoutesByFullPath {
   '/auth/two-factor/setup': typeof AuthTwoFactorSetupRoute
   '/dashboard/domains/new': typeof DashboardDomainsNewRoute
   '/dashboard/support/$ticketId': typeof DashboardSupportTicketIdRoute
+  '/dashboard/support/notifications': typeof DashboardSupportNotificationsRoute
   '/dashboard/users/$userId': typeof DashboardUsersUserIdRoute
   '/dashboard/websites/$websiteId': typeof DashboardWebsitesWebsiteIdRouteWithChildren
   '/auth/two-factor/': typeof AuthTwoFactorIndexRoute
@@ -603,6 +618,7 @@ export interface FileRoutesByTo {
   '/pricing': typeof PricingRoute
   '/seo-checker': typeof SeoCheckerRoute
   '/sso-checker': typeof SsoCheckerRoute
+  '/status': typeof StatusRoute
   '/tools': typeof ToolsRouteWithChildren
   '/voice': typeof VoiceRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
@@ -663,6 +679,7 @@ export interface FileRoutesByTo {
   '/auth/two-factor/setup': typeof AuthTwoFactorSetupRoute
   '/dashboard/domains/new': typeof DashboardDomainsNewRoute
   '/dashboard/support/$ticketId': typeof DashboardSupportTicketIdRoute
+  '/dashboard/support/notifications': typeof DashboardSupportNotificationsRoute
   '/dashboard/users/$userId': typeof DashboardUsersUserIdRoute
   '/dashboard/websites/$websiteId': typeof DashboardWebsitesWebsiteIdRouteWithChildren
   '/auth/two-factor': typeof AuthTwoFactorIndexRoute
@@ -685,6 +702,7 @@ export interface FileRoutesById {
   '/pricing': typeof PricingRoute
   '/seo-checker': typeof SeoCheckerRoute
   '/sso-checker': typeof SsoCheckerRoute
+  '/status': typeof StatusRoute
   '/tools': typeof ToolsRouteWithChildren
   '/voice': typeof VoiceRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
@@ -747,6 +765,7 @@ export interface FileRoutesById {
   '/auth/two-factor/setup': typeof AuthTwoFactorSetupRoute
   '/dashboard/domains/new': typeof DashboardDomainsNewRoute
   '/dashboard/support/$ticketId': typeof DashboardSupportTicketIdRoute
+  '/dashboard/support/notifications': typeof DashboardSupportNotificationsRoute
   '/dashboard/users/$userId': typeof DashboardUsersUserIdRoute
   '/dashboard/websites/$websiteId': typeof DashboardWebsitesWebsiteIdRouteWithChildren
   '/auth/two-factor/': typeof AuthTwoFactorIndexRoute
@@ -770,6 +789,7 @@ export interface FileRouteTypes {
     | '/pricing'
     | '/seo-checker'
     | '/sso-checker'
+    | '/status'
     | '/tools'
     | '/voice'
     | '/auth/forgot-password'
@@ -832,6 +852,7 @@ export interface FileRouteTypes {
     | '/auth/two-factor/setup'
     | '/dashboard/domains/new'
     | '/dashboard/support/$ticketId'
+    | '/dashboard/support/notifications'
     | '/dashboard/users/$userId'
     | '/dashboard/websites/$websiteId'
     | '/auth/two-factor/'
@@ -853,6 +874,7 @@ export interface FileRouteTypes {
     | '/pricing'
     | '/seo-checker'
     | '/sso-checker'
+    | '/status'
     | '/tools'
     | '/voice'
     | '/auth/forgot-password'
@@ -913,6 +935,7 @@ export interface FileRouteTypes {
     | '/auth/two-factor/setup'
     | '/dashboard/domains/new'
     | '/dashboard/support/$ticketId'
+    | '/dashboard/support/notifications'
     | '/dashboard/users/$userId'
     | '/dashboard/websites/$websiteId'
     | '/auth/two-factor'
@@ -934,6 +957,7 @@ export interface FileRouteTypes {
     | '/pricing'
     | '/seo-checker'
     | '/sso-checker'
+    | '/status'
     | '/tools'
     | '/voice'
     | '/auth/forgot-password'
@@ -996,6 +1020,7 @@ export interface FileRouteTypes {
     | '/auth/two-factor/setup'
     | '/dashboard/domains/new'
     | '/dashboard/support/$ticketId'
+    | '/dashboard/support/notifications'
     | '/dashboard/users/$userId'
     | '/dashboard/websites/$websiteId'
     | '/auth/two-factor/'
@@ -1018,6 +1043,7 @@ export interface RootRouteChildren {
   PricingRoute: typeof PricingRoute
   SeoCheckerRoute: typeof SeoCheckerRoute
   SsoCheckerRoute: typeof SsoCheckerRoute
+  StatusRoute: typeof StatusRoute
   ToolsRoute: typeof ToolsRouteWithChildren
   VoiceRoute: typeof VoiceRoute
   AuthForgotPasswordRoute: typeof AuthForgotPasswordRoute
@@ -1084,6 +1110,13 @@ declare module '@tanstack/react-router' {
       path: '/tools'
       fullPath: '/tools'
       preLoaderRoute: typeof ToolsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/status': {
+      id: '/status'
+      path: '/status'
+      fullPath: '/status'
+      preLoaderRoute: typeof StatusRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sso-checker': {
@@ -1604,6 +1637,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardUsersUserIdRouteImport
       parentRoute: typeof DashboardUsersRoute
     }
+    '/dashboard/support/notifications': {
+      id: '/dashboard/support/notifications'
+      path: '/notifications'
+      fullPath: '/dashboard/support/notifications'
+      preLoaderRoute: typeof DashboardSupportNotificationsRouteImport
+      parentRoute: typeof DashboardSupportRoute
+    }
     '/dashboard/support/$ticketId': {
       id: '/dashboard/support/$ticketId'
       path: '/$ticketId'
@@ -1715,10 +1755,12 @@ const DashboardDomainsRouteWithChildren =
 
 interface DashboardSupportRouteChildren {
   DashboardSupportTicketIdRoute: typeof DashboardSupportTicketIdRoute
+  DashboardSupportNotificationsRoute: typeof DashboardSupportNotificationsRoute
 }
 
 const DashboardSupportRouteChildren: DashboardSupportRouteChildren = {
   DashboardSupportTicketIdRoute: DashboardSupportTicketIdRoute,
+  DashboardSupportNotificationsRoute: DashboardSupportNotificationsRoute,
 }
 
 const DashboardSupportRouteWithChildren =
@@ -1777,6 +1819,7 @@ const rootRouteChildren: RootRouteChildren = {
   PricingRoute: PricingRoute,
   SeoCheckerRoute: SeoCheckerRoute,
   SsoCheckerRoute: SsoCheckerRoute,
+  StatusRoute: StatusRoute,
   ToolsRoute: ToolsRouteWithChildren,
   VoiceRoute: VoiceRoute,
   AuthForgotPasswordRoute: AuthForgotPasswordRoute,
