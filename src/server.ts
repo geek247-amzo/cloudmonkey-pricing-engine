@@ -11251,6 +11251,40 @@ echo "CloudMonkey agent installed."
       );
     }
 
+    if (url.pathname === "/api/user/status-issue" && request.method === "POST") {
+      const { session, response } = await requireSession(request);
+      if (response) return response;
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      try {
+        const body = await parseBody(request, ticketSchema.omit({ userId: true, assignedToUserId: true, status: true, source: true }));
+        const [created] = await db.insert(supportTicket).values({
+          id: makeId("ticket"),
+          userId: session.user.id,
+          subject: body.subject,
+          description: body.description ?? null,
+          priority: body.priority,
+          status: "open",
+          category: body.category,
+          source: "status_page",
+        }).returning();
+        await recordAudit({ actorUserId: session.user.id, action: "ticket.created", entityType: "support_ticket", entityId: created.id, message: `Status page issue reported: ${created.subject}` });
+        const settings = await getWorkspaceSettings();
+        const adminEmail = settings?.adminNotificationEmail ?? process.env.ADMIN_NOTIFICATION_EMAIL;
+        if (adminEmail) {
+          sendN8nEmail({
+            template: "support_notification",
+            to: adminEmail,
+            subject: `Status page issue: ${created.subject}`,
+            data: { firstName: "team", summary: `A customer reported an issue from the public status page: ${created.subject}`, body: created.description ?? created.subject, primaryCtaText: "Open support", primaryCtaUrl: `${new URL(request.url).origin}/dashboard/support` },
+            idempotencyKey: `ticket:${created.id}:status-page`,
+          }).catch((error) => console.error("Status issue notification failed", error));
+        }
+        return json(created, 201);
+      } catch (error: any) {
+        return json({ error: error.message, issues: error.issues }, error.status ?? 500);
+      }
+    }
+
     if (url.pathname.startsWith("/api/pitch-decks/")) {
       const publicParts = url.pathname.split("/").filter(Boolean);
       const token = decodeURIComponent(publicParts[2] ?? "");
