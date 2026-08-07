@@ -1,4 +1,4 @@
-import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import {
   AlertTriangle,
   ArrowUpDown,
@@ -482,7 +482,6 @@ function DomainsPageContent() {
         </Card>
       )}
 
-      <Outlet />
     </div>
   );
 }
@@ -906,6 +905,12 @@ function DnsAddDialog({
 }
 
 function DomainsManagementPage() {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+
+  if (pathname.startsWith("/dashboard/domains/new")) {
+    return <Outlet />;
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
