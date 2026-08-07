@@ -114,8 +114,10 @@ async function domainsApiPost(path: string, params: Record<string, string>) {
 async function domainsApiGet(path: string, params: Record<string, string>) {
   const apiKey = process.env.DOMAINS_CO_ZA_API_KEY;
   if (!apiKey) throw Object.assign(new Error("Domains API is not configured"), { status: 503 });
-  const query = new URLSearchParams({ ...params, key: apiKey });
-  const response = await fetch(`https://api.domains.co.za/api/${path}?${query.toString()}`);
+  const query = new URLSearchParams(params);
+  const response = await fetch(`https://api.domains.co.za/api/${path}?${query.toString()}`, {
+    headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
+  });
   const data = await response.json().catch(() => ({}));
   if (!response.ok)
     throw Object.assign(new Error(data?.strMessage || `Domains API returned ${response.status}`), {
@@ -266,7 +268,9 @@ export async function syncRegisteredDomains(
   for (const domain of domains) {
     try {
       const parts = splitDomainName(domain.id);
-      const providerResponse = await domainsApiGet("domain/info", {
+      // Domains.co.za's current API exposes the full domain record at GET /domain.
+      // The older /domain/info path returns 405 and cannot be used for sync.
+      const providerResponse = await domainsApiGet("domain", {
         sld: parts.sld,
         tld: parts.tld,
       });
