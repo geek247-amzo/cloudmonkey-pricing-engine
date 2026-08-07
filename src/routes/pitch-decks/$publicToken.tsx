@@ -11,7 +11,7 @@ import {
   Volume2,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type RefObject } from "react";
 import { useRef } from "react";
 
 import logo from "@/assets/cm-logo.png";
@@ -147,7 +147,15 @@ function PitchDeckPage() {
 
       <main className="mx-auto flex min-h-screen w-full max-w-[1600px] items-center px-8 pb-16 pt-28 sm:px-14 lg:px-24">
         <div className="w-full">
-          <Slide slide={slide} index={active} total={slides.length} deck={deck.content} />
+          <Slide
+            slide={slide}
+            index={active}
+            total={slides.length}
+            deck={deck.content}
+            audioRef={audioRef}
+            isPlaying={isPlaying}
+            setIsPlaying={setIsPlaying}
+          />
         </div>
       </main>
 
@@ -227,11 +235,17 @@ function Slide({
   index,
   total,
   deck,
+  audioRef,
+  isPlaying,
+  setIsPlaying,
 }: {
   slide: PitchDeckSlide;
   index: number;
   total: number;
   deck: PitchDeckContent;
+  audioRef: RefObject<HTMLAudioElement | null>;
+  isPlaying: boolean;
+  setIsPlaying: (playing: boolean) => void;
 }) {
   const colors = ["#a895ff", "#57d8ed", "#f5bd4d", "#ff8e78"];
   const accent = colors[index % colors.length];
